@@ -3,6 +3,5 @@ __pycache__/
 *.pyc
 .git/
 .gitignore
-models/
 data/
 *.csv
