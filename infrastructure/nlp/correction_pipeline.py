@@ -47,7 +47,7 @@ class CorrectionPipeline:
     def __init__(self, phonetic: PhoneticEngine, judge: ContextJudge):
         self._phonetic = phonetic
         self._judge    = judge
-        self._symspell = SymSpell(max_dictionary_edit_distance=2, prefix_length=7)
+        self._symspell = SymSpell(max_dictionary_edit_distance=3, prefix_length=7)
         self._symspell.load_dictionary(DICT_PATH, term_index=0, count_index=1)
 
     def correct(self, text: str, user_vocab: dict) -> str:
@@ -123,7 +123,7 @@ class CorrectionPipeline:
 
             # Capa 2: SymSpell + BETO
             if not resolved:
-                suggestions = self._symspell.lookup(lower, Verbosity.CLOSEST, max_edit_distance=2)
+                suggestions = self._symspell.lookup(lower, Verbosity.CLOSEST, max_edit_distance=3)
                 if not suggestions or suggestions[0].term == lower:
                     best = self._phonetic.restore_accent(core)
                 else:
