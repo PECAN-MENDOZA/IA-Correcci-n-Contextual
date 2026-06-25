@@ -1,0 +1,6 @@
+Traceback (most recent call last):
+  File "/content/drive/MyDrive/IA-Correcci-n-Contextual-main/main.py", line 9, in <module>
+    from infrastructure.nlp.correction_pipeline import CorrectionPipeline
+  File "/content/drive/MyDrive/IA-Correcci-n-Contextual-main/infrastructure/nlp/correction_pipeline.py", line 7, in <module>
+    from symspellpy import SymSpell, Verbosity
+ModuleNotFoundError: No module named 'symspellpy'

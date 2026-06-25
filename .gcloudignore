@@ -1,0 +1,18 @@
+# Basura de sistema y git
+.git/
+.gitignore
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Bloquear archivos zip descargados
+*.zip
+*.tgz
+
+# Bloquear los datos de entrenamiento masivos
+data/
+runs/
+
+# Bloquear TODAS las copias de seguridad (checkpoints)
+checkpoint-*
+models/checkpoint-*

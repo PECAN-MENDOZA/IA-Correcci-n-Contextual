@@ -1,0 +1,18 @@
+# Basura de sistema y git
+.git/
+.gitignore
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Entornos virtuales locales
+venv/
+env/
+
+# Bloquear los datos de entrenamiento masivos
+data/
+runs/
+
+# Bloquear la carpeta de modelos (Se inyectará después desde afuera con volúmenes -v)
+models/
+checkpoint-*

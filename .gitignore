@@ -1,0 +1,16 @@
+# Ignorar entornos virtuales y caché
+.venv/
+__pycache__/
+.ipynb_checkpoints/
+models/
+venv/
+
+data/
+.vscode/
+.DS_Store
+# Default ignored files
+/shelf/
+/workspace.xml
+# Editor-based HTTP Client requests
+/httpRequests/
+.idea
