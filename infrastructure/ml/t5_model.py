@@ -217,8 +217,11 @@ class T5CorrectionModel:
         Guarda en un directorio temporal y solo mueve al final si todo fue bien.
         Así un crash a mitad del guardado NO deja pesos corruptos en disco.
         """
-        import os
-        os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
+        # NOTA: CUDA_LAUNCH_BLOCKING=1 fuerza el modo sincrono de CUDA (util solo para
+        # depurar stacktraces). En produccion serializa todos los kernels y agrava el
+        # bloqueo del worker durante el fine-tuning, por lo que se deja desactivado.
+        # import os
+        # os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
         target_dir = save_dir_override or self.save_dir
         target_dir.mkdir(parents=True, exist_ok=True)
@@ -257,7 +260,11 @@ class T5CorrectionModel:
             args=training_args,
             train_dataset=train_dataset,
             eval_dataset=None,
-            processing_class=tokenizer.tokenizer,
+            # `tokenizer=` es compatible con transformers 4.45.0 (el pin de requirements.txt).
+            # El argumento `processing_class=` solo existe desde transformers 4.46.0 y provocaba
+            # `Seq2SeqTrainer.__init__() got an unexpected keyword argument 'processing_class'`,
+            # haciendo fallar TODO fine-tuning y colgando el servicio.
+            tokenizer=tokenizer.tokenizer,
             data_collator=collator,
         )
 
