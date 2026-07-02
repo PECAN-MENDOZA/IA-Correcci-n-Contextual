@@ -42,6 +42,7 @@ GPU está limitado por VRAM (T5-base ~1GB + overhead), no es "gratis"
 escalar procesos aunque no haya cuello de botella de gpu_lock.
 """
 import os
+import sys
 from pathlib import Path
 
 from infrastructure.persistence.csv_user_repository import CsvUserHistoryRepository
@@ -55,27 +56,23 @@ from interfaces.api.routes import create_app
 import types
 import torch
 
-import os
-from main import build_app
+# Estos parches son específicos de Windows (NCCL no está disponible ahí).
+# En Linux (el entorno real de producción, ver docker-compose.yml) no hacen
+# falta: NCCL sí está disponible y no queremos pisar su configuración.
+if sys.platform.startswith("win"):
+    if not hasattr(torch.distributed, 'tensor'):
+        torch.distributed.tensor = types.ModuleType('tensor')
 
-# Aseguramos que el rol sea API para los hilos web
+    os.environ["USE_LIBUV"] = "0"
+    os.environ["WORLD_SIZE"] = "1"
+    os.environ["RANK"] = "0"
+    os.environ["LOCAL_RANK"] = "0"
 
-app = build_app()
-if not hasattr(torch.distributed, 'tensor'):
-    torch.distributed.tensor = types.ModuleType('tensor')
-
-import os
-os.environ["USE_LIBUV"] = "0"
-os.environ["WORLD_SIZE"] = "1"
-os.environ["RANK"] = "0"
-os.environ["LOCAL_RANK"] = "0"
-from waitress import serve
 T5_MODEL_DIR    = "./models/t5_correction"
 USER_MODELS_DIR = "./models/users"
 LORAS_DIR       = "./models/loras"
 
 ROLE = os.environ.get("ROLE", "all")  # "api" | "worker" | "all"
-os.environ["ROLE"] = "api"
 
 def _build_redis_queue():
     from application.training_queue import RedisTrainingQueue
@@ -207,6 +204,22 @@ def run_worker():
     )
     print("[INFO] ROLE=worker — esperando tareas en Redis. Ctrl+C para salir.")
     worker._thread.join()
+
+
+# ── WSGI entrypoint para gunicorn ────────────────────────────────────────────
+# gunicorn hace `import main` y busca la variable `app` a nivel de módulo
+# (target: "main:app" en el Dockerfile/CMD). Ese import NO pasa por
+# `if __name__ == "__main__"`, así que app debe construirse aquí.
+#
+# Guardas:
+#   - `__name__ != "__main__"` evita reconstruir `app` dos veces cuando el
+#     archivo se corre directo con `python main.py` (ese caso ya lo maneja
+#     el bloque de abajo).
+#   - `ROLE != "worker"` evita que worker.py, al hacer
+#     `from main import run_worker`, dispare por accidente la carga del
+#     modelo de inferencia y Flask en el proceso del worker.
+if __name__ != "__main__" and ROLE != "worker":
+    app = build_app()
 
 
 if __name__ == "__main__":
