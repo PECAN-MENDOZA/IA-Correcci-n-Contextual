@@ -1,0 +1,24 @@
+# Servidor
+Flask==3.1.3
+flask-cors==6.0.2
+gunicorn==26.0.0
+waitress==3.0.2
+
+# ML / NLP
+transformers==4.44.2
+datasets==4.0.0
+accelerate==0.34.2
+peft
+sentencepiece
+protobuf
+safetensors
+
+# Data
+pandas==3.0.2
+tiktoken
+pyarrow
+
+# Utils
+symspellpy==6.9.0
+Levenshtein==0.27.3
+psutil
