@@ -82,7 +82,7 @@ class TrainUserModelUseCase:
             print("[LoRA] Modelo base listo.")
         return self._base_model
 
-    def execute(self, user_id: str, epochs: int = 10) -> None:
+    def execute(self, user_id: str, epochs: int = 3) -> None:
         pairs = self._user_repo.get_user_pairs(user_id)
         pairs = [p for p in pairs if isinstance(p[0], str) and isinstance(p[1], str)
                  and len(p[0]) > 2 and len(p[1]) > 2]
