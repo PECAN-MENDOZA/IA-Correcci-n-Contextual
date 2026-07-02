@@ -54,6 +54,13 @@ from application.training_queue import TrainingWorker
 from interfaces.api.routes import create_app
 import types
 import torch
+
+import os
+from main import build_app
+
+# Aseguramos que el rol sea API para los hilos web
+
+app = build_app()
 if not hasattr(torch.distributed, 'tensor'):
     torch.distributed.tensor = types.ModuleType('tensor')
 
@@ -68,7 +75,7 @@ USER_MODELS_DIR = "./models/users"
 LORAS_DIR       = "./models/loras"
 
 ROLE = os.environ.get("ROLE", "all")  # "api" | "worker" | "all"
-
+os.environ["ROLE"] = "api"
 
 def _build_redis_queue():
     from application.training_queue import RedisTrainingQueue
@@ -208,5 +215,13 @@ if __name__ == "__main__":
     else:
         app = build_app()
         port = int(os.environ.get("PORT", 8080))
-        print(f"[INFO] Servidor Waitress corriendo en el puerto {port} (ROLE={ROLE})...")
-        serve(app, host="0.0.0.0", port=port)
+        print(f"[INFO] Servidor local corriendo en el puerto {port} (ROLE={ROLE})...")
+
+        # Carga condicional: usa Waitress solo si está disponible (entorno local)
+        try:
+            from waitress import serve
+
+            serve(app, host="0.0.0.0", port=port)
+        except ImportError:
+            # Si no está Waitress, arranca con el servidor de desarrollo de Flask
+            app.run(host="0.0.0.0", port=port)
