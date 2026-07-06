@@ -25,6 +25,7 @@ class CorrectTextUseCase:
         user_models_dir: str = "./models/users",
         loras_dir: str = "./models/loras",
         user_memory=None,
+        enable_user_lora: bool = False,
     ):
         self._pipeline        = pipeline
         self._user_repo       = user_repo
@@ -34,6 +35,12 @@ class CorrectTextUseCase:
         self._base_model    = None
         self._base_tokenizer = None
         self._user_memory   = user_memory   # memoria por-usuario (Redis), tiene precedencia
+        # El LoRA por-usuario reemplaza TODO el pipeline por una generación T5
+        # estocástica que alucina y no es determinista (baja la calidad de 37/38
+        # a ~17/38 para alumnos con feedback). Desactivado: la personalización
+        # útil ya vive en la memoria Capa 0 (Redis). Reactivar solo si se corrige
+        # esa ruta (generación determinista + refinamiento sobre reglas+BETO).
+        self._enable_user_lora = enable_user_lora
 
     def set_base_model(self, model, tokenizer) -> None:
         """Inyecta el modelo base desde main.py para uso en LoRA."""
@@ -78,6 +85,12 @@ class CorrectTextUseCase:
         print(f"[Cache] Pipeline de '{student_id}' invalidado.")
 
     def _get_pipeline_for_user(self, student_id: str) -> CorrectionPipeline:
+        # FIX (reporte degradación LoRA): el LoRA/legacy por-usuario degrada la
+        # calidad y no es determinista. Salvo que se reactive explícitamente,
+        # todos los alumnos usan el pipeline base completo (reglas+BETO+gramática+T5).
+        if not self._enable_user_lora:
+            return self._pipeline
+
         if student_id in self._user_pipelines:
             return self._user_pipelines[student_id]
 

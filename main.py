@@ -80,6 +80,13 @@ ROLE = os.environ.get("ROLE", "all")  # "api" | "worker" | "all"
 # el pipeline. Se puede desactivar con ENABLE_T5=false si hiciera falta.
 ENABLE_T5 = os.environ.get("ENABLE_T5", "true").lower() in ("1", "true", "yes")
 
+# LoRA/fine-tuning por-usuario. Desactivado: la ruta de inferencia por-usuario
+# reemplazaba todo el pipeline por una generación T5 estocástica que alucina y
+# baja la calidad (37/38 -> ~17/38 para alumnos con feedback). La personalización
+# útil vive ahora en la memoria Capa 0 (Redis). Con esto apagado, tampoco se
+# encolan entrenamientos (no se gasta GPU/disco en adaptadores sin usar).
+ENABLE_USER_LORA = os.environ.get("ENABLE_USER_LORA", "false").lower() in ("1", "true", "yes")
+
 def _build_redis_queue():
     from application.training_queue import RedisTrainingQueue
     try:
@@ -131,47 +138,49 @@ def build_app():
         user_models_dir=USER_MODELS_DIR,
         loras_dir=LORAS_DIR,
         user_memory=user_memory,
+        enable_user_lora=ENABLE_USER_LORA,
     )
 
     if t5_model and t5_tokenizer:
         correct_uc.set_base_model(t5_model, t5_tokenizer)
 
     if ROLE == "api":
-        # Sin TrainingWorker local: solo empuja tareas a la cola Redis
-        # compartida con el/los proceso(s) ROLE=worker.
-        queue_backend = _build_redis_queue()
+        # Solo se encola entrenamiento si el LoRA por-usuario está habilitado
+        # (desactivado por defecto, ver ENABLE_USER_LORA).
+        queue_backend = _build_redis_queue() if ENABLE_USER_LORA else None
         feedback_uc = SaveFeedbackUseCase(
             user_repo=user_repo,
-            training_worker=queue_backend,  # solo necesita .enqueue(), duck-typed
+            training_worker=queue_backend,  # None => no encola entrenamiento
             pipeline=pipeline,
             correct_use_case=correct_uc,
             user_memory=user_memory,
         )
-        print("[INFO] ROLE=api — inferencia únicamente, encolando a Redis.")
+        print(f"[INFO] ROLE=api — inferencia. LoRA por-usuario: "
+              f"{'ON' if ENABLE_USER_LORA else 'OFF'}.")
         return create_app(correct_uc, feedback_uc)
 
     # ROLE == "all" (comportamiento original: un solo proceso hace todo)
     training_worker = None
-    try:
-        from application.use_cases.train_model import TrainUserModelUseCase
-        from infrastructure.ml.t5_model import T5SpanishTokenizer
+    if ENABLE_USER_LORA:
+        try:
+            from application.use_cases.train_model import TrainUserModelUseCase
+            from infrastructure.ml.t5_model import T5SpanishTokenizer
 
-        tokenizer_global = t5_tokenizer if t5_tokenizer else T5SpanishTokenizer()
+            tokenizer_global = t5_tokenizer if t5_tokenizer else T5SpanishTokenizer()
 
-        train_user_uc = TrainUserModelUseCase(
-            user_repo=user_repo,
-            tokenizer=tokenizer_global,
-            base_model_dir=T5_MODEL_DIR,
-            loras_dir=LORAS_DIR,
-        )
+            train_user_uc = TrainUserModelUseCase(
+                user_repo=user_repo,
+                tokenizer=tokenizer_global,
+                base_model_dir=T5_MODEL_DIR,
+                loras_dir=LORAS_DIR,
+            )
 
-        training_worker = TrainingWorker(
-            train_fn=train_user_uc.execute,
-            on_train_end=correct_uc.invalidate_user_cache,
-        )
-
-    except Exception as exc:
-        print(f"[WARN] TrainingWorker desactivado: {exc}")
+            training_worker = TrainingWorker(
+                train_fn=train_user_uc.execute,
+                on_train_end=correct_uc.invalidate_user_cache,
+            )
+        except Exception as exc:
+            print(f"[WARN] TrainingWorker desactivado: {exc}")
 
     feedback_uc = SaveFeedbackUseCase(
         user_repo=user_repo,
@@ -190,6 +199,15 @@ def run_worker():
     inferencia. Solo carga lo necesario para entrenar y consume la
     cola Redis compartida. Bloquea el proceso indefinidamente.
     """
+    if not ENABLE_USER_LORA:
+        # LoRA por-usuario desactivado: el worker no entrena. Queda en reposo
+        # (sin cargar el modelo) para no gastar recursos; el contenedor sigue
+        # vivo para no entrar en bucle de reinicio de docker-compose.
+        import time
+        print("[INFO] ROLE=worker — LoRA por-usuario OFF. Worker en reposo.")
+        while True:
+            time.sleep(3600)
+
     from application.use_cases.train_model import TrainUserModelUseCase
     from infrastructure.ml.t5_model import T5SpanishTokenizer
 
