@@ -23,6 +23,9 @@ reports/
 data/users/
 data/*_history.csv
 
+# Carpeta de trabajo / notas temporales (no versionar)
+TEMPORALES/
+
 # Sistema
 .DS_Store
 Thumbs.db
