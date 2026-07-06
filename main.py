@@ -74,12 +74,11 @@ LORAS_DIR       = "./models/loras"
 
 ROLE = os.environ.get("ROLE", "all")  # "api" | "worker" | "all"
 
-# El checkpoint T5 actual (models/t5_correction) está divergido: genera texto
-# repetitivo sin sentido ("julio julio julio..."), por lo que hoy solo aporta
-# ruido y latencia. Se desactiva por defecto y la corrección se apoya en las
-# reglas + la desambiguación contextual con BETO. Reactivar con ENABLE_T5=true
-# una vez reentrenado (LR más bajo + datos limpios). Ver capa 0.5 del pipeline.
-ENABLE_T5 = os.environ.get("ENABLE_T5", "false").lower() in ("1", "true", "yes")
+# models/t5_correction contiene el modelo base + adaptador LoRA de concordancia
+# (fusionado), reentrenado correctamente. Actúa como capa 4 de refinamiento
+# gramatical (sujeto-verbo) sobre reglas+BETO, con guardas anti-alucinación en
+# el pipeline. Se puede desactivar con ENABLE_T5=false si hiciera falta.
+ENABLE_T5 = os.environ.get("ENABLE_T5", "true").lower() in ("1", "true", "yes")
 
 def _build_redis_queue():
     from application.training_queue import RedisTrainingQueue

@@ -241,11 +241,10 @@ class T5CorrectionModel:
                     input_ids,
                     attention_mask=attention_mask,
                     max_new_tokens=MAX_TARGET_LEN,
-                    num_return_sequences=num_returns,
-                    do_sample=True,
-                    temperature=0.7,
-                    top_p=0.9,
-                    repetition_penalty=1.1,
+                    num_beams=4,
+                    num_return_sequences=min(num_returns, 4),
+                    do_sample=False,
+                    early_stopping=True,
                 )
         return [tokenizer.decode(out, skip_special=True).strip() for out in outputs]
 

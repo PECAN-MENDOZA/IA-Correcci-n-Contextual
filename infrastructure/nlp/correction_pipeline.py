@@ -24,7 +24,7 @@ MANUAL_CORRECTIONS = {
     # Abreviaturas de chat/disgrafía (se corrigen antes de la guarda de ≤2 letras)
     "qe":     "que",    "q":      "que",      "porqe":  "porque",
     "xq":     "porque", "pq":     "porque",   "tb":     "también",
-    "tmb":    "también",
+    "tmb":    "también", "i":     "y",        "mui":    "muy",
 }
 
 # Palabras con acento que SymSpell no debe tocar
@@ -315,35 +315,41 @@ class CorrectionPipeline:
         # --- CAPA 3: Corrección gramatical por reglas (haber impersonal, gustar, número) ---
         base_corrected = correct_grammar(base_corrected)
 
-        # --- CAPA 4: Corrección Gramatical con T5 (End-to-End) ---
+        # --- CAPA 4: Refinamiento gramatical con T5 (concordancia sujeto-verbo) ---
+        # T5 (adaptador LoRA de concordancia) actúa sobre el texto ya corregido por
+        # reglas+BETO. Con guardas para no alucinar (ver _refine_with_model).
         if self._seq2seq and self._tokenizer:
             try:
-                generated = self._seq2seq.generate_corrections(
-                    base_corrected, self._tokenizer, num_returns=3
-                )
-                final = []
-
-                for g in generated:
-                    if not g:
-                        continue
-
-                    # Filtro de longitud razonable
-                    base_len = len(base_corrected.split())
-                    cand_len = len(g.split())
-                    if base_len == 0 or not (0.6 <= cand_len / base_len <= 1.5):
-                        continue
-
-                    if not any(g.lower().strip() == f.lower().strip() for f in final):
-                        final.append(g)
-
-                # Incluir la corrección simbólica base por si T5 falló por completo
-                if not any(base_corrected.lower().strip() == f.lower().strip() for f in final):
-                    final.append(base_corrected)
-
-                return final[:2]
-
+                refined = self._refine_with_model(base_corrected)
+                if refined != base_corrected:
+                    return [refined, base_corrected]   # refinado primero, base como alternativa
             except Exception as e:
-                print(f"[WARN] Error en T5 Seq2Seq: {e}")
+                print(f"[WARN] Refinamiento T5 falló: {e}")
 
         # Fallback: solo corrección simbólica
         return [base_corrected]
+
+    def _refine_with_model(self, text: str) -> str:
+        """
+        Pasa `text` (ya corregido por reglas+BETO) por T5 y acepta su salida solo
+        si es segura, para capturar la concordancia sujeto-verbo sin alucinar:
+          - filtro de longitud (0.6–1.5 del original),
+          - límite de palabras cambiadas (anti-alucinación),
+          - preserva la capitalización inicial del texto base.
+        """
+        generated = self._seq2seq.generate_corrections(text, self._tokenizer, num_returns=1)
+        g = generated[0].strip() if generated else ""
+        if not g:
+            return text
+
+        base_len, cand_len = len(text.split()), len(g.split())
+        if base_len == 0 or not (0.6 <= cand_len / base_len <= 1.5):
+            return text
+
+        changed = sum(1 for a, b in zip(text.split(), g.split()) if a != b) + abs(cand_len - base_len)
+        if changed > max(3, base_len // 3):
+            return text
+
+        if text[:1].islower() and g[:1].isupper():
+            g = g[:1].lower() + g[1:]
+        return g
