@@ -20,7 +20,7 @@ MANUAL_CORRECTIONS = {
     "aiga":   "haya",   "haiga":  "haya",     "ay":     "hay",
     "dondis": "donde",  "dodes":  "donde",    "dondes": "donde",
     "be":     "de",     "ala":    "a la",     "delo":   "de lo",
-    "delos":  "de los", "dela":   "de la",
+    "delos":  "de los", "dela":   "de la",    "delas":  "de las",
 }
 
 # Palabras con acento que SymSpell no debe tocar
@@ -290,6 +290,9 @@ class CorrectionPipeline:
                 if suggestions and suggestions[0].term != lower:
                     best = match_case(core, self._phonetic.restore_accent(suggestions[0].term))
 
+            # Restauración de ñ (nino->niño, manana->mañana). Seguro para todas las
+            # palabras: solo actúa sobre las que están en enye_dict (guarda 5x).
+            best = self._phonetic.restore_enye(best)
             result.append(pref + best + suff)
 
         base_corrected = " ".join(result)

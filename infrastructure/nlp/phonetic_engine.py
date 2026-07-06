@@ -74,6 +74,7 @@ class PhoneticEngine:
         self.word_freqs:         dict = {}
         self.phonetic_dict:      dict = {}
         self.accent_dict:        dict = {}
+        self.enye_dict:          dict = {}   # forma con 'n' -> forma con 'ñ' (nino->niño)
         self.homophone_dict:     dict = {}   # sonido -> [palabras reales, por frecuencia desc]
         self._build_indexes()
 
@@ -100,6 +101,19 @@ class PhoneticEngine:
                     if not existing or freq > self.word_freqs.get(existing, 0):
                         self.accent_dict[unaccented] = word
 
+            # Restauración de ñ: mapear la forma con 'n' -> forma con 'ñ' cuando
+            # esta domina (nino->niño, ano->año, manana->mañana). La guarda 5x
+            # evita romper pares válidos donde la forma con 'n' es la común
+            # (una/uña, pena/peña, mano/maño): en esos casos NO se mapea.
+            if "ñ" in word:
+                de_enye = word.replace("ñ", "n")
+                if de_enye != word:
+                    freq_plain = self.word_freqs.get(de_enye, 0)
+                    if freq > freq_plain * 5:
+                        existing = self.enye_dict.get(de_enye)
+                        if not existing or freq > self.word_freqs.get(existing, 0):
+                            self.enye_dict[de_enye] = word
+
         # Índice de homófonos: sonido fonético -> palabras reales que lo comparten,
         # ordenadas por frecuencia descendente. Alimenta al juez de contexto (BETO),
         # que elige entre estos candidatos el más coherente con la frase
@@ -117,6 +131,11 @@ class PhoneticEngine:
     def restore_accent(self, word: str) -> str:
         lower    = word.lower()
         restored = self.accent_dict.get(lower, lower)
+        return match_case(word, restored)
+
+    def restore_enye(self, word: str) -> str:
+        """Restaura la ñ cuando la forma con 'n' es un error dominante (nino->niño)."""
+        restored = self.enye_dict.get(word.lower(), word.lower())
         return match_case(word, restored)
 
     def phonetic_lookup(self, word: str) -> str:

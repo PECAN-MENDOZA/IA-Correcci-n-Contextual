@@ -93,6 +93,20 @@ _PLURAL_DET = _QUANTIFIERS | {
 }
 _CLITICS = {"me", "te", "le", "nos", "os", "les"}
 
+# 4-6. Tilde diacrítica y auxiliares monosílabos.
+# BETO NO sirve aquí: su probabilidad favorece la forma SIN tilde (más común en
+# corpus), así que se resuelve con marcos sintácticos de alta precisión.
+_PREPS = {"a", "para", "de", "por", "con", "sin", "hacia", "hasta", "sobre",
+          "entre", "ante", "segun"}
+# "se" -> "sé" (verbo saber) solo ante interrogativo/negación; NUNCA ante clítico
+# (evita el falso "no se lo dije" -> "sé lo", que sí es pronombre).
+_SE_PREV = {"no", "yo", "ya"}
+_SE_NEXT = {"que", "si", "donde", "como", "cuando", "cuanto", "nada", "nadie",
+            "quien", "por"}
+# "mi" -> "mí" (pronombre) tras preposición y ante clítico o fin de frase
+# ("a mí me gustan", "es para mí"); NO ante sustantivo ("a mi casa").
+_MI_NEXT = _CLITICS | {"mismo", "misma"}
+
 
 def correct_grammar(text: str) -> str:
     """Aplica las reglas gramaticales sobre `text` y devuelve la frase corregida."""
@@ -124,6 +138,24 @@ def correct_grammar(text: str) -> str:
             nxt_norm = _norm(nxt)
             if nxt_norm and nxt_norm not in _QUANT_STOP and not re.search(r"[sx]$", nxt_norm):
                 tokens[i + 1] = _reword(nxt, _pluralize(_clean(nxt)))
+
+        prev = _norm(tokens[i - 1]) if i > 0 else ""
+        nxt  = _norm(next_content(i))
+
+        # 4. mí (pronombre) tras preposición, ante clítico o fin de frase
+        if low == "mi" and prev in _PREPS and (nxt in _MI_NEXT or nxt == ""):
+            tokens[i] = _reword(tok, "mí")
+            continue
+
+        # 5. sé (verbo saber) ante interrogativo/negación (no ante clítico)
+        if low == "se" and prev in _SE_PREV and nxt in _SE_NEXT:
+            tokens[i] = _reword(tok, "sé")
+            continue
+
+        # 6. he (auxiliar): "e" + participio -> "he" ("e comido" -> "he comido")
+        if low == "e" and _is_verb_chain(next_content(i)):
+            tokens[i] = _reword(tok, "he")
+            continue
 
     return " ".join(tokens)
 
