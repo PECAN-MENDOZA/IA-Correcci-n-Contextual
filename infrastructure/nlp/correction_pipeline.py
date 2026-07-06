@@ -31,6 +31,18 @@ _PUNCT_RE    = re.compile(r'^([^\wáéíóúüñÁÉÍÓÚÜÑ]*)(.*?)([^\wáé�
 # sin confundir frases distintas.
 _MEMORY_SIMILARITY_THRESHOLD = 0.82
 
+# Márgenes (en log-prob de BETO) que el mejor candidato debe superar a la
+# palabra original para que la pasada de desambiguación la sobrescriba.
+# Calibrados contra la batería de test_modelo.py:
+#   - Variante SOLO-ACENTO (esta/está, compre/compré): barata y segura → bajo.
+#   - HOMÓFONO de palabras distintas (tubo/tuvo, boy/voy): arriesgado; solo se
+#     acepta cuando BETO está segurísimo (evita el falso tuvo→tubo) → alto.
+#   - MONOSÍLABO diacrítico (el/él, se/sé): altísima frecuencia base → muy
+#     conservador para no corromper artículos/preposiciones correctos.
+_MARGIN_ACCENT    = 0.5
+_MARGIN_HOMOPHONE = 5.0
+_MARGIN_MONO      = 3.0
+
 
 def _has_accent(word: str) -> bool:
     return bool(_ACCENTED_RE.search(word))
@@ -143,6 +155,63 @@ class CorrectionPipeline:
         return None
 
     # ------------------------------------------------------------------
+    # Desambiguación contextual (BETO)
+    # ------------------------------------------------------------------
+
+    def _disambiguate_context(self, sentence: str) -> str:
+        """
+        Pasada palabra-a-palabra: para cada término con homófonos/variantes de
+        acento reales, deja que BETO elija el más coherente con la frase.
+        Solo sobrescribe si la mejora en log-prob supera el margen del tipo de
+        cambio (acento / homófono / monosílabo). Es idempotente y greedy:
+        cada decisión usa como contexto las decisiones ya tomadas a su izquierda.
+        """
+        tokens = sentence.split()
+        cores, affixes = [], []
+        for tok in tokens:
+            m = _PUNCT_RE.match(tok)
+            if m:
+                affixes.append((m.group(1), m.group(3)))
+                cores.append(m.group(2))
+            else:
+                affixes.append(("", ""))
+                cores.append(tok)
+
+        for i, core in enumerate(cores):
+            if len(core) < 2:
+                continue
+
+            lower = core.lower()
+            candidates = self._phonetic.homophone_candidates(lower)
+            # La palabra original siempre compite consigo misma (permite "no tocar").
+            candidates = list(dict.fromkeys([lower] + candidates))
+            if len(candidates) < 2:
+                continue
+
+            pref, suff  = affixes[i]
+            cand_tokens = [pref + match_case(core, c) + suff for c in candidates]
+            scored      = self._judge.score_candidates(tokens, i, cand_tokens)
+
+            best, best_score = scored[0]
+            current       = tokens[i]
+            current_score = dict(scored).get(current, best_score)
+            if best == current:
+                continue
+
+            best_core = _PUNCT_RE.match(best).group(2).lower()
+            if len(lower) <= 2:
+                margin = _MARGIN_MONO
+            elif _strip_accents(best_core) == _strip_accents(lower):
+                margin = _MARGIN_ACCENT
+            else:
+                margin = _MARGIN_HOMOPHONE
+
+            if (best_score - current_score) >= margin:
+                tokens[i] = best
+
+        return " ".join(tokens)
+
+    # ------------------------------------------------------------------
     # Pipeline principal
     # ------------------------------------------------------------------
 
@@ -223,6 +292,16 @@ class CorrectionPipeline:
             result.append(pref + best + suff)
 
         base_corrected = " ".join(result)
+
+        # --- CAPA 0.5: Desambiguación contextual con BETO (homófonos y tildes) ---
+        # Las reglas anteriores no distinguen palabras válidas que solo el contexto
+        # separa (esta/está, boy/voy, tubo/tuvo). BETO puntúa cada alternativa
+        # según el resto de la frase y elige la más coherente.
+        if self._judge is not None:
+            try:
+                base_corrected = self._disambiguate_context(base_corrected)
+            except Exception as e:
+                print(f"[WARN] Desambiguación contextual (BETO) falló: {e}")
 
         # --- CAPA 3: Corrección Gramatical con T5 (End-to-End) ---
         if self._seq2seq and self._tokenizer:

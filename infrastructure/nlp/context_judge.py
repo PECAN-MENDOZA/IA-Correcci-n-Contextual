@@ -34,6 +34,55 @@ class ContextJudge:
         """Mantiene compatibilidad con el pipeline original usando rank_top_k_candidates."""
         return self.rank_top_k_candidates(context_words, target_index, candidates, k=1)[0]
 
+    def score_candidates(
+            self,
+            context_words: List[str],
+            target_index: int,
+            candidates: List[str],
+    ) -> List[tuple]:
+        """
+        Puntúa cada candidato por su log-probabilidad MEDIA bajo BETO (MLM) en
+        la ranura `target_index`, enmascarando sus subtokens uno a uno
+        (pseudo-log-likelihood). Devuelve [(candidato, logprob)] de mejor a peor.
+
+        A diferencia de rank_top_k_candidates (que compara la loss de la frase
+        COMPLETA), este método evalúa SOLO los tokens del candidato. Eso lo hace
+        robusto ante typos raros / [UNK]: una palabra basura obtiene log-prob
+        baja en vez de bajar artificialmente la loss promedio de la frase.
+        """
+        mask_id = self._tokenizer.mask_token_id
+        cls_id  = self._tokenizer.cls_token_id
+        sep_id  = self._tokenizer.sep_token_id
+        scored  = []
+
+        for cand in candidates:
+            ids  = [cls_id]
+            span = None
+            for j, word in enumerate(context_words):
+                piece = cand if j == target_index else word
+                sub = self._tokenizer.encode(piece, add_special_tokens=False)
+                if not sub:
+                    sub = [self._tokenizer.unk_token_id]
+                if j == target_index:
+                    span = (len(ids), len(ids) + len(sub))
+                ids.extend(sub)
+            ids.append(sep_id)
+
+            tensor = torch.tensor([ids], device=self._device)
+            total  = 0.0
+            for pos in range(span[0], span[1]):
+                masked = tensor.clone()
+                target = tensor[0, pos].item()
+                masked[0, pos] = mask_id
+                with torch.no_grad():
+                    logits = self._model(masked).logits[0, pos]
+                total += torch.log_softmax(logits, dim=-1)[target].item()
+
+            scored.append((cand, total / max(span[1] - span[0], 1)))
+
+        scored.sort(key=lambda cs: -cs[1])
+        return scored
+
     def rank_top_k_candidates(
             self,
             context_words: List[str],

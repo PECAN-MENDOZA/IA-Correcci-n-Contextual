@@ -13,6 +13,13 @@ DICT_URL   = (
     "master/content/2016/es/es_50k.txt"
 )
 
+# Piso de frecuencia para candidatos de homófonos. El corpus es_50k contiene
+# typos residuales (qúe, veer, mamma, kalle, pajaros...) todos con frecuencia
+# < ~4000; los descartamos para no ofrecerlos como candidatos. Las palabras
+# reales de baja frecuencia que sí queremos (compré=11943, bebe=18473,
+# calle=54996) quedan por encima de este umbral.
+HOMOPHONE_FREQ_FLOOR = 5000
+
 
 def _ensure_dict() -> None:
     if not os.path.exists(DICT_PATH):
@@ -67,6 +74,7 @@ class PhoneticEngine:
         self.word_freqs:         dict = {}
         self.phonetic_dict:      dict = {}
         self.accent_dict:        dict = {}
+        self.homophone_dict:     dict = {}   # sonido -> [palabras reales, por frecuencia desc]
         self._build_indexes()
 
     def _build_indexes(self) -> None:
@@ -92,6 +100,20 @@ class PhoneticEngine:
                     if not existing or freq > self.word_freqs.get(existing, 0):
                         self.accent_dict[unaccented] = word
 
+        # Índice de homófonos: sonido fonético -> palabras reales que lo comparten,
+        # ordenadas por frecuencia descendente. Alimenta al juez de contexto (BETO),
+        # que elige entre estos candidatos el más coherente con la frase
+        # (esta/está, tubo/tuvo, boy/voy, kaye/calle). Incluye palabras de 2 letras
+        # para cubrir monosílabos con tilde diacrítica (el/él, se/sé, tu/tú).
+        buckets: dict = {}
+        for word, freq in self.word_freqs.items():
+            if len(word) < 2:
+                continue
+            buckets.setdefault(to_phonetic(word), []).append((word, freq))
+        for sound, words in buckets.items():
+            words.sort(key=lambda wf: -wf[1])
+            self.homophone_dict[sound] = [w for w, _ in words]
+
     def restore_accent(self, word: str) -> str:
         lower    = word.lower()
         restored = self.accent_dict.get(lower, lower)
@@ -100,3 +122,15 @@ class PhoneticEngine:
     def phonetic_lookup(self, word: str) -> str:
         """Devuelve la palabra de mayor frecuencia para el sonido dado (o la misma si no hay)."""
         return self.phonetic_dict.get(to_phonetic(word.lower()), word)
+
+    def homophone_candidates(self, word: str, max_candidates: int = 6) -> list:
+        """
+        Palabras reales que suenan igual que `word` (mismo sonido fonético),
+        ordenadas por frecuencia y filtradas por HOMOPHONE_FREQ_FLOOR para
+        descartar typos del corpus. Devuelve la lista para que el juez de
+        contexto (BETO) desambigüe según el resto de la frase.
+        """
+        sound = to_phonetic(word.lower())
+        group = self.homophone_dict.get(sound, [])
+        out = [w for w in group if self.word_freqs.get(w, 0) >= HOMOPHONE_FREQ_FLOOR]
+        return out[:max_candidates]

@@ -74,6 +74,13 @@ LORAS_DIR       = "./models/loras"
 
 ROLE = os.environ.get("ROLE", "all")  # "api" | "worker" | "all"
 
+# El checkpoint T5 actual (models/t5_correction) está divergido: genera texto
+# repetitivo sin sentido ("julio julio julio..."), por lo que hoy solo aporta
+# ruido y latencia. Se desactiva por defecto y la corrección se apoya en las
+# reglas + la desambiguación contextual con BETO. Reactivar con ENABLE_T5=true
+# una vez reentrenado (LR más bajo + datos limpios). Ver capa 0.5 del pipeline.
+ENABLE_T5 = os.environ.get("ENABLE_T5", "false").lower() in ("1", "true", "yes")
+
 def _build_redis_queue():
     from application.training_queue import RedisTrainingQueue
     try:
@@ -96,7 +103,9 @@ def build_app():
 
     t5_model     = None
     t5_tokenizer = None
-    if Path(T5_MODEL_DIR).exists() and (Path(T5_MODEL_DIR) / "config.json").exists():
+    if not ENABLE_T5:
+        print("[INFO] T5 desactivado (ENABLE_T5=false). Corrección vía reglas + BETO.")
+    elif Path(T5_MODEL_DIR).exists() and (Path(T5_MODEL_DIR) / "config.json").exists():
         try:
             from infrastructure.ml.t5_model import T5CorrectionModel, T5SpanishTokenizer
             t5_tokenizer = T5SpanishTokenizer(model_name=T5_MODEL_DIR)
