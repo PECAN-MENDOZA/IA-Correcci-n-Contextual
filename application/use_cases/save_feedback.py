@@ -29,18 +29,25 @@ class SaveFeedbackUseCase:
         training_worker: TrainingWorker = None,   # ← reemplaza train_user_use_case
         pipeline=None,
         correct_use_case=None,
+        user_memory=None,
     ):
         self._user_repo       = user_repo
         self._training_worker = training_worker
         self._pipeline        = pipeline
         self._correct_use_case = correct_use_case
+        self._user_memory     = user_memory   # memoria por-usuario (Redis)
 
     def execute(self, request: AiFeedbackRequestDTO) -> None:
         if not (request.accepted and request.selectedSuggestion):
             return
 
-        # 1. Memoria simbólica instantánea
-        if self._pipeline is not None:
+        # 1. Memoria del usuario (Redis, por-usuario, compartida entre réplicas):
+        #    instantánea y con precedencia en la próxima corrección de este alumno.
+        if self._user_memory is not None:
+            self._user_memory.remember(
+                request.studentId, request.originalText, request.selectedSuggestion
+            )
+        elif self._pipeline is not None:
             self._pipeline.remember(request.originalText, request.selectedSuggestion)
 
         # 2. Persistencia en CSV

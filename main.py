@@ -100,6 +100,11 @@ def build_app():
     phonetic_engine = PhoneticEngine()
     context_judge   = ContextJudge()
 
+    # Memoria de correcciones validadas, por-usuario y compartida entre réplicas
+    # (Redis). Tiene precedencia sobre el pipeline en cada corrección.
+    from infrastructure.persistence.user_memory import build_user_memory
+    user_memory = build_user_memory()
+
     t5_model     = None
     t5_tokenizer = None
     if not ENABLE_T5:
@@ -125,6 +130,7 @@ def build_app():
         user_repo=user_repo,
         user_models_dir=USER_MODELS_DIR,
         loras_dir=LORAS_DIR,
+        user_memory=user_memory,
     )
 
     if t5_model and t5_tokenizer:
@@ -139,6 +145,7 @@ def build_app():
             training_worker=queue_backend,  # solo necesita .enqueue(), duck-typed
             pipeline=pipeline,
             correct_use_case=correct_uc,
+            user_memory=user_memory,
         )
         print("[INFO] ROLE=api — inferencia únicamente, encolando a Redis.")
         return create_app(correct_uc, feedback_uc)
@@ -171,6 +178,7 @@ def build_app():
         training_worker=training_worker,
         pipeline=pipeline,
         correct_use_case=correct_uc,
+        user_memory=user_memory,
     )
 
     return create_app(correct_uc, feedback_uc)

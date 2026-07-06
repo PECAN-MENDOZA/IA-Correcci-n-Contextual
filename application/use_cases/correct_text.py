@@ -24,6 +24,7 @@ class CorrectTextUseCase:
         user_repo: IUserHistoryRepository,
         user_models_dir: str = "./models/users",
         loras_dir: str = "./models/loras",
+        user_memory=None,
     ):
         self._pipeline        = pipeline
         self._user_repo       = user_repo
@@ -32,6 +33,7 @@ class CorrectTextUseCase:
         self._user_pipelines: dict[str, CorrectionPipeline] = {}
         self._base_model    = None
         self._base_tokenizer = None
+        self._user_memory   = user_memory   # memoria por-usuario (Redis), tiene precedencia
 
     def set_base_model(self, model, tokenizer) -> None:
         """Inyecta el modelo base desde main.py para uso en LoRA."""
@@ -40,6 +42,25 @@ class CorrectTextUseCase:
 
     def execute(self, request: AiCorrectionRequestDTO) -> AiCorrectionResponseDTO:
         start_time  = time.time()
+
+        # CAPA 0 — Memoria del usuario (Redis, por-usuario, compartida entre
+        # réplicas). Si este alumno ya validó esta frase (o una muy similar),
+        # devolvemos su corrección directamente. Tiene precedencia sobre todo el
+        # pipeline (incluido el LoRA por usuario) y es instantánea (~0 ms).
+        if self._user_memory is not None:
+            try:
+                remembered = self._user_memory.lookup(request.studentId, request.originalText)
+            except Exception as exc:
+                remembered = None
+                print(f"[WARN] Lookup de memoria de usuario falló: {exc}")
+            if remembered:
+                return AiCorrectionResponseDTO(
+                    studentId=request.studentId,
+                    correctedText=remembered,
+                    processingTimeMs=int((time.time() - start_time) * 1000),
+                    suggestions=[remembered],
+                )
+
         user_vocab  = self._user_repo.get_user_vocabulary(request.studentId)
         pipeline    = self._get_pipeline_for_user(request.studentId)
         suggestions = pipeline.correct(request.originalText, user_vocab)
