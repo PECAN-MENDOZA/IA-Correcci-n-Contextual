@@ -10,6 +10,7 @@ from symspellpy import SymSpell, Verbosity
 
 from infrastructure.nlp.phonetic_engine import PhoneticEngine, match_case, to_phonetic, DICT_PATH
 from infrastructure.nlp.context_judge import ContextJudge
+from infrastructure.nlp.grammar_rules import correct_grammar
 from infrastructure.ml.t5_model import T5CorrectionModel, T5SpanishTokenizer
 
 MANUAL_CORRECTIONS = {
@@ -303,7 +304,10 @@ class CorrectionPipeline:
             except Exception as e:
                 print(f"[WARN] Desambiguación contextual (BETO) falló: {e}")
 
-        # --- CAPA 3: Corrección Gramatical con T5 (End-to-End) ---
+        # --- CAPA 3: Corrección gramatical por reglas (haber impersonal, gustar, número) ---
+        base_corrected = correct_grammar(base_corrected)
+
+        # --- CAPA 4: Corrección Gramatical con T5 (End-to-End) ---
         if self._seq2seq and self._tokenizer:
             try:
                 generated = self._seq2seq.generate_corrections(
