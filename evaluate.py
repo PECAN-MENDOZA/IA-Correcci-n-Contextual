@@ -133,6 +133,13 @@ def main():
     ap.add_argument("--show-fails", action="store_true", help="imprime cada caso fallido")
     args = ap.parse_args()
 
+    # Consola robusta (evita UnicodeEncodeError con los caracteres de caja en
+    # terminales Windows con codificación cp1252).
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
     rows = load_dataset(args.dataset)
     label = "HTTP " + args.url if args.source == "http" else \
             ("reglas (sin BETO)" if args.no_beto else "reglas + BETO")
