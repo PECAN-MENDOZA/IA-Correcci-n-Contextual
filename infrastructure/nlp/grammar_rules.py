@@ -107,6 +107,36 @@ _SE_NEXT = {"que", "si", "donde", "como", "cuando", "cuanto", "nada", "nadie",
 # ("a mí me gustan", "es para mí"); NO ante sustantivo ("a mi casa").
 _MI_NEXT = _CLITICS | {"mismo", "misma"}
 
+# "el"/"tu" -> "él"/"tú" (pronombre sujeto) cuando les sigue un VERBO. El
+# artículo "el" y el posesivo "tu" van siempre ante sustantivo. Conjuntos
+# curados (sin tilde, se comparan con _norm) de formas verbales frecuentes.
+# Para "el" se usan solo formas de 3ª persona que NO coinciden con sustantivos
+# comunes (se evitan "canto/juego/trabajo/jugó", que serían nombres).
+_EL_VERBS = {
+    "es", "era", "fue", "sera", "esta", "estaba", "estuvo", "tiene", "tenia",
+    "tuvo", "hace", "hacia", "hizo", "va", "iba", "viene", "vino", "venia",
+    "dice", "dijo", "decia", "sabe", "sabia", "supo", "quiere", "queria",
+    "quiso", "puede", "podia", "pudo", "debe", "debia", "cree", "creia", "ve",
+    "vio", "da", "dio", "llega", "come", "corre", "vive", "vivia", "habla",
+    "mira", "deja", "sale", "entra", "gana", "lee", "canta", "baila", "duerme",
+    "siente", "parece", "necesita", "busca", "encuentra", "lleva", "trae",
+    "pone", "piensa", "conoce", "entiende", "prefiere",
+}
+# Para "tú": 2ª persona. Presente termina en -s (tienes, sabes, eres...) y el
+# posesivo "tu" nunca precede palabra en -s (sería "tus"), así que "tu"+(-s) es
+# pronombre; se excluyen sustantivos singulares en -s (crisis, país, tos...).
+_TU_VERBS = {
+    "eres", "fuiste", "estuviste", "tuviste", "hiciste", "viste", "diste",
+    "dijiste", "quisiste", "pudiste", "supiste", "comiste", "corriste",
+    "viviste", "hablaste", "llegaste", "jugaste", "trabajaste", "pensaste",
+    "saliste", "ganaste", "leiste", "escribiste", "miraste",
+}
+_S_NOUN_STOP = {
+    "crisis", "analisis", "tos", "virus", "atlas", "lunes", "martes",
+    "miercoles", "jueves", "viernes", "mes", "pais", "interes", "gas",
+    "sintesis", "dosis", "iris", "bilis",
+}
+
 
 def correct_grammar(text: str) -> str:
     """Aplica las reglas gramaticales sobre `text` y devuelve la frase corregida."""
@@ -155,6 +185,20 @@ def correct_grammar(text: str) -> str:
         # 6. he (auxiliar): "e" + participio -> "he" ("e comido" -> "he comido")
         if low == "e" and _is_verb_chain(next_content(i)):
             tokens[i] = _reword(tok, "he")
+            continue
+
+        # 7. él (pronombre) vs el (artículo): "el" + verbo -> "él"
+        if low == "el" and nxt in _EL_VERBS:
+            tokens[i] = _reword(tok, "él")
+            continue
+
+        # 8. tú (pronombre) vs tu (posesivo): "tu" + verbo (o palabra en -s
+        #    que no sea sustantivo singular) -> "tú"
+        if low == "tu" and (
+            nxt in _TU_VERBS
+            or (len(nxt) > 2 and nxt.endswith("s") and nxt not in _S_NOUN_STOP)
+        ):
+            tokens[i] = _reword(tok, "tú")
             continue
 
     return " ".join(tokens)

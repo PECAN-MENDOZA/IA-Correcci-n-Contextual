@@ -21,6 +21,10 @@ MANUAL_CORRECTIONS = {
     "dondis": "donde",  "dodes":  "donde",    "dondes": "donde",
     "be":     "de",     "ala":    "a la",     "delo":   "de lo",
     "delos":  "de los", "dela":   "de la",    "delas":  "de las",
+    # Abreviaturas de chat/disgrafía (se corrigen antes de la guarda de ≤2 letras)
+    "qe":     "que",    "q":      "que",      "porqe":  "porque",
+    "xq":     "porque", "pq":     "porque",   "tb":     "también",
+    "tmb":    "también",
 }
 
 # Palabras con acento que SymSpell no debe tocar
@@ -290,9 +294,10 @@ class CorrectionPipeline:
                 if suggestions and suggestions[0].term != lower:
                     best = match_case(core, self._phonetic.restore_accent(suggestions[0].term))
 
-            # Restauración de ñ (nino->niño, manana->mañana). Seguro para todas las
-            # palabras: solo actúa sobre las que están en enye_dict (guarda 5x).
-            best = self._phonetic.restore_enye(best)
+            # Restauración de ñ (nino->niño, manana->mañana) y luego del acento
+            # (compañia->compañía): ambas son seguras (solo actúan sobre entradas
+            # de enye_dict/accent_dict, con guarda 5x).
+            best = self._phonetic.restore_accent(self._phonetic.restore_enye(best))
             result.append(pref + best + suff)
 
         base_corrected = " ".join(result)

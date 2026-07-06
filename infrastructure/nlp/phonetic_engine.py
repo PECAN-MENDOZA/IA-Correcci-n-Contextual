@@ -37,8 +37,10 @@ def remove_accents(word: str) -> str:
 def to_phonetic(word: str) -> str:
     """Convierte una palabra española a su representación fonética canónica."""
     w = remove_accents(word)
-    w = w.replace("q","p").replace("w","m").replace("h","").replace("v","b")
-    w = w.replace("ll","y").replace("qu","k").replace("z","s")
+    # 'q' representa siempre el sonido /k/ (que, qui, y errores tipo 'qe'->'que').
+    # Antes se hacía q->p (bug): dejaba "parque" y "parqe" con fonéticas distintas.
+    w = w.replace("w","m").replace("h","").replace("v","b")
+    w = w.replace("ll","y").replace("qu","k").replace("q","k").replace("z","s")
     w = w.replace("ce","se").replace("ci","si")
     w = w.replace("ca","ka").replace("co","ko").replace("cu","ku")
     w = w.replace("ge","je").replace("gi","ji")
