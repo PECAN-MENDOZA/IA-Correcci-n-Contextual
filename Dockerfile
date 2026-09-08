@@ -5,8 +5,9 @@ WORKDIR /app
 COPY requirements.txt .
 
 # 1. PyTorch con CUDA 12.8 (soporta Blackwell/RTX 50-series, sm_120)
-RUN pip install --no-cache-dir torch==2.9.1+cu128 \
-    --index-url https://download.pytorch.org/whl/cu128
+RUN pip install --no-cache-dir torch==2.6.0  \
+    --index-url https://download.pytorch.org/whl/cpu
+
 
 # 2. Dependencias (incluye peft para LoRA)
 RUN pip install --no-cache-dir -r requirements.txt
