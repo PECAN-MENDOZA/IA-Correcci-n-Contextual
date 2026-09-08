@@ -1,0 +1,19 @@
+# Set de test de CONCORDANCIA sujeto-verbo (categoria|entrada|esperado).
+# Vocabulario/estructura distintos de las plantillas de entrenamiento -> mide
+# generalización. 'correcto' = ya correcto, no debe cambiar.
+categoria|entrada|esperado
+concordancia|los perros que vi fue muy grandes|los perros que vi fueron muy grandes
+concordancia|las casas que compré era muy caras|las casas que compré eran muy caras
+concordancia|los niños del colegio está cansados|los niños del colegio están cansados
+concordancia|mis amigos no vino a la fiesta|mis amigos no vinieron a la fiesta
+concordancia|las flores que me regalaste es hermosas|las flores que me regalaste son hermosas
+concordancia|los jugadores del equipo ganó el partido|los jugadores del equipo ganaron el partido
+concordancia|estos libros tiene muchas páginas|estos libros tienen muchas páginas
+concordancia|varios estudiantes llegó tarde|varios estudiantes llegaron tarde
+concordancia|ellos siempre come juntos|ellos siempre comen juntos
+concordancia|los árboles del parque da sombra|los árboles del parque dan sombra
+concordancia|dos gatos negros duerme en el sofá|dos gatos negros duermen en el sofá
+concordancia|las personas mayores necesita ayuda|las personas mayores necesitan ayuda
+correcto|los niños juegan en el parque|los niños juegan en el parque
+correcto|las casas son grandes y bonitas|las casas son grandes y bonitas
+correcto|mi perro come su comida todos los días|mi perro come su comida todos los días

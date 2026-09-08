@@ -1,0 +1,51 @@
+# Set de evaluación "gold" para el sistema de corrección (dislexia / disgrafía).
+# Formato:  categoria|entrada|esperado     (delimitador '|', líneas con # se ignoran)
+# Cada categoría aísla un tipo de error; 'gold' corrige SOLO ese tipo (+ tildes obvias),
+# salvo la categoría 'gramatica', que es territorio de T5 y hoy marca la brecha base.
+categoria|entrada|esperado
+# ── tilde: acento no ambiguo, restaurable por reglas/frecuencia ──
+tilde|el sabado voy al medico|el sábado voy al médico
+tilde|me duele el estomago y la cabeza|me duele el estómago y la cabeza
+tilde|el arbol tiene muchos pajaros|el árbol tiene muchos pájaros
+tilde|el examen de matematicas fue dificil|el examen de matemáticas fue difícil
+tilde|jugamos futbol en el jardin|jugamos fútbol en el jardín
+tilde|el raton corrio muy rapido|el ratón corrió muy rápido
+# ── tilde_ctx: acento que solo el contexto decide (BETO) ──
+tilde_ctx|el libro esta en la mesa|el libro está en la mesa
+tilde_ctx|quiero mas comida por favor|quiero más comida por favor
+tilde_ctx|ayer compre un helado de fresa|ayer compré un helado de fresa
+tilde_ctx|el bebe llora mucho de noche|el bebé llora mucho de noche
+tilde_ctx|no se donde deje mi cuaderno|no sé donde dejé mi cuaderno
+tilde_ctx|el arbol esta lleno de hojas|el árbol está lleno de hojas
+# ── homofono: palabras que suenan igual (b/v, h, ll/y) ──
+homofono|boy a la escuela manana|voy a la escuela mañana
+homofono|ay un perro en la calle|hay un perro en la calle
+homofono|la baca comio pasto verde|la vaca comió pasto verde
+homofono|no e comido nada oy|no he comido nada hoy
+homofono|el tubo que tuvo el problema esta roto|el tubo que tuvo el problema está roto
+# ── fonetica: sustitución fonética (dise->dice, komio->comió) ──
+fonetica|mi mama dise la berdad|mi mamá dice la verdad
+fonetica|el niño komio toda la sopa|el niño comió toda la sopa
+fonetica|la jirafa tiene el kuello largo|la jirafa tiene el cuello largo
+fonetica|yebo mi mochila a la eskuela|llevo mi mochila a la escuela
+fonetica|aser la tarea es importante|hacer la tarea es importante
+fonetica|el sapato esta susio|el zapato está sucio
+# ── disgrafia: palabras muy deformadas / correcciones manuales ──
+disgrafia|los uillos juegan en el parque|los niños juegan en el parque
+disgrafia|bibimos en una ciubab grande|vivimos en una ciudad grande
+disgrafia|oy ise toda mi tarea|hoy hice toda mi tarea
+# ── separacion: palabras pegadas o mal separadas ──
+separacion|fui ala tienda delos dulces|fui a la tienda de los dulces
+separacion|delas frutas prefiero la mansana|de las frutas prefiero la manzana
+separacion|ala salida nos vemos|a la salida nos vemos
+# ── gramatica: concordancia / verbos (territorio T5, brecha base) ──
+gramatica|habian muchos niños en el parque|había muchos niños en el parque
+gramatica|los perros que vi fue muy grandes|los perros que vi fueron muy grandes
+gramatica|a mi me gusta los dulces|a mí me gustan los dulces
+gramatica|ella tiene dos gato y un perro|ella tiene dos gatos y un perro
+# ── correcto: sin errores (control anti-sobrecorrección) ──
+correcto|la casa es grande y bonita|la casa es grande y bonita
+correcto|mañana vamos a jugar al parque|mañana vamos a jugar al parque
+correcto|mi perro come su comida todos los días|mi perro come su comida todos los días
+correcto|ella tuvo un buen examen ayer|ella tuvo un buen examen ayer
+correcto|el tubo de agua se rompió anoche|el tubo de agua se rompió anoche

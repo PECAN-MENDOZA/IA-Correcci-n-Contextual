@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Entornos virtuales
+venv/
+.venv/
+env/
+
+# Modelos y adaptadores (viven en el servidor / se generan al entrenar)
+models/
+*.safetensors
+*.bin
+*.pt
+*.pth
+
+# Salidas de evaluación / reportes
+reports/
+
+# Datos de usuario generados en runtime
+data/users/
+data/*_history.csv
+
+# Carpeta de trabajo / notas temporales (no versionar)
+TEMPORALES/
+
+# Sistema
+.DS_Store
+Thumbs.db

@@ -1,0 +1,201 @@
+"""
+application/use_cases/train_model.py  v3 → v5 (LoRA + entrenamiento paralelo)
+
+TrainUserModelUseCase ahora usa LoRA en vez de copytree.
+- ANTES: shutil.copytree(base → users/user_id/)  ~1 GB por usuario
+- AHORA: base_model.train_lora(loras/user_id/)   ~10-50 MB por usuario
+
+El modelo base se carga una sola vez (lazy singleton) y se reutiliza.
+
+IMPORTANTE (v5): self._base_model (ver _get_base_model) es una instancia
+de T5CorrectionModel PROPIA de este use case, cargada desde disco de
+forma independiente de la instancia que usa CorrectTextUseCase para
+inferencia (esa se crea aparte en main.py y se inyecta al pipeline).
+Al ser dos objetos distintos en memoria, TrainingWorker ya no necesita
+gpu_lock para envolver el entrenamiento (ver application/training_queue.py):
+entrenar este modelo no toca ni bloquea el modelo que están usando las
+correcciones de otros usuarios en simultáneo. El costo es VRAM extra
+(el modelo base queda duplicado una vez que se dispara el primer
+entrenamiento), asumible para un T5-base en un entorno de tesis.
+"""
+import random
+import shutil
+from typing import Optional, Callable
+from pathlib import Path
+import torch
+
+from domain.repositories.interfaces import IUserHistoryRepository
+from infrastructure.ml.t5_model import T5SpanishTokenizer, T5CorrectionModel
+from infrastructure.ml.dataset_loader import DatasetLoaderService
+
+
+class TrainBaseModelUseCase:
+    """Entrena el modelo base con datos del corpus. Sin cambios."""
+
+    def __init__(self, loader: DatasetLoaderService, tokenizer: T5SpanishTokenizer, model: T5CorrectionModel):
+        self._loader    = loader
+        self._tokenizer = tokenizer
+        self._model     = model
+
+    def execute(self, epochs: int = 3, batch_size: int = 4) -> None:
+        print("=== INICIANDO ENTRENAMIENTO BASE (T5) ===")
+        pairs = self._loader.load_pairs()
+        if not pairs:
+            print("[ERROR] Sin pares de entrenamiento.")
+            return
+        self._loader.save_csv(pairs, "./data/training_pairs.csv")
+        train_dataset = self._tokenizer.build_hf_dataset(pairs)
+        self._model.train(
+            train_dataset=train_dataset,
+            eval_dataset=None,
+            tokenizer=self._tokenizer,
+            epochs=epochs,
+            batch_size=batch_size,
+        )
+        print("=== ENTRENAMIENTO COMPLETADO ===")
+
+
+class TrainUserModelUseCase:
+    """
+    Fine-tuning LoRA personalizado por usuario.
+    Solo guarda el adaptador (~10-50 MB) en models/loras/<user_id>/.
+    El modelo base NO se copia ni se modifica.
+    Requiere: pip install peft
+    """
+
+    # Antes: 1. Con 1-5 pares y r=8 el adaptador memoriza literalmente esos
+    # ejemplos (overfitting real) en vez de generalizar. Con menos de este
+    # umbral, la Capa 0 (memoria exacta en Redis, ver user_memory.lookup())
+    # ya cubre la personalización sin arriesgar una generación T5 errática.
+    MIN_PAIRS = 20
+
+    # Fracción de pares reservada como holdout para el canario de calidad
+    # post-entrenamiento (_passes_quality_check). NO se usa para entrenar.
+    HOLDOUT_RATIO = 0.2
+    MIN_HOLDOUT   = 3
+
+    def __init__(
+        self,
+        user_repo: IUserHistoryRepository,
+        tokenizer: T5SpanishTokenizer,
+        base_model_dir: str = "./models/t5_correction",
+        loras_dir: str = "./models/loras",
+        on_train_end: Optional[Callable[[str], None]] = None,
+    ):
+        self._user_repo      = user_repo
+        self._tokenizer      = tokenizer
+        self._base_model_dir = base_model_dir
+        self._loras_dir      = Path(loras_dir)
+        self._on_train_end   = on_train_end
+        self._base_model: Optional[T5CorrectionModel] = None
+
+    def _get_base_model(self) -> T5CorrectionModel:
+        """Carga el modelo base solo la primera vez (lazy singleton)."""
+        if self._base_model is None:
+            base = Path(self._base_model_dir)
+            if not T5CorrectionModel.validate_dir(base):
+                raise RuntimeError(
+                    f"Modelo base no válido en {self._base_model_dir}. "
+                    "Ejecuta train.py primero."
+                )
+            print(f"[LoRA] Cargando modelo base desde {self._base_model_dir}...")
+            self._base_model = T5CorrectionModel(save_dir=self._base_model_dir)
+            print("[LoRA] Modelo base listo.")
+        return self._base_model
+
+    def execute(self, user_id: str, epochs: int = 3) -> None:
+        pairs = self._user_repo.get_user_pairs(user_id)
+        pairs = [p for p in pairs if isinstance(p[0], str) and isinstance(p[1], str)
+                 and len(p[0]) > 2 and len(p[1]) > 2]
+
+        if len(pairs) < self.MIN_PAIRS:
+            print(f"[WARN] Sin pares válidos para '{user_id}'.")
+            return
+
+        lora_dir = self._loras_dir / user_id
+
+        # Holdout de validación: se aparta ANTES de entrenar y no participa
+        # en el fine-tuning. Solo se usa después para el canario de calidad
+        # (_passes_quality_check). Semilla fija para que el split sea
+        # reproducible entre corridas con el mismo historial.
+        shuffled    = pairs[:]
+        random.Random(42).shuffle(shuffled)
+        holdout_n     = max(self.MIN_HOLDOUT, int(len(shuffled) * self.HOLDOUT_RATIO))
+        holdout_pairs = shuffled[:holdout_n]
+        train_pairs   = shuffled[holdout_n:]
+
+        print(f"[LoRA] Entrenando adaptador para '{user_id}' con {len(train_pairs)} "
+              f"par(es) ({len(holdout_pairs)} reservados para el canario de calidad).")
+        print(f"[LoRA] Destino: {lora_dir}  (~10-50 MB, modelo base intacto)")
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+        try:
+            base_model    = self._get_base_model()
+            train_dataset = self._tokenizer.build_hf_dataset(train_pairs)
+            base_model.train_lora(
+                train_dataset=train_dataset,
+                tokenizer=self._tokenizer,
+                lora_save_dir=lora_dir,
+                epochs=epochs,
+                batch_size=1,
+                # LR conservador (antes 3e-4): con datasets de 20-100 pares
+                # por usuario, 3e-4 es agresivo y degrada la fluidez del
+                # modelo base. Ver DEFAULT_LORA_LR en t5_model.py.
+            )
+
+            if not self._passes_quality_check(base_model, lora_dir, holdout_pairs):
+                print(f"[RECHAZADO] El adaptador de '{user_id}' no pasó el canario "
+                      f"de calidad (generó salidas fuera de rango en el holdout). "
+                      f"Se descarta y el usuario sigue con el pipeline base.")
+                shutil.rmtree(lora_dir, ignore_errors=True)
+                return
+
+            print(f"[OK] Adaptador LoRA guardado en: {lora_dir}")
+        except Exception as exc:
+            tmp_dir = lora_dir.parent / f"{lora_dir.name}_tmp"
+            if tmp_dir.exists():
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+            raise exc
+
+    def _passes_quality_check(
+        self, base_model: T5CorrectionModel, lora_dir: Path,
+        holdout_pairs: list, min_pass_ratio: float = 0.7,
+    ) -> bool:
+        """
+        Canario anti-alucinación post-entrenamiento. Genera con el adaptador
+        recién entrenado sobre `holdout_pairs` (que NO se usaron para
+        entrenar) y rechaza el adaptador si la mayoría de las salidas son
+        gibberish: vacías, con longitud absurda, o con demasiadas palabras
+        cambiadas respecto al texto de entrada (misma guarda que usa
+        generate_with_lora/_LoraProxyPipeline en producción, is_safe_refinement).
+
+        OJO: esto NO mide "acierto" contra la corrección esperada -- eso
+        requeriría una métrica más cara tipo evaluate.py -- solo detecta un
+        adaptador roto (que colapsó, que repite tokens, que devuelve vacío)
+        antes de que llegue a producción.
+        """
+        if not holdout_pairs:
+            return True
+
+        from infrastructure.ml.t5_model import generate_with_lora
+        from infrastructure.ml.guards import is_safe_refinement
+
+        passed = 0
+        for original, _expected in holdout_pairs:
+            try:
+                outputs   = generate_with_lora(
+                    base_model, self._tokenizer, lora_dir, original, num_returns=1
+                )
+                candidate = outputs[0].strip() if outputs else ""
+            except Exception as exc:
+                print(f"[Canario] Falló generando para {original!r}: {exc}")
+                candidate = ""
+            if is_safe_refinement(original, candidate):
+                passed += 1
+
+        ratio = passed / len(holdout_pairs)
+        print(f"[Canario] {passed}/{len(holdout_pairs)} ({ratio:.0%}) "
+              f"salidas del holdout pasaron el chequeo de calidad.")
+        return ratio >= min_pass_ratio

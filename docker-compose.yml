@@ -1,0 +1,110 @@
+version: "3.8"
+
+# ─────────────────────────────────────────────────────────────────────────
+# Arquitectura multi-proceso en 1 sola VM (docker compose up --build)
+#
+#   nginx (puerto 80, host)
+#     └── balancea round-robin entre api1, api2, api3 (rol=api, solo inferencia)
+#   worker (rol=worker, único, entrena consumiendo Redis)
+#   redis  (cola compartida entre api1/api2/api3 → worker)
+#
+# api1/api2/api3 y worker comparten dos volúmenes en disco:
+#   - ./models  (modelo base T5 + adaptadores LoRA por usuario)
+#   - ./data    (historial CSV de feedback por usuario)
+# así el worker escribe el LoRA y las réplicas api lo leen al toque,
+# sin necesitar avisarse entre sí (generate_with_lora lee de disco
+# en cada corrección).
+#
+# GPU: los bloques `deploy.resources.reservations.devices` de abajo
+# requieren NVIDIA Container Toolkit instalado en el host. Si tu VM
+# no tiene GPU, coméntalos y el proyecto cae a CPU (más lento, pero
+# funciona igual para probar el flujo).
+# ─────────────────────────────────────────────────────────────────────────
+
+x-gpu: &gpu
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: 1
+            capabilities: [gpu]
+
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # No se publica al host: solo lo usan worker/api dentro de la red interna.
+
+  worker:
+    build: .
+    restart: unless-stopped
+    environment:
+      ROLE: worker
+      REDIS_URL: redis://redis:6379/0
+      ENABLE_USER_LORA: "true"
+    command: python worker.py
+    volumes:
+      - ./models:/app/models
+      - ./data:/app/data
+    depends_on:
+      - redis
+    <<: *gpu
+
+  api1:
+    build: .
+    restart: unless-stopped
+    environment:
+      ROLE: api
+      PORT: "8080"
+      REDIS_URL: redis://redis:6379/0
+      ENABLE_USER_LORA: "true"
+
+    volumes:
+      - ./models:/app/models
+      - ./data:/app/data
+    depends_on:
+      - redis
+    <<: *gpu
+
+  api2:
+    build: .
+    restart: unless-stopped
+    environment:
+      ROLE: api
+      PORT: "8080"
+      REDIS_URL: redis://redis:6379/0
+      ENABLE_USER_LORA: "true"
+    volumes:
+      - ./models:/app/models
+      - ./data:/app/data
+    depends_on:
+      - redis
+    <<: *gpu
+
+  api3:
+    build: .
+    restart: unless-stopped
+    environment:
+      ROLE: api
+      PORT: "8080"
+      REDIS_URL: redis://redis:6379/0
+      ENABLE_USER_LORA: "true"
+    volumes:
+      - ./models:/app/models
+      - ./data:/app/data
+    depends_on:
+      - redis
+    <<: *gpu
+
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api1
+      - api2
+      - api3
