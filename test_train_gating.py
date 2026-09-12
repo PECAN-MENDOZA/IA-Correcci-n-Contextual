@@ -29,9 +29,12 @@ def _install_stubs() -> None:
     torch_stub.Tensor = type("Tensor", (), {})
     distributed_stub = types.ModuleType("torch.distributed")
     distributed_stub.is_initialized = lambda: True
+    distributed_tensor_stub = types.ModuleType("torch.distributed.tensor")
+    distributed_stub.tensor = distributed_tensor_stub
     torch_stub.distributed = distributed_stub
     sys.modules["torch"] = torch_stub
     sys.modules["torch.distributed"] = distributed_stub
+    sys.modules["torch.distributed.tensor"] = distributed_tensor_stub
 
     transformers_stub = types.ModuleType("transformers")
     for name in (
@@ -45,6 +48,10 @@ def _install_stubs() -> None:
     datasets_stub.Dataset = type("Dataset", (), {})
     datasets_stub.load_dataset = lambda *a, **k: None
     sys.modules["datasets"] = datasets_stub
+
+    pandas_stub = types.ModuleType("pandas")
+    pandas_stub.DataFrame = type("DataFrame", (), {})
+    sys.modules["pandas"] = pandas_stub
 
 
 class _NullCtx:

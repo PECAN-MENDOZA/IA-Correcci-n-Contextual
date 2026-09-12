@@ -15,7 +15,7 @@ from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, GenerationConfig
 from peft import PeftModel
 
 BASE    = os.environ.get("BASE", "vgaraujov/t5-base-spanish")
-ADAPTER = os.environ.get("ADAPTER", "models/grammar_lora_v2")
+ADAPTER = os.environ.get("ADAPTER", "models/grammar_lora")
 OUT     = os.environ.get("OUT", "models/t5_correction")
 TMP     = OUT + "_new"
 
