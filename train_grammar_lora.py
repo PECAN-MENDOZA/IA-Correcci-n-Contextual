@@ -16,6 +16,7 @@ import os
 import random
 
 import torch
+import torch.distributed.tensor  # Expose torch.distributed.tensor for PEFT on Windows.
 from torch.optim import AdamW
 from torch.utils.data import DataLoader, Dataset
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, GenerationConfig

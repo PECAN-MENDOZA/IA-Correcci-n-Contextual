@@ -1,11 +1,11 @@
 """
 scripts/merge_grammar_lora.py
-Fusiona el adaptador LoRA de concordancia (models/grammar_lora_v2) con el base
+Fusiona el adaptador LoRA de concordancia (models/grammar_lora) con el base
 LIMPIO vgaraujov/t5-base-spanish y lo guarda como modelo completo en
 models/t5_correction (reemplaza el checkpoint divergido, con backup). Así el
 pipeline lo carga como capa 4 sin descargas ni adaptadores en runtime.
 
-Ejecutar dentro de un contenedor con torch+peft y el volumen ./models montado:
+Ejecutar desde la raíz del repositorio con el entorno Python preparado:
     python scripts/merge_grammar_lora.py
 """
 import os
