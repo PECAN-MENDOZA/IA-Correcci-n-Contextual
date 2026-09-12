@@ -11,6 +11,7 @@ Ejecutar desde la raíz del repositorio con el entorno Python preparado:
 import os
 import shutil
 
+import torch.distributed.tensor  # Expose torch.distributed.tensor for PEFT on Windows.
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, GenerationConfig
 from peft import PeftModel
 
