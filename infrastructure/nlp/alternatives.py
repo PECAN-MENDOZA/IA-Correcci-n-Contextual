@@ -7,10 +7,13 @@ caso común el resultado es una sola recomendación (o refinado + base, como
 siempre). Sin torch: solo difflib/re/unicodedata y la guarda
 `is_safe_refinement`.
 
-La RECOMENDADA (posición 0) se decide exactamente como antes de la Task 5:
-el primer beam seguro de T5 (`is_safe_refinement` respecto a la base) o, si
-no hay ninguno, el texto base (reglas + BETO). Nunca la cambia esta capa: solo
-se le aplica (a). Una segunda lectura de BETO jamás es la recomendada.
+La RECOMENDADA (posición 0) es el beam 1 de T5 si es seguro (como antes de la
+Task 5: `is_safe_refinement` respecto a la base y, desde el cierre, la guarda
+léxica `is_lexically_plausible_refinement`, ambas en `_refine_with_model`) y
+en cualquier otro caso (sin T5, T5 falla, beam 1 inseguro o implausible) el
+texto base (reglas + BETO). Nunca se salta al beam 2 para recomendar. Esta
+capa no la cambia: solo se le aplica (a). Una segunda lectura de BETO jamás
+es la recomendada.
 
 Las OPCIONES EXTRA (la base cuando difiere de la recomendada, los demás beams
 y las segundas lecturas de BETO) se ofrecen únicamente si:
@@ -73,10 +76,20 @@ THRESHOLDS = {
     # dif 1.4 no se sobrescriben pero tampoco son empate; esta/está con dif
     # 0.13 sí.
     "betoTieMargin": 0.3,
+    # Capa 4: guarda léxica del beam RECOMENDADO
+    # (`guards.is_lexically_plausible_refinement`): cada reemplazo 1:1 de
+    # palabra respecto a la base debe tener similitud sin tildes ≥ este valor.
+    # Más bajo que (e) para no perder concordancias irregulares: bloquea
+    # pasto→maíz 0.22 · pasto→carne 0.20 · verde→rojo 0.22 · voy→iré 0.0;
+    # conserva es→son 0.40 · hizo→hicieron 0.50 · viene→vengan 0.55 ·
+    # fue→fueron 0.67. No es una guarda general contra sustituciones léxicas:
+    # luego→después 0.33, tuvo→provocó 0.36 y ayer→anoche 0.40 pasan.
+    "recommendedMinSimilarity": 0.3,
 }
 
-SCORE_MARGIN        = THRESHOLDS["scoreMargin"]
-MIN_SPAN_SIMILARITY = THRESHOLDS["minSpanSimilarity"]
+SCORE_MARGIN               = THRESHOLDS["scoreMargin"]
+MIN_SPAN_SIMILARITY        = THRESHOLDS["minSpanSimilarity"]
+RECOMMENDED_MIN_SIMILARITY = THRESHOLDS["recommendedMinSimilarity"]
 
 _TRAILING_PUNCT_RE = re.compile(r"[\s.!?…]+$")
 _SPACES_RE         = re.compile(r"\s+")
@@ -183,24 +196,30 @@ def select_alternatives(
     max_options: int = 3,
     score_margin: float = 1.0,
     recommended: str | None = None,
+    variants: list[tuple[str, float]] | None = None,
 ) -> list[str]:
     """
     Devuelve la lista final de sugerencias (recomendada primero, nunca vacía)
-    a partir de `candidates` = [(texto, score)] (beams de T5 en orden de
-    generación y segundas lecturas de BETO).
+    a partir de `candidates` = [(texto, score)] (los beams de T5 en orden de
+    generación) y `variants` = [(texto, score)] (las segundas lecturas de
+    BETO, ya ancladas a la escala de los beams).
 
     `recommended` es el texto que ocupa la posición 0. Si es None se deduce
-    como antes de la Task 5: el primer candidato seguro respecto a la base
-    (`is_safe_refinement`), en el orden dado, o la base si no hay ninguno.
-    El llamador (`CorrectionPipeline.correct`) lo pasa explícito con el primer
-    beam seguro de T5, de modo que una variante de BETO nunca se recomienda.
-    Si la recomendada no es segura, se recomienda la base.
+    con la misma regla que el pipeline: `candidates[0]` (el beam 1) si es
+    seguro respecto a la base (`is_safe_refinement`) y, si no lo es o no hay
+    beams, la base; nunca el beam 2. Las `variants` no participan en esa
+    deducción: una segunda lectura de BETO jamás ocupa la posición 0 (solo
+    puede ir detrás, como cualquier extra). `CorrectionPipeline.correct` pasa
+    `recommended` explícito (beam 1 seguro y léxicamente plausible, o base).
+    Si la recomendada explícita no es segura, se recomienda la base.
     """
     base   = base_text.strip()
     scored = [(str(t).strip(), float(s)) for t, s in candidates if t and str(t).strip()]
+    scored += [(str(t).strip(), float(s)) for t, s in (variants or []) if t and str(t).strip()]
 
     if recommended is None:
-        recommended = next((t for t, _ in scored if is_safe_refinement(base, t)), base)
+        first = str(candidates[0][0] or "").strip() if candidates else ""
+        recommended = first if first and is_safe_refinement(base, first) else base
     else:
         recommended = str(recommended).strip()
         if not recommended or not is_safe_refinement(base, recommended):

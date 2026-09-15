@@ -25,8 +25,16 @@ compro pan en la tienda,2,homófono ambiguo: compro (presente) / compró (pasado
 termino el trabajo hoy,2,homófono ambiguo: termino / terminó
 llego tarde a clase,2,homófono ambiguo: llego / llegó
 hablo con mi profesor,2,homófono ambiguo: hablo / habló
-a mi me gusta que ellos juega mucho,2-3,indicativo/subjuntivo: juegan / jueguen (+ base con mí)
-espero que ellos viene mañana,2-3,indicativo/subjuntivo: vengan / vienen
-es posible que ellos llega tarde,2-3,indicativo/subjuntivo: lleguen / llegan
-ojala que nosotros gana el partido,2-3,indicativo/subjuntivo: ganemos / ganamos (+ ojalá)
-me alegra que ustedes esta aqui,2-3,indicativo/subjuntivo: estén / están (+ aquí)
+se callo de repente,2,homófono ambiguo: se calló (dejó de hablar) / se cayó (al suelo)
+la tasa es muy alta,2,homófono ambiguo: la tasa (porcentaje) / la taza (vasija)
+a mi me gusta que ellos juega mucho,2-3,indicativo/subjuntivo: juegan (coloquial) / jueguen (+ base con mí)
+espero que ellos viene mañana,1,clara: solo subjuntivo (vengan); vienen tras espero que es un error y no otra lectura
+es posible que ellos llega tarde,1,clara: solo subjuntivo (lleguen); llegan tras es posible que es un error
+ojala que nosotros gana el partido,1,clara: solo subjuntivo (ganemos); ganamos tras ojalá que es un error (+ ojalá)
+me alegra que ustedes esta aqui,1,clara: solo subjuntivo (estén); están tras me alegra que es un error (+ aquí)
+quizás ellos llega tarde,2,indicativo/subjuntivo: quizás admite ambos modos (llegan / lleguen)
+tal vez nosotros gana el partido,2,indicativo/subjuntivo: tal vez admite ambos modos (ganamos / ganemos)
+aunque ellos juega bien perdemos,2,indicativo/subjuntivo: aunque concesivo (juegan = hecho / jueguen = hipótesis)
+cuando ellos llega comemos,2,indicativo/subjuntivo: cuando temporal (llegan = habitual / lleguen = futuro)
+mientras ellos come nosotros descansamos,2,indicativo/subjuntivo: mientras temporal (comen = simultáneo / coman = futuro)
+no creo que ellos viene hoy,2,indicativo/subjuntivo: vengan (estándar) / vienen (indicativo asertivo coloquial tras no creo que)

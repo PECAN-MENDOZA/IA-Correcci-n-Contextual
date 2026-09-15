@@ -127,7 +127,7 @@ python -m pip install -r requirements.txt
 python main.py
 
 # Tests sin GPU ni modelo
-python -m unittest -v test_global_runtime test_alternatives test_evaluate_metrics test_versioning test_model_manifest
+python -m unittest -v test_global_runtime test_alternatives test_correction_layers test_evaluate_metrics test_versioning test_model_manifest
 python test_lora_guards.py
 
 # Evaluar el pipeline (ver sección "Evaluación"); --t5-dir añade el T5 global fusionado
@@ -301,16 +301,27 @@ Informes de desarrollo sobre `data/eval_gold.csv` (38 casos, GPU):
 
 ## Alternativas: hasta tres opciones solo cuando la oración es ambigua
 
-`suggestions[0]` es siempre la **recomendada** y se decide como antes de esta
-capa: el primer beam seguro de T5 (`is_safe_refinement` respecto al texto
-base) o, si no hay ninguno (sin T5, T5 falla, todos los beams inseguros), el
-texto base de reglas+BETO. La capa 5 nunca la cambia (`correctedText`,
-`evaluate.py` y TAS dependen de ella) y una segunda lectura de BETO jamás la
-ocupa. En el caso común hay una sola opción (o dos: refinado + base, como
-siempre); solo cuando el texto admite lecturas distintas se ofrecen hasta
-**tres**. La selección es pura (`infrastructure/nlp/alternatives.py`, sin
-torch) y recibe los 3 beams de T5 con su `sequences_scores`, las "segundas
-lecturas" de BETO y el texto base.
+`suggestions[0]` es siempre la **recomendada**: el beam 1 de T5 si es seguro
+y, en cualquier otro caso (sin T5, T5 falla, beam 1 inseguro o léxicamente
+implausible), el texto base de reglas+BETO. Nunca se salta al beam 2 para
+recomendar: si el mejor beam alucina, T5 no cuenta para esa frase (regla
+anterior a esta capa). "Seguro" son dos guardas sobre el beam 1
+(`infrastructure/ml/guards.py`): `is_safe_refinement` (cantidad: longitud
+0.6–1.5x, ≤ max(3, n/3) palabras cambiadas) y, desde el cierre de la Task 5,
+`is_lexically_plausible_refinement` (calidad: cada reemplazo 1:1 de palabra
+respecto a la base tiene similitud sin tildes ≥ `recommendedMinSimilarity =
+0.3`; bloquea sustituciones léxicas como `pasto→maíz` 0.22 o `voy→iré` 0.0 y
+conserva flexiones, incluso irregulares, como `es→son` 0.40, `hizo→hicieron`
+0.50, `viene→vengan` 0.55; inserciones, borrados y bloques 1:n no se juzgan).
+La capa 5 nunca cambia la recomendada (`correctedText`, `evaluate.py` y TAS
+dependen de ella) y una segunda lectura de BETO jamás la ocupa (van aparte,
+como `variants=`, y ni siquiera sin `recommended` explícito pueden deducirse
+como posición 0). En el caso común hay una sola opción (o dos: refinado +
+base, como siempre); solo cuando el texto admite lecturas distintas se
+ofrecen hasta **tres**. La selección es pura
+(`infrastructure/nlp/alternatives.py`, sin torch) y recibe los beams de T5
+con su `sequences_scores` (el beam 1 y los beams 2/3 que pasen
+`is_safe_refinement`), las "segundas lecturas" de BETO y el texto base.
 
 Una opción **extra** (la base cuando difiere de la recomendada, otro beam o
 una segunda lectura de BETO) se ofrece únicamente si:
@@ -340,36 +351,63 @@ de `maxFreqRatio = 20` veces más rara que la escrita no cuenta como
 ambigüedad (`hoy/holly`, `mis/miss`: la PLL media de BETO infla las palabras
 de varios subtokens).
 
-Los cuatro umbrales viven en `alternatives.THRESHOLDS`
+Los cinco umbrales viven en `alternatives.THRESHOLDS`
 (`{"scoreMargin": 0.3, "minSpanSimilarity": 0.6, "maxFreqRatio": 20,
-"betoTieMargin": 0.3}`), como constantes de código sin override por entorno:
-el mismo `modelVersion` se comporta igual en el servicio, en `evaluate.py` y
-en una ejecución manual, y el informe/manifiesto puede registrarlos tal cual.
-Se calibran con `data/ambiguity_calibration.csv` (31 frases etiquetadas:
-16 claras → 1 opción, 10 homófonos ambiguos → 2, 5 indicativo/subjuntivo →
-2–3) y `scripts/calibrate_alternatives.py`, que corre el pipeline real y
-resume precisión/recall de "ofrece ≥ 2 opciones" frente a la etiqueta
-(`--verbose --out` guarda beams y variantes para barrer umbrales offline con
-el selector puro):
+"betoTieMargin": 0.3, "recommendedMinSimilarity": 0.3}`), como constantes de
+código sin override por entorno: el mismo `modelVersion` se comporta igual en
+el servicio, en `evaluate.py` y en una ejecución manual, y el
+informe/manifiesto puede registrarlos tal cual. Se calibran con
+`data/ambiguity_calibration.csv` (39 frases etiquetadas lingüísticamente, no
+según lo que hace el modelo: 20 claras → 1 opción, 12 homófonos ambiguos →
+2, 7 con ambigüedad modal real → 2–3: `quizás`, `tal vez`, `aunque`,
+`cuando`, `mientras`, `no creo que` y `a mí me gusta que`; tras `espero
+que`, `es posible que`, `ojalá que` y `me alegra que` solo cabe el
+subjuntivo, así que esas frases se esperan con 1 opción) y
+`scripts/calibrate_alternatives.py`, que corre el pipeline real y resume
+precisión/recall de "ofrece ≥ 2 opciones" frente a la etiqueta (`--verbose
+--out` guarda la base, TODOS los beams crudos con el veredicto de las dos
+guardas del beam recomendado, los beams que llegan a la capa 5 y las
+variantes de BETO, para barrer umbrales y guardas offline con el selector
+puro):
 
 ```powershell
 $env:HF_HOME = "models\hf-cache"
 .venv\Scripts\python.exe scripts\calibrate_alternatives.py --verbose
 .venv\Scripts\python.exe -m unittest -v test_alternatives test_correction_layers   # reglas y capas con fakes, sin torch
+.venv\Scripts\python.exe test_lora_guards.py                                        # guardas del beam recomendado
 ```
 
-Última calibración (modelo fusionado, umbrales de arriba): 31 frases,
-15 ambiguas esperadas, 12 ofrecidas: TP 7 · FP 5 · FN 8 · TN 11 →
-precisión 0.58, recall 0.47, máximo 3 opciones. De los 5 FP, 2 son el par
-"refinado + base" de siempre (`sé que no vendrá hoy`, `porque ellos juegan
-mucho`) y 3 son un segundo beam a < 0.25 del mejor (`los niños juegan`,
-`ellos fueron`, `hola cómo estás`; en los dos primeros la alternativa es la
-corrección que el mejor beam no hizo). Los 8 FN son lecturas que ni T5 (gap
-0.5–1.1) ni BETO producen dentro de los márgenes (`esta/está tarde`,
-`si/sí`, `casa/caza`, `botar/votar`, `compro/compró`, `hablo/habló`) más
-`viene/vengan` (gap 0.05, similitud 0.545 < 0.6). Subir `scoreMargin` a 0.4
-ya admite la paráfrasis `botar→tirar`; bajar `minSpanSimilarity` a 0.5
-recupera solo `vengan` en este conjunto: no se cambió ningún umbral.
+Última calibración (modelo fusionado, umbrales de arriba): 39 frases,
+19 ambiguas esperadas, 14 ofrecidas: TP 6 · FP 8 · FN 13 · TN 12 →
+precisión 0.43, recall 0.32, F1 0.36, máximo 3 opciones (sobre las 31 frases
+originales re-etiquetadas: TP 4 · FP 8 · FN 7 · TN 12; el 0.58 / 0.47 del
+primer informe contaba como acierto cuatro subordinadas que solo admiten
+subjuntivo). Aciertos: `papá/Papa`, `termino/terminó/terminé`, `llego tarde
+a (la) clase`, `calló/callo`, `juegan/jueguen` (`a mí me gusta que…`) y
+`quizás… llega/llegan`. De los 8 FP, 2 son el par "refinado + base" de
+siempre (`sé que no vendrá hoy`, `porque ellos juegan mucho`), 3 son un
+segundo beam a < 0.25 del mejor (`los niños juegan`, `ellos fueron`, `hola
+cómo estás`; en los dos primeros la alternativa es la corrección que el
+mejor beam no hizo) y 3 son ruido flexivo en subordinadas de subjuntivo
+obligatorio (`es posible que… lleguen/llegan/llegue`, `ojalá… gane/gana`,
+`me alegra que… están/esta/está`): T5 no separa los modos con claridad.
+Los 13 FN son lecturas que ni T5 (gap 0.45–1.1, o ni siquiera generada:
+`lleguen`, `coman`, `taza`, `votar`) ni BETO producen dentro de los
+márgenes. Ningún umbral cambió (barrido offline con el selector puro sobre
+los internos guardados, que reproduce exactamente el pipeline en 0.3/0.6):
+`scoreMargin` 0.4 solo añade la paráfrasis `botar→tirar` (similitud 0.6,
+justo en el borde de (e)); 0.45 recupera además `tal vez… ganamos` (un TP
+real) y 0.6 ya admite `Mercado`, `la gente con` y `compré`; bajar
+`minSpanSimilarity` a 0.5 añade `vengan` (frase de subjuntivo obligatorio,
+FP) y `cuando él llega` (ellos→él). Una frase no decide un umbral. La guarda
+léxica no bloqueó ningún beam 1 en estas 39 frases (solo marca beams 2/3
+que (e) ya frenaba: `iré`, `acabo`, `10 años`, `con el profesor`); en
+`data/eval_gold.csv` quita el único FP léxico de reglas+BETO+T5
+(`pasto→maíz`): TP 54 · FP 1 · FN 0 → P 0.982, R 1.000, F0.5 0.985 (antes
+FP 2, P 0.964, F0.5 0.971). Observación abierta (capa 2.5, fuera de la Task
+5): en `quizás ellos llega tarde` BETO sobrescribe `quizás→quizas` (variante
+de tilde, dif > 0.5) y la base sin tilde aparece como segunda opción; T5
+restaura la tilde en la recomendada.
 
 Salida real del modelo fusionado (`test_alternatives.py` y
 `test_correction_layers.py` cubren las reglas y las capas con fakes):

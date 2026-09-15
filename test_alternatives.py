@@ -14,13 +14,45 @@ Uso:
     .venv\\Scripts\\python.exe -m unittest test_alternatives -v
 """
 import importlib
+import json
+import os
+import subprocess
 import sys
 import types
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from infrastructure.nlp import alternatives
 from infrastructure.nlp.alternatives import THRESHOLDS, select_alternatives
+
+_REPO_DIR = Path(__file__).resolve().parent
+_NO_TORCH_CHECK_ENV = "TESIS_NO_TORCH_CHECK_CHILD"
+
+
+def run_class_in_clean_process(module_name: str, class_name: str) -> dict:
+    """
+    Ejecuta la clase de test indicada en un intérprete nuevo y devuelve
+    {"ok": bool, "loaded": [módulos pesados presentes en sys.modules]}.
+    Así la comprobación "no se cargó torch" no depende del orden de los tests
+    del proceso actual (p. ej. `discover` con test_modelo.py antes).
+    """
+    code = (
+        "import os, sys, unittest, importlib, json\n"
+        f"mod = importlib.import_module({module_name!r})\n"
+        f"suite = unittest.defaultTestLoader.loadTestsFromTestCase(getattr(mod, {class_name!r}))\n"
+        "result = unittest.TextTestRunner(stream=open(os.devnull, 'w')).run(suite)\n"
+        "loaded = [h for h in ('torch', 'transformers', 'peft') if h in sys.modules]\n"
+        "print(json.dumps({'ok': result.wasSuccessful(), 'loaded': loaded}))\n"
+    )
+    proc = subprocess.run(
+        [sys.executable, "-c", code], cwd=str(_REPO_DIR),
+        env={**os.environ, _NO_TORCH_CHECK_ENV: "1"},
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+    if proc.returncode != 0 or not proc.stdout.strip():
+        raise AssertionError(f"el proceso hijo falló ({proc.returncode}):\n{proc.stderr[-2000:]}")
+    return json.loads(proc.stdout.strip().splitlines()[-1])
 
 
 class SelectAlternativesTests(unittest.TestCase):
@@ -84,7 +116,8 @@ class SelectAlternativesTests(unittest.TestCase):
     def test_beto_variant_is_never_recommended_without_t5(self):
         # Sin T5 (o con excepción de T5) la recomendada es la base aunque sea
         # igual al original; la variante empatada de BETO va detrás.
-        out = select_alternatives("esta bien", "esta bien", [("está bien", -0.13)],
+        out = select_alternatives("esta bien", "esta bien", [],
+                                  variants=[("está bien", -0.13)],
                                   score_margin=0.3, recommended="esta bien")
         self.assertEqual(out, ["esta bien", "está bien"])
         # Sin candidatos (juez ausente) solo queda la base.
@@ -92,6 +125,33 @@ class SelectAlternativesTests(unittest.TestCase):
         self.assertEqual(out, ["esta bien"])
         out = select_alternatives("esta bien", "esta bien", [], score_margin=0.3)
         self.assertEqual(out, ["esta bien"])
+
+    def test_variants_are_never_deduced_as_recommended(self):
+        # Sin `recommended` explícito, las segundas lecturas de BETO
+        # (`variants=`) no pueden ocupar la posición 0 aunque sean seguras y
+        # las únicas candidatas: la recomendada es la base.
+        out = select_alternatives("esta bien", "esta bien", [],
+                                  variants=[("está bien", -0.13)], score_margin=0.3)
+        self.assertEqual(out, ["esta bien", "está bien"])
+        # Con un beam, la recomendada es el beam; la variante sigue siendo una
+        # extra ordenada por su score anclado.
+        out = select_alternatives("esta bien", "esta bien", [("Esta bien.", -0.2)],
+                                  variants=[("está bien", -0.1)], score_margin=0.3)
+        self.assertEqual(out, ["Esta bien.", "está bien"])
+
+    def test_deduced_recommended_is_beam_one_if_safe_else_base(self):
+        # Sin `recommended`: la regla es "beam 1 si es seguro, si no la base";
+        # nunca se salta al beam 2 para recomendar. El beam 2 seguro puede
+        # ofrecerse detrás de la base como alternativa.
+        unsafe = "los niño juega y corre y salta y canta todos los días en el parque"
+        out = select_alternatives("los niño juega", "los niño juega",
+                                  [(unsafe, -0.1), ("los niños juegan", -0.2)], score_margin=0.3)
+        self.assertEqual(out[0], "los niño juega")
+        self.assertNotIn(unsafe, out)
+        self.assertEqual(out, ["los niño juega", "los niños juegan"])
+        out = select_alternatives("los niño juega", "los niño juega",
+                                  [("", -0.1), ("los niños juegan", -0.2)], score_margin=0.3)
+        self.assertEqual(out[0], "los niño juega")
 
     def test_explicit_recommended_that_is_unsafe_falls_back_to_base(self):
         out = select_alternatives("hoy fui al mercado", "hoy fui al mercado",
@@ -214,9 +274,11 @@ class SelectAlternativesTests(unittest.TestCase):
 
     def test_thresholds_are_exposed_as_code_constants(self):
         self.assertEqual(THRESHOLDS, {"scoreMargin": 0.3, "minSpanSimilarity": 0.6,
-                                      "maxFreqRatio": 20, "betoTieMargin": 0.3})
+                                      "maxFreqRatio": 20, "betoTieMargin": 0.3,
+                                      "recommendedMinSimilarity": 0.3})
         self.assertEqual(alternatives.MIN_SPAN_SIMILARITY, THRESHOLDS["minSpanSimilarity"])
         self.assertEqual(alternatives.SCORE_MARGIN, THRESHOLDS["scoreMargin"])
+        self.assertEqual(alternatives.RECOMMENDED_MIN_SIMILARITY, THRESHOLDS["recommendedMinSimilarity"])
 
     def test_edit_signature_keeps_accents_and_marks_insertions_and_deletions(self):
         sig = alternatives._edit_signature
@@ -308,8 +370,13 @@ class DisambiguateContextTests(unittest.TestCase):
         return pipe
 
     def test_no_torch_loaded(self):
-        for heavy in ("torch", "transformers"):
-            self.assertFalse(heavy in sys.modules, f"'{heavy}' se cargó en un test puro")
+        # Independiente del orden: esta clase entera (stubs + pipeline con
+        # juez falso) corre en un intérprete limpio y no debe cargar torch.
+        if os.environ.get(_NO_TORCH_CHECK_ENV):
+            self.skipTest("ya se está comprobando desde el proceso padre")
+        outcome = run_class_in_clean_process("test_alternatives", "DisambiguateContextTests")
+        self.assertTrue(outcome["ok"], "la clase falló en el proceso limpio")
+        self.assertEqual(outcome["loaded"], [], "módulos pesados cargados en un test puro")
 
     def test_pipeline_reads_thresholds_from_alternatives(self):
         self.assertEqual(self.mod._BETO_TIE_MARGIN, THRESHOLDS["betoTieMargin"])

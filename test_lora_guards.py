@@ -16,7 +16,7 @@ evaluate.py.
 """
 import sys
 
-from infrastructure.ml.guards import is_safe_refinement
+from infrastructure.ml.guards import is_lexically_plausible_refinement, is_safe_refinement
 
 
 def check(label: str, condition: bool) -> bool:
@@ -26,6 +26,10 @@ def check(label: str, condition: bool) -> bool:
 
 
 def main() -> int:
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")   # consola cp1252 de Windows
+    except Exception:
+        pass
     results = []
 
     # ── Casos que DEBEN aceptarse (variación conservadora) ──────────────
@@ -68,6 +72,54 @@ def main() -> int:
     results.append(check(
         "rechaza repetición degenerada (colapso típico de un LoRA roto)",
         not is_safe_refinement("hoy fui al mercado", "que que que que que que que que"),
+    ))
+
+    # ── Guarda léxica del beam recomendado (solo reemplazos 1:1) ─────────
+    # Una sustitución léxica (pasto→maíz 0.22, voy→iré 0.0) no es una
+    # corrección; una flexión (es→son 0.40, hizo→hicieron 0.50,
+    # viene→vengan 0.55) sí. Umbral 0.3 sobre la similitud sin tildes.
+    results.append(check(
+        "léxica: bloquea la sustitución léxica pasto→maíz (0.22)",
+        not is_lexically_plausible_refinement("la vaca comió pasto verde", "la vaca comió maíz verde"),
+    ))
+    results.append(check(
+        "léxica: bloquea la paráfrasis voy→iré (0.0)",
+        not is_lexically_plausible_refinement("mañana voy al parque", "mañana iré al parque"),
+    ))
+    results.append(check(
+        "léxica: conserva la concordancia irregular es→son (0.40)",
+        is_lexically_plausible_refinement("la gente es muy amable", "la gente son muy amables"),
+    ))
+    results.append(check(
+        "léxica: conserva hizo→hicieron (0.50) y viene→vengan (0.55)",
+        is_lexically_plausible_refinement("ellos hizo la tarea", "ellos hicieron la tarea")
+        and is_lexically_plausible_refinement("espero que ellos viene", "espero que ellos vengan"),
+    ))
+    results.append(check(
+        "léxica: las tildes no cuentan (esta→está = 1.0) ni la puntuación pegada",
+        is_lexically_plausible_refinement("esta bien, nos vemos", "Está bien, nos vemos.")
+        and is_lexically_plausible_refinement("hola como estas", "Hola, ¿cómo estás?"),
+    ))
+    results.append(check(
+        "léxica: inserciones, borrados y bloques 1:n / n:1 no se juzgan",
+        is_lexically_plausible_refinement("llego tarde a clase", "llegué tarde a la clase")
+        and is_lexically_plausible_refinement("muy muy bien", "muy bien")
+        and is_lexically_plausible_refinement("voy a el parque", "voy al parque")
+        and is_lexically_plausible_refinement("voy a ir mañana", "iré mañana"),
+    ))
+    results.append(check(
+        "léxica: un bloque n:n se juzga palabra a palabra (niño→niños, juega→juegan)",
+        is_lexically_plausible_refinement("los niño juega en el parque", "los niños juegan en el parque")
+        and not is_lexically_plausible_refinement("los niño juega en el parque", "los niños comen en el parque"),
+    ))
+    results.append(check(
+        "léxica: el umbral es configurable (pasto→maíz pasa con 0.2)",
+        is_lexically_plausible_refinement("la vaca comió pasto verde", "la vaca comió maíz verde", min_similarity=0.2),
+    ))
+    results.append(check(
+        "léxica: identidad y candidato vacío",
+        is_lexically_plausible_refinement("hoy fui al mercado", "hoy fui al mercado")
+        and is_lexically_plausible_refinement("hoy fui al mercado", ""),
     ))
 
     total, passed = len(results), sum(results)

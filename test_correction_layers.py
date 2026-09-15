@@ -6,8 +6,9 @@ Integración pura (sin torch/transformers/GPU) de las capas del pipeline:
   - `CorrectionPipeline.correct()` de punta a punta con juez BETO falso,
     T5 falso, sin T5 y con T5 que lanza excepción: la recomendada
     (`suggestions[0]`, de la que dependen `correctedText`, evaluate.py y TAS)
-    es siempre el primer beam seguro de T5 o, si no hay, la base; las
-    segundas lecturas de BETO solo pueden ir detrás.
+    es el beam 1 de T5 si es seguro y léxicamente plausible y, en cualquier
+    otro caso, la base (nunca el beam 2); las segundas lecturas de BETO solo
+    pueden ir detrás.
   - Contrato de `generate_with_lora` (mismo que `generate_corrections`):
     4 beams, `min(num_returns, 4)` secuencias, `[(texto, score)]` y modelo
     base restaurado aunque `generate()` falle.
@@ -22,12 +23,43 @@ Uso:
 """
 import contextlib
 import importlib
+import json
+import os
+import subprocess
 import sys
 import types
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 _MISSING = object()
+_REPO_DIR = Path(__file__).resolve().parent
+_NO_TORCH_CHECK_ENV = "TESIS_NO_TORCH_CHECK_CHILD"
+
+
+def run_class_in_clean_process(module_name: str, class_name: str) -> dict:
+    """
+    Ejecuta la clase de test indicada en un intérprete nuevo y devuelve
+    {"ok": bool, "loaded": [módulos pesados presentes en sys.modules]}.
+    Así "no se cargó torch" no depende del orden de los tests del proceso
+    actual (p. ej. `discover` con test_modelo.py, que carga el modelo real).
+    """
+    code = (
+        "import os, sys, unittest, importlib, json\n"
+        f"mod = importlib.import_module({module_name!r})\n"
+        f"suite = unittest.defaultTestLoader.loadTestsFromTestCase(getattr(mod, {class_name!r}))\n"
+        "result = unittest.TextTestRunner(stream=open(os.devnull, 'w')).run(suite)\n"
+        "loaded = [h for h in ('torch', 'transformers', 'peft') if h in sys.modules]\n"
+        "print(json.dumps({'ok': result.wasSuccessful(), 'loaded': loaded}))\n"
+    )
+    proc = subprocess.run(
+        [sys.executable, "-c", code], cwd=str(_REPO_DIR),
+        env={**os.environ, _NO_TORCH_CHECK_ENV: "1"},
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+    if proc.returncode != 0 or not proc.stdout.strip():
+        raise AssertionError(f"el proceso hijo falló ({proc.returncode}):\n{proc.stderr[-2000:]}")
+    return json.loads(proc.stdout.strip().splitlines()[-1])
 
 
 def import_isolated(test_class, module_name: str, stubs: dict):
@@ -132,8 +164,14 @@ class CorrectPipelineTests(unittest.TestCase):
         return pipe
 
     def test_no_torch_loaded(self):
-        for heavy in ("torch", "transformers"):
-            self.assertNotIn(heavy, sys.modules, f"'{heavy}' se cargó en un test puro")
+        # Independiente del orden: esta clase entera corre en un intérprete
+        # limpio y no debe cargar torch/transformers/peft (aunque en el
+        # proceso actual ya haya corrido test_modelo.py con el modelo real).
+        if os.environ.get(_NO_TORCH_CHECK_ENV):
+            self.skipTest("ya se está comprobando desde el proceso padre")
+        outcome = run_class_in_clean_process("test_correction_layers", "CorrectPipelineTests")
+        self.assertTrue(outcome["ok"], "la clase falló en el proceso limpio")
+        self.assertEqual(outcome["loaded"], [], "módulos pesados cargados en un test puro")
 
     def test_real_beams_offer_indicative_subjunctive_and_base(self):
         # Beams reales del smoke sobre "a mi me gusta que ellos juega mucho"
@@ -179,6 +217,62 @@ class CorrectPipelineTests(unittest.TestCase):
                                ("", -0.2)])
         pipe = self._pipeline(judge=FakeJudge({}), seq2seq=seq2seq)
         self.assertEqual(pipe.correct("el niño juega", {}), ["el niño juega"])
+
+    def test_unsafe_first_beam_recommends_base_not_second_beam(self):
+        # Regla pre-Task 5: "beam 1 si es seguro, si no la base". Si el mejor
+        # beam alucina, T5 no es fiable para esa frase: no se salta al beam 2
+        # para recomendar (el beam 2 seguro solo podría ir detrás de la base).
+        unsafe = "el niño juega y corre y salta y canta todos los días en el parque"
+        seq2seq = FakeSeq2Seq([(unsafe, -0.1), ("el niño juega.", -0.2)])
+        pipe = self._pipeline(judge=FakeJudge({}), seq2seq=seq2seq)
+        out = pipe.correct("el niño juega", {})
+        self.assertEqual(out[0], "el niño juega")
+        self.assertNotIn(unsafe, out)
+        seq2seq = FakeSeq2Seq([("", -0.1), ("los niños juegan", -0.2)])
+        pipe = self._pipeline(judge=FakeJudge({}), seq2seq=seq2seq)
+        out = pipe.correct("los niño juega", {})
+        self.assertEqual(out[0], "los niño juega")
+        self.assertEqual(out, ["los niño juega"])   # T5 no cuenta para esta frase
+
+    def test_lexical_substitution_in_first_beam_recommends_base(self):
+        # Beams reales sobre "la baca comio pasto verde" (la base ya dice
+        # "la vaca comió pasto verde"): el beam 1 sustituye pasto→maíz
+        # (similitud 0.22 < recommendedMinSimilarity 0.3). Pasa la guarda de
+        # cantidad pero no la léxica: se recomienda la base y no se ofrece
+        # ninguna sustitución léxica como alternativa.
+        base = "la vaca comió pasto verde"
+        seq2seq = FakeSeq2Seq([("la vaca comió maíz verde", -0.288),
+                               ("la vaca comió carne verde", -0.405),
+                               ("la vaca comió pasto rojo", -0.653)])
+        pipe = self._pipeline(judge=FakeJudge({}), seq2seq=seq2seq)
+        self.assertEqual(pipe.correct(base, {}), [base])
+        self.assertEqual(self.mod._RECOMMENDED_MIN_SIMILARITY,
+                         self.mod.THRESHOLDS["recommendedMinSimilarity"])
+
+    def test_lexical_guard_keeps_irregular_agreement_in_first_beam(self):
+        # es→son (0.40), hizo→hicieron (0.50), viene→vengan (0.55) siguen
+        # recomendándose; una flexión no es una sustitución léxica.
+        for original, beam in [("la gente es muy amables", "la gente son muy amables"),
+                               ("ellos hizo la tarea", "ellos hicieron la tarea"),
+                               ("espero que ellos viene", "espero que ellos vengan")]:
+            pipe = self._pipeline(judge=FakeJudge({}), seq2seq=FakeSeq2Seq([(beam, -0.05)]))
+            self.assertEqual(pipe.correct(original, {})[0], beam)
+
+    def test_lexical_guard_does_not_apply_to_later_beams(self):
+        # El beam 1 es plausible y se recomienda; el beam 2 (sustitución
+        # léxica juega→comen) solo lo frena la regla (e) de las alternativas,
+        # y un beam 2 flexivo (jueguen) sí se ofrece. La base, igual al
+        # original, nunca se ofrece.
+        seq2seq = FakeSeq2Seq([("los niños juegan en el parque", -0.05),
+                               ("los niños comen en el parque", -0.1)])
+        pipe = self._pipeline(judge=FakeJudge({}), seq2seq=seq2seq)
+        self.assertEqual(pipe.correct("los niño juega en el parque", {}),
+                         ["los niños juegan en el parque"])
+        seq2seq = FakeSeq2Seq([("los niños juegan en el parque", -0.05),
+                               ("los niños jueguen en el parque", -0.1)])
+        pipe = self._pipeline(judge=FakeJudge({}), seq2seq=seq2seq)
+        self.assertEqual(pipe.correct("los niño juega en el parque", {}),
+                         ["los niños juegan en el parque", "los niños jueguen en el parque"])
 
     def test_without_judge_and_without_t5_returns_base_only(self):
         pipe = self._pipeline(judge=None, seq2seq=None, homophones={"esta": ["está"]})

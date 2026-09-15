@@ -12,7 +12,7 @@ from infrastructure.nlp.context_judge import ContextJudge
 from infrastructure.nlp.grammar_rules import correct_grammar
 from infrastructure.nlp.alternatives import THRESHOLDS, select_alternatives
 from infrastructure.ml.t5_model import T5CorrectionModel, T5SpanishTokenizer
-from infrastructure.ml.guards import is_safe_refinement
+from infrastructure.ml.guards import is_lexically_plausible_refinement, is_safe_refinement
 
 MANUAL_CORRECTIONS = {
     "uillos": "niños",  "ciubab": "ciudad",  "caíbas": "caídas",
@@ -68,6 +68,12 @@ _T5_NUM_RETURNS = 3
 # Margen de score respecto al mejor beam para que una alternativa se ofrezca
 # (ver alternatives.THRESHOLDS["scoreMargin"]).
 _SCORE_MARGIN = THRESHOLDS["scoreMargin"]
+
+# Guarda léxica del beam RECOMENDADO (beam 1): similitud mínima, sin tildes,
+# de cada reemplazo 1:1 de palabra respecto a la base (ver
+# alternatives.THRESHOLDS["recommendedMinSimilarity"] y
+# guards.is_lexically_plausible_refinement). Bloquea pasto→maíz, no es→son.
+_RECOMMENDED_MIN_SIMILARITY = THRESHOLDS["recommendedMinSimilarity"]
 
 
 def _has_accent(word: str) -> bool:
@@ -312,8 +318,10 @@ class CorrectionPipeline:
 
         # --- CAPA 4: Refinamiento gramatical con T5 (concordancia sujeto-verbo) ---
         # T5 (adaptador LoRA de concordancia) actúa sobre el texto ya corregido por
-        # reglas+BETO y devuelve varios beams con su score; solo los seguros
-        # sobreviven (ver _refine_with_model).
+        # reglas+BETO y devuelve varios beams con su score. Si el beam 1 no es
+        # seguro y léxicamente plausible, T5 no cuenta para esta frase
+        # (`refined == []`); si lo es, `refined[0]` es el beam 1 y el resto
+        # son los demás beams seguros (ver _refine_with_model).
         refined: list[tuple[str, float]] = []
         if self._seq2seq and self._tokenizer:
             try:
@@ -322,38 +330,58 @@ class CorrectionPipeline:
                 print(f"[WARN] Refinamiento T5 falló: {e}")
 
         # --- CAPA 5: Selección de alternativas (hasta 3, solo si hay ambigüedad) ---
-        # La recomendada se decide como antes de la Task 5: el primer beam
-        # seguro de T5 o, si no hay, la base. Las segundas lecturas de BETO
-        # (score = −|diferencia|) se anclan al mejor beam solo para ordenarlas
-        # junto a los demás beams: nunca son la recomendada y su puerta real es
-        # _BETO_TIE_MARGIN (≤ _SCORE_MARGIN, así que (d) no las filtra). La base
-        # va justo detrás de la recomendada cuando difiere de ella.
+        # La recomendada es el beam 1 de T5 si es seguro (como antes de la
+        # Task 5) y en cualquier otro caso la base. Las segundas lecturas de
+        # BETO (score = −|diferencia|) se anclan al mejor beam solo para
+        # ordenarlas junto a los demás beams: van como `variants` (nunca son la
+        # recomendada) y su puerta real es _BETO_TIE_MARGIN (≤ _SCORE_MARGIN,
+        # así que (d) no las filtra). La base va justo detrás de la recomendada
+        # cuando difiere de ella.
         recommended = refined[0][0] if refined else base_corrected
         best_score  = max((s for _, s in refined), default=0.0)
-        candidates  = refined + [(v, best_score + s) for v, s in ambiguous_variants]
         return select_alternatives(
-            text, base_corrected, candidates,
+            text, base_corrected, refined,
             score_margin=_SCORE_MARGIN, recommended=recommended,
+            variants=[(v, best_score + s) for v, s in ambiguous_variants],
         )
 
     def _refine_with_model(self, text: str) -> list[tuple[str, float]]:
         """
         Pasa `text` (ya corregido por reglas+BETO) por T5 y devuelve los beams
-        `[(texto, score)]` que son seguros, para capturar la concordancia
-        sujeto-verbo sin alucinar:
-          - filtro de longitud (0.6–1.5 del original),
-          - límite de palabras cambiadas (anti-alucinación),
-          - preserva la capitalización inicial del texto base.
+        `[(texto, score)]` utilizables, para capturar la concordancia
+        sujeto-verbo sin alucinar. Regla de la recomendada (la de antes de la
+        Task 5): solo cuenta el beam 1. Si el beam 1 no pasa las guardas, el
+        resultado es `[]` (la recomendada será la base) y no se salta al beam
+        2: si el mejor beam alucina, T5 no es fiable para esta frase. Si pasa,
+        `[0]` es el beam 1 y detrás van los beams 2/3 que sean seguros (solo
+        candidatos a alternativa; la regla (e) de la capa 5 los filtra).
+        Guardas del beam 1:
+          - `is_safe_refinement`: longitud 0.6–1.5 del original y límite de
+            palabras cambiadas (cantidad; anti-alucinación),
+          - `is_lexically_plausible_refinement`: cada reemplazo 1:1 de
+            palabra es una variante cercana (similitud sin tildes ≥
+            _RECOMMENDED_MIN_SIMILARITY): bloquea sustituciones léxicas
+            como pasto→maíz, conserva flexiones como es→son.
+        Los beams 2/3 solo pasan por `is_safe_refinement`. Se preserva la
+        capitalización inicial del texto base.
         """
         generated = self._seq2seq.generate_corrections(
             text, self._tokenizer, num_returns=_T5_NUM_RETURNS
         )
-        safe = []
+        if not generated:
+            return []
+        first = str(generated[0][0]).strip()
+        if not is_safe_refinement(text, first) or not is_lexically_plausible_refinement(
+            text, first, min_similarity=_RECOMMENDED_MIN_SIMILARITY
+        ):
+            return []
+
+        beams = []
         for g, score in generated:
-            g = g.strip()
+            g = str(g).strip()
             if not is_safe_refinement(text, g):
                 continue
             if text[:1].islower() and g[:1].isupper():
                 g = g[:1].lower() + g[1:]
-            safe.append((g, float(score)))
-        return safe
+            beams.append((g, float(score)))
+        return beams

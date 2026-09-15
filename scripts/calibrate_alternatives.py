@@ -15,6 +15,11 @@ Uso (desde la raíz del repo, con el modelo local y sin descargar nada):
                                                               [--no-beto] [--no-t5]
                                                               [--verbose] [--out reporte.json]
 
+`--verbose --out` guarda por frase la base, los beams crudos de T5 con el
+veredicto de las guardas del beam recomendado (`t5Raw`), los beams que llegan
+a la capa 5 (`t5`) y las variantes de BETO, para barrer umbrales y guardas
+offline con el selector puro.
+
 No usa el puerto 5000 ni el servicio: carga los modelos en proceso.
 """
 import argparse
@@ -32,6 +37,7 @@ os.environ.setdefault("HF_HOME", str(REPO_DIR / "models" / "hf-cache"))
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 
+from infrastructure.ml.guards import is_lexically_plausible_refinement, is_safe_refinement  # noqa: E402
 from infrastructure.nlp.alternatives import THRESHOLDS  # noqa: E402
 
 
@@ -78,7 +84,14 @@ def trace_internals(pipeline, sink: dict):
     """
     Envuelve las capas 2.5 y 4 para registrar la base, los beams de T5 y las
     variantes de BETO con sus scores (solo --verbose). Con `--out`, esos
-    internos permiten barrer umbrales offline con el selector puro, sin GPU.
+    internos permiten barrer umbrales offline con el selector puro, sin GPU:
+      - "t5Raw": TODOS los beams crudos de `generate_corrections`, con su
+        score y el resultado de las dos guardas del beam recomendado
+        (`safe` = is_safe_refinement, `plausible` =
+        is_lexically_plausible_refinement con recommendedMinSimilarity),
+        para barrer las guardas sin volver a generar;
+      - "t5": los beams que `_refine_with_model` deja pasar a la capa 5
+        (vacío si el beam 1 no supera las guardas).
     """
     original_disambiguate = pipeline._disambiguate_context
     original_refine = pipeline._refine_with_model
@@ -97,6 +110,19 @@ def trace_internals(pipeline, sink: dict):
     pipeline._disambiguate_context = disambiguate
     if pipeline._seq2seq is not None:
         pipeline._refine_with_model = refine
+        original_generate = pipeline._seq2seq.generate_corrections
+
+        def generate(text, tokenizer, num_returns=2):
+            raw = original_generate(text, tokenizer, num_returns=num_returns)
+            sink["t5Raw"] = [{
+                "text": str(b), "score": round(float(s), 3),
+                "safe": is_safe_refinement(text, str(b).strip()),
+                "plausible": is_lexically_plausible_refinement(
+                    text, str(b).strip(), min_similarity=THRESHOLDS["recommendedMinSimilarity"]),
+            } for b, s in raw]
+            return raw
+
+        pipeline._seq2seq.generate_corrections = generate
 
 
 def prf(tp: int, fp: int, fn: int) -> tuple[float, float, float]:
@@ -141,6 +167,9 @@ def main():
         if args.verbose:
             if internals.get("t5") is not None:
                 print(f"       T5:   {internals['t5']}")
+            blocked = [b for b in internals.get("t5Raw", []) if not (b["safe"] and b["plausible"])]
+            if blocked:
+                print(f"       T5 descartados: {[(b['text'], b['score'], 'safe' if b['safe'] else 'unsafe', 'plausible' if b['plausible'] else 'lexical') for b in blocked]}")
             if internals.get("beto"):
                 print(f"       BETO: {internals['beto']}")
         if mark != "OK ":
