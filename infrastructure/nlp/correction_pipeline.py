@@ -10,7 +10,7 @@ from symspellpy import SymSpell, Verbosity
 from infrastructure.nlp.phonetic_engine import PhoneticEngine, match_case, to_phonetic, DICT_PATH
 from infrastructure.nlp.context_judge import ContextJudge
 from infrastructure.nlp.grammar_rules import correct_grammar
-from infrastructure.nlp.alternatives import select_alternatives
+from infrastructure.nlp.alternatives import THRESHOLDS, select_alternatives
 from infrastructure.ml.t5_model import T5CorrectionModel, T5SpanishTokenizer
 from infrastructure.ml.guards import is_safe_refinement
 
@@ -44,37 +44,30 @@ _MARGIN_ACCENT    = 0.5
 _MARGIN_HOMOPHONE = 5.0
 _MARGIN_MONO      = 3.0
 
-# Señal de ambigüedad en homófonos: fracción del margen del tipo de cambio
-# dentro de la cual las dos mejores lecturas se consideran "empatadas". Si
-# |score(alternativa) − score(actual)| < margen · RATIO, el texto principal no
-# cambia pero la segunda lectura se ofrece como candidato (ver
-# _disambiguate_context). 1.0 = toda la zona por debajo del umbral de
-# sobrescritura cuenta como ambigua.
-HOMOPHONE_AMBIGUITY_RATIO = 1.0
+# Señal de ambigüedad en homófonos: si |score(alternativa) − score(actual)|
+# < _BETO_TIE_MARGIN (diferencia de PLL media de BETO, ver
+# alternatives.THRESHOLDS["betoTieMargin"]) las dos lecturas están empatadas:
+# el texto principal no cambia pero la segunda lectura se ofrece como
+# candidato (ver _disambiguate_context). Es un umbral en unidades de BETO,
+# independiente de los márgenes de sobrescritura de arriba.
+_BETO_TIE_MARGIN = THRESHOLDS["betoTieMargin"]
 
 # Como mucho tantas posiciones ambiguas por frase (las más empatadas) generan
 # una variante; una alternativa por posición.
 _MAX_AMBIGUOUS_POSITIONS = 3
 
 # Una segunda lectura mucho más rara (en el corpus es_50k) que la palabra
-# escrita no se ofrece como ambigüedad: un "empate" de BETO entre dos lecturas
-# improbables no es ambigüedad (la PLL media infla las palabras de varios
-# subtokens: hoy/holly −8.16/−8.09). Ratios reales: se/sé 3.4 · tuvo/tubo 9.5
-# (se conservan) · hoy/holly 33 · mis/miss 35 · voy/boy 120 (se descartan).
-# La sobrescritura de la capa 2.5 no usa esta guarda: BETO puede seguir
-# imponiendo la lectura rara si supera su margen.
-_AMBIGUITY_MAX_FREQ_RATIO = 20
+# escrita no se ofrece como ambigüedad (ver alternatives.THRESHOLDS
+# ["maxFreqRatio"]). La sobrescritura de la capa 2.5 no usa esta guarda: BETO
+# puede seguir imponiendo la lectura rara si supera su margen.
+_AMBIGUITY_MAX_FREQ_RATIO = THRESHOLDS["maxFreqRatio"]
 
 # Cuántos beams de T5 se piden como candidatos (num_beams=4 en el modelo).
 _T5_NUM_RETURNS = 3
 
-# Margen de score (log-prob normalizada por longitud del beam, o |diferencia|
-# BETO de una segunda lectura) respecto al mejor candidato para que una
-# alternativa se ofrezca. Calibrado con los beams reales del T5 fusionado:
-#   otra lectura válida:  juega→juegan 0.09 · juega→jueguen 0.14 · fue→fueron 0.25
-#   paráfrasis/ruido:     voy→iré 0.37 · luego→después 0.40 · ayer→anoche 0.48
-#                         pasado→ocurrido 0.57 · mi→mis hermanos 0.75 · ellos→él 0.91
-_SCORE_MARGIN = 0.3
+# Margen de score respecto al mejor beam para que una alternativa se ofrezca
+# (ver alternatives.THRESHOLDS["scoreMargin"]).
+_SCORE_MARGIN = THRESHOLDS["scoreMargin"]
 
 
 def _has_accent(word: str) -> bool:
@@ -117,10 +110,11 @@ class CorrectionPipeline:
         cada decisión usa como contexto las decisiones ya tomadas a su izquierda.
 
         Devuelve `(texto, ambiguous_variants)`. Cuando las dos mejores lecturas
-        de una posición quedan a menos de `margen · HOMOPHONE_AMBIGUITY_RATIO`
-        (el contexto no decide), el texto no cambia pero se genera una variante
-        con la segunda lectura sustituida, con score = −|diferencia| (más cerca
-        de 0 cuanto más empatado). Como mucho una alternativa por posición y
+        de una posición quedan a menos de `_BETO_TIE_MARGIN` (el contexto no
+        decide), el texto no cambia pero se genera una variante con la segunda
+        lectura sustituida, con score = −|diferencia| (más cerca de 0 cuanto
+        más empatado; solo sirve para ordenar: la variante nunca es la
+        recomendada). Como mucho una alternativa por posición y
         `_MAX_AMBIGUOUS_POSITIONS` posiciones (las de menor diferencia).
         """
         tokens = sentence.split()
@@ -176,7 +170,12 @@ class CorrectionPipeline:
             diff = alt_score - current_score
             if diff >= margin:
                 tokens[i] = alt
-            elif abs(diff) < margin * HOMOPHONE_AMBIGUITY_RATIO and self._is_plausible_reading(lower, alt_core):
+            elif current not in dict(scored) or alt_core == lower:
+                # Token con caso mixto ("eSta"): match_case lo normalizó y no
+                # está entre los puntuados; la "alternativa" solo cambia el
+                # caso. No es una segunda lectura.
+                continue
+            elif abs(diff) < _BETO_TIE_MARGIN and self._is_plausible_reading(lower, alt_core):
                 ambiguous.append((abs(diff), i, alt))
 
         text = " ".join(tokens)
@@ -323,17 +322,19 @@ class CorrectionPipeline:
                 print(f"[WARN] Refinamiento T5 falló: {e}")
 
         # --- CAPA 5: Selección de alternativas (hasta 3, solo si hay ambigüedad) ---
-        # Las segundas lecturas de BETO (score = −|diferencia|) se anclan al mejor
-        # beam de T5 para que compartan escala: nunca desplazan al refinado como
-        # recomendada y entran solo si su empate cabe en _SCORE_MARGIN. El
-        # selector coloca la base justo detrás del mejor candidato; si nada
-        # supera las reglas (p. ej. el texto ya estaba bien) se devuelve la base.
-        best_score = max((s for _, s in refined), default=0.0)
-        candidates = refined + [(v, best_score + s) for v, s in ambiguous_variants]
-        suggestions = select_alternatives(
-            text, base_corrected, candidates, score_margin=_SCORE_MARGIN
+        # La recomendada se decide como antes de la Task 5: el primer beam
+        # seguro de T5 o, si no hay, la base. Las segundas lecturas de BETO
+        # (score = −|diferencia|) se anclan al mejor beam solo para ordenarlas
+        # junto a los demás beams: nunca son la recomendada y su puerta real es
+        # _BETO_TIE_MARGIN (≤ _SCORE_MARGIN, así que (d) no las filtra). La base
+        # va justo detrás de la recomendada cuando difiere de ella.
+        recommended = refined[0][0] if refined else base_corrected
+        best_score  = max((s for _, s in refined), default=0.0)
+        candidates  = refined + [(v, best_score + s) for v, s in ambiguous_variants]
+        return select_alternatives(
+            text, base_corrected, candidates,
+            score_margin=_SCORE_MARGIN, recommended=recommended,
         )
-        return suggestions or [base_corrected]
 
     def _refine_with_model(self, text: str) -> list[tuple[str, float]]:
         """

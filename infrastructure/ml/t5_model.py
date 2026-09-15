@@ -400,11 +400,22 @@ class T5CorrectionModel:
 
 
 def generate_with_lora(base_model: T5CorrectionModel, tokenizer: T5SpanishTokenizer,
-                        lora_dir: Path, text: str, num_returns: int = 2) -> List[str]:
+                       lora_dir: Path, text: str, num_returns: int = 2) -> List[Tuple[str, float]]:
+    """
+    Genera con un adaptador LoRA cargado sobre el modelo base. Mismo contrato
+    que `generate_corrections`: beam search determinista con 4 beams,
+    `min(num_returns, 4)` secuencias y `[(texto, score)]` de mejor a peor. El
+    modelo base se restaura siempre (también si `generate()` falla), dentro
+    del lock de GPU.
+    """
     try:
         from peft import PeftModel
     except ImportError:
         raise ImportError("PEFT no instalado. Ejecuta: pip install peft")
+
+    if num_returns < 1:
+        raise ValueError(f"num_returns debe ser >= 1 (recibido {num_returns})")
+    n = min(num_returns, 4)
 
     # Limpiar adaptador previo si quedó pegado
     base_model._clean_peft_if_attached()
@@ -421,36 +432,37 @@ def generate_with_lora(base_model: T5CorrectionModel, tokenizer: T5SpanishTokeni
         peft_model = PeftModel.from_pretrained(
             base_model.model, str(lora_dir), is_trainable=False
         )
-        peft_model.to(device)
-        peft_model.eval()
-
-        with torch.no_grad():
-            # Determinista (beam search), igual que generate_corrections() para
-            # el T5 base. El muestreo estocástico (do_sample=True + temperature/
-            # top_p) que había antes aquí era la principal fuente de respuestas
-            # no reproducibles y "inventadas": con un adaptador entrenado sobre
-            # pocos ejemplos por usuario, samplear con temperatura alta amplifica
-            # cualquier ruido del fine-tuning en vez de suavizarlo.
-            outputs = peft_model.generate(
-                input_ids=input_ids,          # ← keyword argument, no posicional
-                attention_mask=attention_mask,
-                max_new_tokens=MAX_TARGET_LEN,
-                num_beams=max(4, num_returns),
-                num_return_sequences=num_returns,
-                do_sample=False,
-                early_stopping=True,
-                output_scores=True,
-                return_dict_in_generate=True,
-            )
-
-        # Desacoplar adaptador y restaurar modelo base limpio
         try:
-            peft_model.unload()
-        except Exception:
-            pass
-        base_model.model = peft_model.get_base_model()
-        base_model.model.generation_config = GenerationConfig(**_SAFE_GENERATION_CONFIG)
-        base_model.model.to(device)
+            peft_model.to(device)
+            peft_model.eval()
+
+            with torch.no_grad():
+                # Determinista (beam search), igual que generate_corrections() para
+                # el T5 base. El muestreo estocástico (do_sample=True + temperature/
+                # top_p) que había antes aquí era la principal fuente de respuestas
+                # no reproducibles y "inventadas": con un adaptador entrenado sobre
+                # pocos ejemplos, samplear con temperatura alta amplifica cualquier
+                # ruido del fine-tuning en vez de suavizarlo.
+                outputs = peft_model.generate(
+                    input_ids=input_ids,          # ← keyword argument, no posicional
+                    attention_mask=attention_mask,
+                    max_new_tokens=MAX_TARGET_LEN,
+                    num_beams=4,
+                    num_return_sequences=n,
+                    do_sample=False,
+                    early_stopping=True,
+                    output_scores=True,
+                    return_dict_in_generate=True,
+                )
+        finally:
+            # Desacoplar adaptador y restaurar modelo base limpio, pase lo que pase
+            try:
+                peft_model.unload()
+            except Exception:
+                pass
+            base_model.model = peft_model.get_base_model()
+            base_model.model.generation_config = GenerationConfig(**_SAFE_GENERATION_CONFIG)
+            base_model.model.to(device)
 
     return _decode_scored(outputs, tokenizer)
 

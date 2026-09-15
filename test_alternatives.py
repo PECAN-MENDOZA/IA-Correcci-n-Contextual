@@ -6,20 +6,26 @@ y de la señal de ambigüedad en homófonos de `_disambiguate_context`.
 
 Corren SIN torch/transformers/GPU: el selector solo usa difflib/re y la
 guarda `is_safe_refinement`; para el pipeline se sustituyen los módulos
-pesados (juez BETO y T5) por stubs antes de importarlo y se inyectan fakes
-que devuelven puntuaciones fijas.
+pesados (juez BETO y T5) por stubs, acotados a la clase de test con
+`unittest.mock.patch.dict(sys.modules, ...)` para no contaminar otros módulos
+de test del mismo proceso (test_modelo.py usa el juez y el T5 reales).
 
 Uso:
     .venv\\Scripts\\python.exe -m unittest test_alternatives -v
 """
+import importlib
 import sys
 import types
 import unittest
+from unittest.mock import patch
 
-from infrastructure.nlp.alternatives import select_alternatives
+from infrastructure.nlp import alternatives
+from infrastructure.nlp.alternatives import THRESHOLDS, select_alternatives
 
 
 class SelectAlternativesTests(unittest.TestCase):
+    # ---- tests del plan original -------------------------------------------
+
     def test_returns_single_option_when_one_candidate_dominates(self):
         out = select_alternatives("el niño juega", "el niño juega",
                                   [("El niño juega.", -0.1), ("El niño jugaba.", -3.0)], score_margin=1.0)
@@ -34,10 +40,104 @@ class SelectAlternativesTests(unittest.TestCase):
         self.assertNotIn("Está bien!", out)   # misma edición que la primera; solo cambia la puntuación final
 
     def test_drops_unsafe_and_identical_candidates(self):
+        # El primer beam es la propia frase: la recomendada es la base (como
+        # antes de la Task 5) y no se duplica; el candidato inseguro se descarta;
+        # la lectura con tildes y signos se ofrece como alternativa.
         out = select_alternatives("hola como estas", "hola como estas",
                                   [("hola como estas", -0.1), ("Hola, ¿cómo estás?", -0.3),
                                    ("Adiós, hasta luego, nos vemos mañana temprano", -0.4)])
-        self.assertEqual(out, ["Hola, ¿cómo estás?"])
+        self.assertEqual(out, ["hola como estas", "Hola, ¿cómo estás?"])
+
+    # ---- recomendada estable (item 1 del fix brief) ------------------------
+
+    def test_recommended_is_first_safe_beam_even_if_rule_e_would_reject_it(self):
+        # Las capas 1-3 corrigieron "xq→porque" (similitud 0.25) y T5 heredó ese
+        # tramo: la recomendada sigue siendo el mejor beam seguro (juega→juegan)
+        # y la base queda como alternativa. Antes del fix (e) tiraba el beam.
+        out = select_alternatives("xq ellos juega mucho", "porque ellos juega mucho",
+                                  [("porque ellos juegan mucho", -0.04)], score_margin=0.3)
+        self.assertEqual(out, ["porque ellos juegan mucho", "porque ellos juega mucho"])
+
+    def test_recommended_keeps_short_irregular_verb_corrections(self):
+        # es/son tiene similitud 0.4 < 0.6: (e) no se aplica a la recomendada.
+        out = select_alternatives("la gente son muy amables", "la gente son muy amables",
+                                  [("la gente es muy amable", -0.05)], score_margin=0.3)
+        self.assertEqual(out, ["la gente es muy amable"])
+        # Comportamiento previo a la Task 5: el primer beam seguro se recomienda
+        # aunque sea una lectura lejana; el segundo queda fuera por (d).
+        out = select_alternatives("ellos fue al mercado", "ellos fue al mercado",
+                                  [("él fue al mercado", -0.05), ("ellos fueron al mercado", -0.5)],
+                                  score_margin=0.3)
+        self.assertEqual(out, ["él fue al mercado"])
+
+    def test_duplicate_token_deletion_is_a_valid_edit(self):
+        # "muy muy bien → muy bien" como recomendada.
+        out = select_alternatives("muy muy bien", "muy muy bien", [("muy bien", -0.1)], score_margin=0.3)
+        self.assertEqual(out, ["muy bien"])
+        # Como alternativa, borrar un token igual a su vecino pasa (e)
+        # (similitud 1.0); borrar cualquier otra palabra no.
+        out = select_alternatives("hoy muy muy bien", "hoy muy muy bien",
+                                  [("Hoy muy muy bien.", -0.05), ("hoy muy bien", -0.1),
+                                   ("muy muy bien", -0.12)], score_margin=0.3)
+        self.assertEqual(out, ["Hoy muy muy bien.", "hoy muy bien"])
+
+    def test_beto_variant_is_never_recommended_without_t5(self):
+        # Sin T5 (o con excepción de T5) la recomendada es la base aunque sea
+        # igual al original; la variante empatada de BETO va detrás.
+        out = select_alternatives("esta bien", "esta bien", [("está bien", -0.13)],
+                                  score_margin=0.3, recommended="esta bien")
+        self.assertEqual(out, ["esta bien", "está bien"])
+        # Sin candidatos (juez ausente) solo queda la base.
+        out = select_alternatives("esta bien", "esta bien", [], score_margin=0.3, recommended="esta bien")
+        self.assertEqual(out, ["esta bien"])
+        out = select_alternatives("esta bien", "esta bien", [], score_margin=0.3)
+        self.assertEqual(out, ["esta bien"])
+
+    def test_explicit_recommended_that_is_unsafe_falls_back_to_base(self):
+        out = select_alternatives("hoy fui al mercado", "hoy fui al mercado",
+                                  [("fui", -0.1)], score_margin=0.3, recommended="fui")
+        self.assertEqual(out, ["hoy fui al mercado"])
+
+    def test_identity_best_beam_recommends_base_not_next_beam(self):
+        # Beams reales sobre una frase correcta: el mejor es la identidad, el
+        # siguiente una paráfrasis. La recomendada es la base (no "iré") y la
+        # paráfrasis no se ofrece ni con margen amplio (regla (e)).
+        original = "mañana voy al parque con mis amigos"
+        out = select_alternatives(original, original,
+                                  [(original, -0.01), ("mañana iré al parque con mis amigos", -0.38),
+                                   ("Mañana voy al parque con mis amigos", -0.41)], score_margin=1.0)
+        self.assertEqual(out, [original])
+
+    # ---- regla (c) por resultado de edición (item 2 del fix brief) ----------
+
+    def test_indicative_and_subjunctive_are_two_readings(self):
+        original = "a mi me gusta que ellos juega mucho"
+        base     = "a mí me gusta que ellos juega mucho"
+        cands = [("a mí me gusta que ellos juegan mucho", -0.04),
+                 ("a mí me gusta que ellos jueguen mucho", -0.18),
+                 ("A mí me gusta que ellos juegan mucho", -0.372)]
+        out = select_alternatives(original, base, cands, score_margin=0.3)
+        self.assertEqual(out, ["a mí me gusta que ellos juegan mucho", base,
+                               "a mí me gusta que ellos jueguen mucho"])
+
+    def test_same_edit_only_differing_in_final_punctuation_is_one_reading(self):
+        cands = [("Está bien.", -0.2), ("Esta bien.", -0.4), ("Está bien!", -0.5),
+                 ("Estaba bien.", -0.6), ("Esta bien!", -0.7)]
+        out = select_alternatives("esta bien", "esta bien", cands, max_options=3, score_margin=0.3)
+        self.assertEqual(out, ["Está bien.", "Esta bien."])
+
+    def test_paraphrase_with_tiny_gap_is_still_not_an_alternative(self):
+        original = "mañana voy al parque con mis amigos"
+        out = select_alternatives(original, original,
+                                  [(original, -0.012), ("mañana iré al parque con mis amigos", -0.05)],
+                                  score_margin=0.3)
+        self.assertEqual(out, [original])
+
+    def test_single_word_text_with_two_readings(self):
+        out = select_alternatives("juega", "juega", [("juegan", -0.05), ("jueguen", -0.2)], score_margin=0.3)
+        self.assertEqual(out, ["juegan", "jueguen"])
+
+    # ---- resto de reglas ----------------------------------------------------
 
     def test_homophone_variant_offered_only_within_score_margin(self):
         original = "esta bien, nos vemos luego"
@@ -52,11 +152,13 @@ class SelectAlternativesTests(unittest.TestCase):
         out = select_alternatives(original, base,
                                   [refined, ("está bien, nos vemos luego", -4.0)], score_margin=1.0)
         self.assertEqual(out, ["Esta bien, nos vemos luego."])
-        # Si T5 ya eligió la lectura "está", la variante BETO es la misma edición: no se duplica.
+        # Si T5 ya eligió la lectura "está", la variante BETO es la misma edición
+        # y no se duplica; aunque tenga mejor score, nunca es la recomendada.
         out = select_alternatives(original, base,
                                   [("Está bien, nos vemos luego.", -0.2),
-                                   ("está bien, nos vemos luego", -0.1)], score_margin=1.0)
-        self.assertEqual(out, ["está bien, nos vemos luego"])
+                                   ("está bien, nos vemos luego", -0.1)], score_margin=1.0,
+                                  recommended="Está bien, nos vemos luego.")
+        self.assertEqual(out, ["Está bien, nos vemos luego."])
 
     def test_max_options_is_respected_with_five_valid_candidates(self):
         original = "el nino come pan y toma agua"
@@ -82,20 +184,12 @@ class SelectAlternativesTests(unittest.TestCase):
                                   [("ellos jueguen mucho", -0.2), (base, -0.2)], score_margin=1.0)
         self.assertEqual(out, ["ellos jueguen mucho", "ellos juegan mucho"])
 
-    def test_base_identical_to_original_is_not_offered(self):
+    def test_base_identical_to_original_is_the_only_option(self):
         out = select_alternatives("el niño juega", "el niño juega",
                                   [("el niño juega", 0.0)])
-        self.assertEqual(out, [])
+        self.assertEqual(out, ["el niño juega"])
 
     def test_paraphrases_are_not_alternatives(self):
-        # Beams reales de T5 sobre frases ya correctas: el mejor beam es la propia
-        # frase y los siguientes son paráfrasis (voy→iré, luego→después). Ni con
-        # un margen de score amplio se ofrecen: no son otra lectura de la palabra.
-        original = "mañana voy al parque con mis amigos"
-        out = select_alternatives(original, original,
-                                  [(original, -0.01), ("mañana iré al parque con mis amigos", -0.38),
-                                   ("Mañana voy al parque con mis amigos", -0.41)], score_margin=1.0)
-        self.assertEqual(out, ["Mañana voy al parque con mis amigos"])
         out = select_alternatives("esta bien, nos vemos luego", "esta bien, nos vemos luego",
                                   [("está bien, nos vemos luego", -0.02),
                                    ("está bien, nos vemos después", -0.42)], score_margin=1.0)
@@ -110,32 +204,75 @@ class SelectAlternativesTests(unittest.TestCase):
                                   [("sé que no vendrá hoy", -0.01), ("se que no vendrá ayer", -0.08)], score_margin=1.0)
         self.assertEqual(out, ["sé que no vendrá hoy", "se que no vendrá hoy"])
 
-    def test_base_goes_right_after_the_best_candidate(self):
-        original = "a mi me gusta que ellos juega mucho"
-        base     = "a mí me gusta que ellos juega mucho"
-        cands = [("a mí me gusta que ellos juegan mucho", -0.04),
-                 ("a mí me gusta que ellos jueguen mucho", -0.18),   # misma edición que "juegan"
-                 ("a mí me gusta que ellos juegas mucho", -0.20)]
-        out = select_alternatives(original, base, cands, score_margin=1.0)
-        self.assertEqual(out, ["a mí me gusta que ellos juegan mucho", base])
+    def test_rule_e_is_measured_against_the_base_not_the_original(self):
+        # La base ya corrigió "tb→también" (similitud 0.44 respecto al original);
+        # una alternativa que solo cambia "juega→juegan" sobre la base pasa (e).
+        out = select_alternatives("tb ellos juega", "también ellos juega",
+                                  [("También ellos juega.", -0.05), ("también ellos juegan", -0.1)],
+                                  score_margin=0.3)
+        self.assertEqual(out, ["También ellos juega.", "también ellos juegan"])
+
+    def test_thresholds_are_exposed_as_code_constants(self):
+        self.assertEqual(THRESHOLDS, {"scoreMargin": 0.3, "minSpanSimilarity": 0.6,
+                                      "maxFreqRatio": 20, "betoTieMargin": 0.3})
+        self.assertEqual(alternatives.MIN_SPAN_SIMILARITY, THRESHOLDS["minSpanSimilarity"])
+        self.assertEqual(alternatives.SCORE_MARGIN, THRESHOLDS["scoreMargin"])
+
+    def test_edit_signature_keeps_accents_and_marks_insertions_and_deletions(self):
+        sig = alternatives._edit_signature
+        words = alternatives._words_for_edits
+        self.assertEqual(sig(words("esta bien"), words("Está bien.")), frozenset({(0, 1, "está")}))
+        self.assertEqual(sig(words("esta bien"), words("Esta bien!")), frozenset())
+        deletion = sig(words("muy muy bien"), words("muy bien"))
+        self.assertEqual(len(deletion), 1)
+        self.assertEqual(next(iter(deletion))[2], "-")   # borrado marcado, sin palabra resultante
+        self.assertEqual(sig(words("voy parque"), words("voy al parque")), frozenset({(1, 1, "+al")}))
+        self.assertNotEqual(sig(words("ellos juega"), words("ellos juegan")),
+                            sig(words("ellos juega"), words("ellos jueguen")))
 
 
 # ---------------------------------------------------------------------------
 # Integración ligera de _disambiguate_context (sin torch): stubs de los módulos
-# pesados + juez falso con puntuaciones fijas.
+# pesados acotados a la clase + juez falso con puntuaciones fijas.
 # ---------------------------------------------------------------------------
 
-def _stub_heavy_modules():
-    """Registra stubs de context_judge y t5_model si aún no están importados."""
-    if "infrastructure.nlp.context_judge" not in sys.modules:
-        judge_mod = types.ModuleType("infrastructure.nlp.context_judge")
-        judge_mod.ContextJudge = type("ContextJudge", (), {})
-        sys.modules["infrastructure.nlp.context_judge"] = judge_mod
-    if "infrastructure.ml.t5_model" not in sys.modules:
-        t5_mod = types.ModuleType("infrastructure.ml.t5_model")
-        t5_mod.T5CorrectionModel = type("T5CorrectionModel", (), {})
-        t5_mod.T5SpanishTokenizer = type("T5SpanishTokenizer", (), {})
-        sys.modules["infrastructure.ml.t5_model"] = t5_mod
+_MISSING = object()
+
+
+def _stub_heavy_modules() -> dict:
+    """Stubs de context_judge y t5_model (solo los nombres que importa el pipeline)."""
+    judge_mod = types.ModuleType("infrastructure.nlp.context_judge")
+    judge_mod.ContextJudge = type("ContextJudge", (), {})
+    t5_mod = types.ModuleType("infrastructure.ml.t5_model")
+    t5_mod.T5CorrectionModel = type("T5CorrectionModel", (), {})
+    t5_mod.T5SpanishTokenizer = type("T5SpanishTokenizer", (), {})
+    return {"infrastructure.nlp.context_judge": judge_mod,
+            "infrastructure.ml.t5_model": t5_mod}
+
+
+def import_isolated(test_class, module_name: str, stubs: dict):
+    """
+    Importa `module_name` de cero con `stubs` registrados en sys.modules y
+    deja sys.modules y el atributo del paquete padre como estaban al terminar
+    la clase de test (patch.dict + cleanups), para que otros módulos de test
+    del mismo proceso vean los módulos reales.
+    """
+    patcher = patch.dict(sys.modules, stubs)
+    patcher.start()
+    test_class.addClassCleanup(patcher.stop)
+    sys.modules.pop(module_name, None)
+    parent_name, _, child = module_name.rpartition(".")
+    parent = importlib.import_module(parent_name)
+    previous = parent.__dict__.get(child, _MISSING)
+
+    def restore_parent_attr():
+        if previous is _MISSING:
+            parent.__dict__.pop(child, None)
+        else:
+            setattr(parent, child, previous)
+
+    test_class.addClassCleanup(restore_parent_attr)
+    return importlib.import_module(module_name)
 
 
 class FakePhonetic:
@@ -162,9 +299,7 @@ class FakeJudge:
 class DisambiguateContextTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        _stub_heavy_modules()
-        from infrastructure.nlp import correction_pipeline
-        cls.mod = correction_pipeline
+        cls.mod = import_isolated(cls, "infrastructure.nlp.correction_pipeline", _stub_heavy_modules())
 
     def _pipeline(self, homophones, scores, word_freqs=None):
         pipe = self.mod.CorrectionPipeline.__new__(self.mod.CorrectionPipeline)
@@ -176,6 +311,12 @@ class DisambiguateContextTests(unittest.TestCase):
         for heavy in ("torch", "transformers"):
             self.assertFalse(heavy in sys.modules, f"'{heavy}' se cargó en un test puro")
 
+    def test_pipeline_reads_thresholds_from_alternatives(self):
+        self.assertEqual(self.mod._BETO_TIE_MARGIN, THRESHOLDS["betoTieMargin"])
+        self.assertEqual(self.mod._SCORE_MARGIN, THRESHOLDS["scoreMargin"])
+        self.assertEqual(self.mod._AMBIGUITY_MAX_FREQ_RATIO, THRESHOLDS["maxFreqRatio"])
+        self.assertFalse(hasattr(self.mod, "HOMOPHONE_AMBIGUITY_RATIO"))
+
     def test_confident_reading_overwrites_without_variants(self):
         pipe = self._pipeline({"esta": ["está"]}, {"esta": -3.0, "está": -1.0})
         text, variants = pipe._disambiguate_context("esta bien")
@@ -183,7 +324,7 @@ class DisambiguateContextTests(unittest.TestCase):
         self.assertEqual(variants, [])
 
     def test_tied_reading_keeps_text_and_offers_variant(self):
-        # Diferencia 0.2 < margen de acento 0.5: no se sobrescribe, pero se ofrece
+        # Diferencia 0.2 < _BETO_TIE_MARGIN 0.3: no se sobrescribe, pero se ofrece
         # la segunda lectura con score = -|diferencia| (más cerca de 0 = más empate).
         pipe = self._pipeline({"esta": ["está"]}, {"esta": -1.2, "está": -1.0})
         text, variants = pipe._disambiguate_context("esta bien")
@@ -192,12 +333,25 @@ class DisambiguateContextTests(unittest.TestCase):
         self.assertEqual(variants[0][0], "está bien")
         self.assertAlmostEqual(variants[0][1], -0.2, places=6)
 
-    def test_current_best_but_second_within_margin_offers_variant(self):
-        pipe = self._pipeline({"esta": ["está"]}, {"esta": -1.0, "está": -1.3})
+    def test_current_best_but_second_within_tie_margin_offers_variant(self):
+        pipe = self._pipeline({"esta": ["está"]}, {"esta": -1.0, "está": -1.2})
         text, variants = pipe._disambiguate_context("esta bien")
         self.assertEqual(text, "esta bien")
         self.assertEqual([v[0] for v in variants], ["está bien"])
-        self.assertAlmostEqual(variants[0][1], -0.3, places=6)
+        self.assertAlmostEqual(variants[0][1], -0.2, places=6)
+
+    def test_below_overwrite_margin_but_above_tie_margin_offers_nothing(self):
+        # tubo/tuvo dif 1.0: por debajo del margen de sobrescritura (5.0) pero
+        # por encima del empate (0.3): ni se sobrescribe ni se ofrece.
+        pipe = self._pipeline({"tubo": ["tuvo"]}, {"tubo": -3.0, "tuvo": -2.0})
+        text, variants = pipe._disambiguate_context("el tubo un accidente")
+        self.assertEqual(text, "el tubo un accidente")
+        self.assertEqual(variants, [])
+        # se/sé con los scores reales (dif 1.4): tampoco.
+        pipe = self._pipeline({"se": ["sé"]}, {"se": -7.2, "sé": -5.8})
+        text, variants = pipe._disambiguate_context("se que no vendrá hoy")
+        self.assertEqual(text, "se que no vendrá hoy")
+        self.assertEqual(variants, [])
 
     def test_clearly_current_reading_offers_nothing(self):
         pipe = self._pipeline({"esta": ["está"]}, {"esta": -1.0, "está": -4.0})
@@ -207,10 +361,10 @@ class DisambiguateContextTests(unittest.TestCase):
 
     def test_at_most_three_positions_closest_ties_first(self):
         homophones = {"esta": ["está"], "tubo": ["tuvo"], "boy": ["voy"], "se": ["sé"]}
-        scores = {"esta": -1.0, "está": -1.3,    # dif 0.3
-                  "tubo": -1.0, "tuvo": -1.1,    # dif 0.1
-                  "boy": -1.0, "voy": -1.4,      # dif 0.4
-                  "se": -1.0, "sé": -1.2}        # dif 0.2
+        scores = {"esta": -1.0, "está": -1.2,    # dif 0.2
+                  "tubo": -1.0, "tuvo": -1.05,   # dif 0.05
+                  "boy": -1.0, "voy": -1.25,     # dif 0.25
+                  "se": -1.0, "sé": -1.1}        # dif 0.1
         pipe = self._pipeline(homophones, scores)
         text, variants = pipe._disambiguate_context("esta tubo boy se")
         self.assertEqual(text, "esta tubo boy se")
@@ -223,7 +377,7 @@ class DisambiguateContextTests(unittest.TestCase):
         # rara que la escrita, no se ofrece. "sé" (3.4x más rara que "se") sí.
         freqs = {"hoy": 202178, "holly": 6071, "se": 2578296, "sé": 761934}
         pipe = self._pipeline({"hoy": ["holly"], "se": ["sé"]},
-                              {"hoy": -8.16, "holly": -8.09, "se": -7.2, "sé": -5.8}, freqs)
+                              {"hoy": -8.16, "holly": -8.09, "se": -7.2, "sé": -7.0}, freqs)
         text, variants = pipe._disambiguate_context("se que no vendrá hoy")
         self.assertEqual(text, "se que no vendrá hoy")
         self.assertEqual([v[0] for v in variants], ["sé que no vendrá hoy"])
@@ -237,6 +391,14 @@ class DisambiguateContextTests(unittest.TestCase):
         text, variants = pipe._disambiguate_context("esta, bien")
         self.assertEqual(text, "esta, bien")
         self.assertEqual([v[0] for v in variants], ["está, bien"])
+
+    def test_mixed_case_token_does_not_produce_a_case_only_variant(self):
+        # "eSta" no está entre los candidatos puntuados (match_case lo normaliza
+        # a "esta"): antes salía la variante espuria "esta bien" con score -0.0.
+        pipe = self._pipeline({"esta": ["está"]}, {"esta": -1.0, "está": -1.2})
+        text, variants = pipe._disambiguate_context("eSta bien")
+        self.assertEqual(text, "eSta bien")
+        self.assertEqual(variants, [])
 
 
 if __name__ == "__main__":

@@ -1,0 +1,32 @@
+text,expected_options,notes
+mañana voy al parque con mis amigos,1,clara: ya está bien escrita
+los niño juega en el parque,1,clara: concordancia (niños juegan)
+ayer fui al mercado con mi mamá,1,clara: ya está bien escrita
+el perro corre muy rapido,1,clara: tilde (rápido)
+mi hermano tiene diez años,1,clara: ya está bien escrita
+hoy hace mucho calor en la ciudad,1,clara: ya está bien escrita
+ellos fue al mercado,1,clara: concordancia (fueron)
+tengo que hacer la tarea de matematicas,1,clara: tilde (matemáticas)
+hola como estas,1,clara: solo la lectura interrogativa (hola cómo estás) es válida
+el gato duerme en la cama,1,clara: ya está bien escrita
+boy a comer con mi familia,1,clara: homófono que el contexto decide (voy)
+se que no vendra hoy,1,clara: solo sé es válida
+el tubo un accidente en la carretera,1,clara: solo tuvo es válida
+la gente son muy amables,1,clara: concordancia (es muy amable)
+xq ellos juega mucho,1,clara: abreviatura (porque) + concordancia (juegan)
+esta bien nos vemos luego,1,clara: solo está es válida (el brief la esperaba como 2 si BETO empataba)
+esta tarde llega,2,homófono ambiguo: esta tarde (hoy) / está tarde (llega con retraso)
+esta lista para salir,2,homófono ambiguo: esta lista (la lista) / está lista (preparada)
+si quiero ir contigo,2,homófono ambiguo: si (condicional) / sí (afirmación)
+el papa llego temprano,2,homófono ambiguo: el papá / el Papa (+ llegó)
+les gusta la casa,2,homófono ambiguo: casa / caza
+voy a botar mañana,2,homófono ambiguo: botar / votar
+compro pan en la tienda,2,homófono ambiguo: compro (presente) / compró (pasado)
+termino el trabajo hoy,2,homófono ambiguo: termino / terminó
+llego tarde a clase,2,homófono ambiguo: llego / llegó
+hablo con mi profesor,2,homófono ambiguo: hablo / habló
+a mi me gusta que ellos juega mucho,2-3,indicativo/subjuntivo: juegan / jueguen (+ base con mí)
+espero que ellos viene mañana,2-3,indicativo/subjuntivo: vengan / vienen
+es posible que ellos llega tarde,2-3,indicativo/subjuntivo: lleguen / llegan
+ojala que nosotros gana el partido,2-3,indicativo/subjuntivo: ganemos / ganamos (+ ojalá)
+me alegra que ustedes esta aqui,2-3,indicativo/subjuntivo: estén / están (+ aquí)
