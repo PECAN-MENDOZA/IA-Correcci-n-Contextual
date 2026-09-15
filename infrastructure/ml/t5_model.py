@@ -234,7 +234,13 @@ class T5CorrectionModel:
             pass
 
     def generate_corrections(self, text: str, tokenizer: T5SpanishTokenizer,
-                              num_returns: int = 2) -> List[str]:
+                              num_returns: int = 2) -> List[Tuple[str, float]]:
+        """
+        Beam search determinista (num_beams=4). Devuelve hasta `num_returns`
+        candidatos como `[(texto, score)]`, de mejor a peor, donde `score` es
+        el `sequences_scores` del beam (log-prob normalizada por longitud) que
+        el selector de alternativas usa para medir la ambigüedad.
+        """
         inputs         = tokenizer.encode_single(text)
         input_ids      = inputs["input_ids"].to(self.device)
         attention_mask = inputs["attention_mask"].to(self.device)
@@ -252,8 +258,10 @@ class T5CorrectionModel:
                     num_return_sequences=min(num_returns, 4),
                     do_sample=False,
                     early_stopping=True,
+                    output_scores=True,
+                    return_dict_in_generate=True,
                 )
-        return [tokenizer.decode(out, skip_special=True).strip() for out in outputs]
+        return _decode_scored(outputs, tokenizer)
 
     def train(self, train_dataset, eval_dataset, tokenizer, epochs=3, batch_size=4,
               learning_rate=3e-4, save_dir_override=None):
@@ -431,6 +439,8 @@ def generate_with_lora(base_model: T5CorrectionModel, tokenizer: T5SpanishTokeni
                 num_return_sequences=num_returns,
                 do_sample=False,
                 early_stopping=True,
+                output_scores=True,
+                return_dict_in_generate=True,
             )
 
         # Desacoplar adaptador y restaurar modelo base limpio
@@ -442,4 +452,24 @@ def generate_with_lora(base_model: T5CorrectionModel, tokenizer: T5SpanishTokeni
         base_model.model.generation_config = GenerationConfig(**_SAFE_GENERATION_CONFIG)
         base_model.model.to(device)
 
-    return [tokenizer.decode(out, skip_special=True).strip() for out in outputs]
+    return _decode_scored(outputs, tokenizer)
+
+
+def _decode_scored(outputs, tokenizer: T5SpanishTokenizer) -> List[Tuple[str, float]]:
+    """
+    Convierte la salida de `generate(..., return_dict_in_generate=True)` en
+    `[(texto, score)]`. Con beam search `sequences_scores` trae la log-prob
+    normalizada por longitud de cada secuencia devuelta; si no viene (p. ej.
+    decodificación greedy) se asigna 0.0 a todas. Mismo contrato para el T5
+    base (generate_corrections) y para un adaptador LoRA (generate_with_lora).
+    """
+    sequences = outputs.sequences
+    scores    = getattr(outputs, "sequences_scores", None)
+    if scores is None:
+        scores = [0.0] * len(sequences)
+    else:
+        scores = [float(s) for s in scores.tolist()]
+    return [
+        (tokenizer.decode(seq, skip_special=True).strip(), score)
+        for seq, score in zip(sequences, scores)
+    ]

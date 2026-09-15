@@ -10,6 +10,7 @@ from symspellpy import SymSpell, Verbosity
 from infrastructure.nlp.phonetic_engine import PhoneticEngine, match_case, to_phonetic, DICT_PATH
 from infrastructure.nlp.context_judge import ContextJudge
 from infrastructure.nlp.grammar_rules import correct_grammar
+from infrastructure.nlp.alternatives import select_alternatives
 from infrastructure.ml.t5_model import T5CorrectionModel, T5SpanishTokenizer
 from infrastructure.ml.guards import is_safe_refinement
 
@@ -43,6 +44,38 @@ _MARGIN_ACCENT    = 0.5
 _MARGIN_HOMOPHONE = 5.0
 _MARGIN_MONO      = 3.0
 
+# Señal de ambigüedad en homófonos: fracción del margen del tipo de cambio
+# dentro de la cual las dos mejores lecturas se consideran "empatadas". Si
+# |score(alternativa) − score(actual)| < margen · RATIO, el texto principal no
+# cambia pero la segunda lectura se ofrece como candidato (ver
+# _disambiguate_context). 1.0 = toda la zona por debajo del umbral de
+# sobrescritura cuenta como ambigua.
+HOMOPHONE_AMBIGUITY_RATIO = 1.0
+
+# Como mucho tantas posiciones ambiguas por frase (las más empatadas) generan
+# una variante; una alternativa por posición.
+_MAX_AMBIGUOUS_POSITIONS = 3
+
+# Una segunda lectura mucho más rara (en el corpus es_50k) que la palabra
+# escrita no se ofrece como ambigüedad: un "empate" de BETO entre dos lecturas
+# improbables no es ambigüedad (la PLL media infla las palabras de varios
+# subtokens: hoy/holly −8.16/−8.09). Ratios reales: se/sé 3.4 · tuvo/tubo 9.5
+# (se conservan) · hoy/holly 33 · mis/miss 35 · voy/boy 120 (se descartan).
+# La sobrescritura de la capa 2.5 no usa esta guarda: BETO puede seguir
+# imponiendo la lectura rara si supera su margen.
+_AMBIGUITY_MAX_FREQ_RATIO = 20
+
+# Cuántos beams de T5 se piden como candidatos (num_beams=4 en el modelo).
+_T5_NUM_RETURNS = 3
+
+# Margen de score (log-prob normalizada por longitud del beam, o |diferencia|
+# BETO de una segunda lectura) respecto al mejor candidato para que una
+# alternativa se ofrezca. Calibrado con los beams reales del T5 fusionado:
+#   otra lectura válida:  juega→juegan 0.09 · juega→jueguen 0.14 · fue→fueron 0.25
+#   paráfrasis/ruido:     voy→iré 0.37 · luego→después 0.40 · ayer→anoche 0.48
+#                         pasado→ocurrido 0.57 · mi→mis hermanos 0.75 · ellos→él 0.91
+_SCORE_MARGIN = 0.3
+
 
 def _has_accent(word: str) -> bool:
     return bool(_ACCENTED_RE.search(word))
@@ -75,13 +108,20 @@ class CorrectionPipeline:
     # Desambiguación contextual (BETO)
     # ------------------------------------------------------------------
 
-    def _disambiguate_context(self, sentence: str) -> str:
+    def _disambiguate_context(self, sentence: str) -> tuple[str, list[tuple[str, float]]]:
         """
         Pasada palabra-a-palabra: para cada término con homófonos/variantes de
         acento reales, deja que BETO elija el más coherente con la frase.
         Solo sobrescribe si la mejora en log-prob supera el margen del tipo de
         cambio (acento / homófono / monosílabo). Es idempotente y greedy:
         cada decisión usa como contexto las decisiones ya tomadas a su izquierda.
+
+        Devuelve `(texto, ambiguous_variants)`. Cuando las dos mejores lecturas
+        de una posición quedan a menos de `margen · HOMOPHONE_AMBIGUITY_RATIO`
+        (el contexto no decide), el texto no cambia pero se genera una variante
+        con la segunda lectura sustituida, con score = −|diferencia| (más cerca
+        de 0 cuanto más empatado). Como mucho una alternativa por posición y
+        `_MAX_AMBIGUOUS_POSITIONS` posiciones (las de menor diferencia).
         """
         tokens = sentence.split()
         cores, affixes = [], []
@@ -93,6 +133,8 @@ class CorrectionPipeline:
             else:
                 affixes.append(("", ""))
                 cores.append(tok)
+
+        ambiguous = []   # (|diferencia|, posición, lectura alternativa)
 
         for i, core in enumerate(cores):
             if len(core) < 2:
@@ -112,21 +154,55 @@ class CorrectionPipeline:
             best, best_score = scored[0]
             current       = tokens[i]
             current_score = dict(scored).get(current, best_score)
-            if best == current:
+
+            # Lectura alternativa: la mejor si no es la actual; si la actual ya
+            # es la mejor, la segunda (solo para medir si el contexto decide).
+            if best != current:
+                alt, alt_score = best, best_score
+            elif len(scored) >= 2:
+                alt, alt_score = scored[1]
+            else:
                 continue
 
-            best_core = _PUNCT_RE.match(best).group(2).lower()
+            alt_core = _PUNCT_RE.match(alt).group(2).lower()
             if len(lower) <= 2:
                 margin = _MARGIN_MONO
-            elif _strip_accents(best_core) == _strip_accents(lower):
+            elif _strip_accents(alt_core) == _strip_accents(lower):
                 margin = _MARGIN_ACCENT
             else:
                 margin = _MARGIN_HOMOPHONE
 
-            if (best_score - current_score) >= margin:
-                tokens[i] = best
+            # > 0: BETO prefiere la alternativa; < 0: prefiere la palabra actual.
+            diff = alt_score - current_score
+            if diff >= margin:
+                tokens[i] = alt
+            elif abs(diff) < margin * HOMOPHONE_AMBIGUITY_RATIO and self._is_plausible_reading(lower, alt_core):
+                ambiguous.append((abs(diff), i, alt))
 
-        return " ".join(tokens)
+        text = " ".join(tokens)
+
+        # Variantes "segunda lectura" sobre el texto final, las más empatadas primero.
+        ambiguous.sort(key=lambda entry: (entry[0], entry[1]))
+        variants = []
+        for diff, i, alt in ambiguous[:_MAX_AMBIGUOUS_POSITIONS]:
+            alt_tokens    = list(tokens)
+            alt_tokens[i] = alt
+            variants.append((" ".join(alt_tokens), -diff))
+
+        return text, variants
+
+    def _is_plausible_reading(self, current: str, alternative: str) -> bool:
+        """
+        La segunda lectura solo cuenta como ambigüedad si no es mucho más rara
+        (_AMBIGUITY_MAX_FREQ_RATIO) que la palabra escrita. Sin datos de
+        frecuencia para alguna de las dos, no se descarta.
+        """
+        freqs    = getattr(self._phonetic, "word_freqs", {}) or {}
+        cur_freq = freqs.get(current, 0)
+        alt_freq = freqs.get(alternative, 0)
+        if not cur_freq or not alt_freq:
+            return True
+        return cur_freq <= alt_freq * _AMBIGUITY_MAX_FREQ_RATIO
 
     # ------------------------------------------------------------------
     # Pipeline principal
@@ -137,6 +213,10 @@ class CorrectionPipeline:
         Corrige `text` con el pipeline global. `user_vocab` es un mapa opcional
         {palabra: reemplazo} de sobrescritura léxica; el runtime del servicio
         pasa siempre {} (no hay datos por alumno en la inferencia).
+
+        Devuelve las sugerencias con la recomendada primero: normalmente una
+        (o refinado + base); hasta tres solo cuando la oración es ambigua
+        (ver infrastructure/nlp/alternatives.py).
         """
         user_vocab = user_vocab or {}
 
@@ -218,42 +298,61 @@ class CorrectionPipeline:
         # Las reglas anteriores no distinguen palabras válidas que solo el contexto
         # separa (esta/está, boy/voy, tubo/tuvo). BETO puntúa cada alternativa
         # según el resto de la frase y elige la más coherente.
+        # Cuando el contexto no decide entre dos lecturas (esta/está, tubo/tuvo)
+        # la segunda lectura se conserva como candidato para ofrecerla al alumno.
+        ambiguous_variants: list[tuple[str, float]] = []
         if self._judge is not None:
             try:
-                base_corrected = self._disambiguate_context(base_corrected)
+                base_corrected, ambiguous_variants = self._disambiguate_context(base_corrected)
             except Exception as e:
                 print(f"[WARN] Desambiguación contextual (BETO) falló: {e}")
 
         # --- CAPA 3: Corrección gramatical por reglas (haber impersonal, gustar, número) ---
         base_corrected = correct_grammar(base_corrected)
+        ambiguous_variants = [(correct_grammar(v), s) for v, s in ambiguous_variants]
 
         # --- CAPA 4: Refinamiento gramatical con T5 (concordancia sujeto-verbo) ---
         # T5 (adaptador LoRA de concordancia) actúa sobre el texto ya corregido por
-        # reglas+BETO. Con guardas para no alucinar (ver _refine_with_model).
+        # reglas+BETO y devuelve varios beams con su score; solo los seguros
+        # sobreviven (ver _refine_with_model).
+        refined: list[tuple[str, float]] = []
         if self._seq2seq and self._tokenizer:
             try:
                 refined = self._refine_with_model(base_corrected)
-                if refined != base_corrected:
-                    return [refined, base_corrected]   # refinado primero, base como alternativa
             except Exception as e:
                 print(f"[WARN] Refinamiento T5 falló: {e}")
 
-        # Fallback: solo corrección simbólica
-        return [base_corrected]
+        # --- CAPA 5: Selección de alternativas (hasta 3, solo si hay ambigüedad) ---
+        # Las segundas lecturas de BETO (score = −|diferencia|) se anclan al mejor
+        # beam de T5 para que compartan escala: nunca desplazan al refinado como
+        # recomendada y entran solo si su empate cabe en _SCORE_MARGIN. El
+        # selector coloca la base justo detrás del mejor candidato; si nada
+        # supera las reglas (p. ej. el texto ya estaba bien) se devuelve la base.
+        best_score = max((s for _, s in refined), default=0.0)
+        candidates = refined + [(v, best_score + s) for v, s in ambiguous_variants]
+        suggestions = select_alternatives(
+            text, base_corrected, candidates, score_margin=_SCORE_MARGIN
+        )
+        return suggestions or [base_corrected]
 
-    def _refine_with_model(self, text: str) -> str:
+    def _refine_with_model(self, text: str) -> list[tuple[str, float]]:
         """
-        Pasa `text` (ya corregido por reglas+BETO) por T5 y acepta su salida solo
-        si es segura, para capturar la concordancia sujeto-verbo sin alucinar:
+        Pasa `text` (ya corregido por reglas+BETO) por T5 y devuelve los beams
+        `[(texto, score)]` que son seguros, para capturar la concordancia
+        sujeto-verbo sin alucinar:
           - filtro de longitud (0.6–1.5 del original),
           - límite de palabras cambiadas (anti-alucinación),
           - preserva la capitalización inicial del texto base.
         """
-        generated = self._seq2seq.generate_corrections(text, self._tokenizer, num_returns=1)
-        g = generated[0].strip() if generated else ""
-        if not is_safe_refinement(text, g):
-            return text
-
-        if text[:1].islower() and g[:1].isupper():
-            g = g[:1].lower() + g[1:]
-        return g
+        generated = self._seq2seq.generate_corrections(
+            text, self._tokenizer, num_returns=_T5_NUM_RETURNS
+        )
+        safe = []
+        for g, score in generated:
+            g = g.strip()
+            if not is_safe_refinement(text, g):
+                continue
+            if text[:1].islower() and g[:1].isupper():
+                g = g[:1].lower() + g[1:]
+            safe.append((g, float(score)))
+        return safe

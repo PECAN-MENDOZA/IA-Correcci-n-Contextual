@@ -34,6 +34,7 @@ teclado_adaptativo/
 │   │   ├── phonetic_engine.py      # Motor fonético + restauración de tildes
 │   │   ├── context_judge.py        # BETO MLM para desambiguar homófonos
 │   │   ├── grammar_rules.py        # Gramática por reglas (haber impersonal, gustar, número)
+│   │   ├── alternatives.py         # Selector puro de alternativas (hasta 3 solo si hay ambigüedad)
 │   │   └── correction_pipeline.py  # Pipeline global de corrección (reglas + BETO + T5)
 │   └── persistence/
 │       └── csv_user_repository.py  # Repositorio CSV del feedback aceptado (curación offline)
@@ -48,6 +49,7 @@ teclado_adaptativo/
 ├── scripts/merge_grammar_lora.py   # Fusiona el LoRA global en models/t5_correction
 ├── evaluate.py                     # Evaluación del pipeline sobre un dataset
 ├── test_global_runtime.py          # Tests del runtime global (fakes, sin torch)
+├── test_alternatives.py            # Tests del selector de alternativas y de la ambigüedad BETO (sin torch)
 ├── test_lora_guards.py             # Tests de la guarda anti-alucinación
 └── requirements.txt
 ```
@@ -112,7 +114,7 @@ python -m pip install -r requirements.txt
 python main.py
 
 # Tests sin GPU ni modelo
-python -m unittest -v test_global_runtime
+python -m unittest -v test_global_runtime test_alternatives
 python test_lora_guards.py
 
 # Entrenar modelo base
@@ -134,4 +136,55 @@ python scripts/merge_grammar_lora.py
 | 2    | SymSpell (Levenshtein ≤ 2) + restauración de ñ y tildes |
 | 2.5  | Desambiguación contextual de homófonos y tildes con BETO MLM |
 | 3    | Gramática por reglas (haber impersonal, gustar, concordancia de número) |
-| 4    | Refinamiento gramatical con T5 + LoRA global, aceptado solo si pasa la guarda anti-alucinación |
+| 4    | Refinamiento gramatical con T5 + LoRA global (beam search, 3 candidatos con score), aceptado solo si pasa la guarda anti-alucinación |
+| 5    | Selección de alternativas: una recomendación, o hasta 3 opciones solo si la oración es ambigua (ver abajo) |
+
+## Alternativas: hasta tres opciones solo cuando la oración es ambigua
+
+`suggestions[0]` es siempre la recomendada. En el caso común hay una sola
+opción (o dos: refinado de T5 + texto base de reglas+BETO, como siempre).
+Solo cuando el texto admite lecturas distintas se ofrecen hasta **tres**.
+La selección es pura (`infrastructure/nlp/alternatives.py`, sin torch) y
+recibe como candidatos los 3 beams de T5 con su `sequences_scores`, las
+"segundas lecturas" de BETO y el texto base.
+
+Un candidato se ofrece únicamente si:
+
+| Regla | Criterio |
+|-------|----------|
+| (a) seguro     | pasa `is_safe_refinement` respecto al texto base (longitud 0.6–1.5x, ≤ max(3, n/3) palabras cambiadas) |
+| (b) distinto   | tras normalizar espacios y puntuación final es distinto del texto original y de los ya elegidos (el original nunca es una corrección) |
+| (c) otra lectura | su conjunto de índices de palabra editados respecto al original (con tildes, sin la mayúscula inicial) es distinto del de los ya elegidos: dos textos que corrigen las mismas palabras son una interpretación y su variante, no dos |
+| (d) empate     | su score está a menos de `_SCORE_MARGIN = 0.3` del mejor candidato (calibrado con beams reales: `juega→juegan` 0.09, `juega→jueguen` 0.14, `fue→fueron` 0.25 entran; `voy→iré` 0.37, `luego→después` 0.40, `ayer→anoche` 0.48, `ellos→él` 0.91 quedan fuera) |
+| (e) léxico     | cada palabra que edita es una variante cercana de la original (similitud sin tildes ≥ 0.6): `esta/está`, `tubo/tuvo`, `fue/fueron` sí; `luego/después`, `voy/iré` (paráfrasis) no |
+
+El texto base entra justo detrás del mejor candidato con su mismo score y
+solo se filtra por (b): si T5 difiere de la base, la base se conserva como
+alternativa. Si ningún candidato cumple, se devuelve solo la base.
+
+Segunda fuente de ambigüedad, en la capa 2.5 (`_disambiguate_context`): cuando
+BETO no separa las dos mejores lecturas de un homófono (`esta/está`,
+`se/sé`, `tubo/tuvo`) por más de `margen · HOMOPHONE_AMBIGUITY_RATIO` (1.0,
+es decir, toda la zona por debajo del umbral de sobrescritura), el texto no
+cambia pero se genera la variante con la segunda lectura, con
+score = −|diferencia| (más cerca de 0 cuanto más empatado), anclado al mejor
+beam de T5 para que entre por (d) solo si el empate cabe en `_SCORE_MARGIN`.
+Máximo una alternativa por posición y 3 posiciones (las más empatadas). Una
+lectura más de `_AMBIGUITY_MAX_FREQ_RATIO` (20) veces más rara que la escrita
+no cuenta como ambigüedad (`hoy/holly`, `mis/miss`: la PLL media de BETO
+infla las palabras de varios subtokens).
+
+Salida real del modelo fusionado (tests manuales, `test_alternatives.py`
+cubre las reglas con fakes):
+
+```
+mañana voy al parque con mis amigos  → ["mañana voy al parque con mis amigos"]            (1: ya estaba bien)
+esta bien, nos vemos luego           → ["está bien, nos vemos luego"]                     (1: T5 y BETO coinciden)
+a mi me gusta que ellos juega mucho  → ["a mí me gusta que ellos juegan mucho",
+                                        "a mí me gusta que ellos juega mucho"]            (2: refinado + base)
+se que no vendra hoy                 → ["sé que no vendrá hoy", "se que no vendrá hoy"]   (2: se/sé empatados en BETO)
+hola como estas                      → ["hola como estás", "hola cómo estás"]             (2: afirmación / pregunta)
+```
+
+El contrato HTTP no cambia (`suggestions: list[str]`); el teclado muestra como
+mucho tres globos y nunca uno idéntico al texto original.
