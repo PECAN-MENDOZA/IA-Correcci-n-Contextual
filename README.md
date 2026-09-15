@@ -387,3 +387,63 @@ xq ellos juega mucho                 → ["porque ellos juegan mucho", "porque e
 
 El contrato HTTP no cambia (`suggestions: list[str]`); el teclado muestra como
 mucho tres globos y nunca uno idéntico al texto original.
+
+## Análisis offline del estudio con usuarios (`scripts/analyze_user_experiment.py`)
+
+Reproduce PEO, PPM, TAS y TAS aceptada a partir del CSV de análisis del
+backend (`GET /api/v1/research/studies/{id}/analysis.csv`, 18 columnas, una
+fila por ejecución completada × sugerencia evaluada) con **las mismas fórmulas
+y reglas de muestra que `StudyMetricsService`**, de modo que el análisis
+independiente valide los números de `GET …/results`:
+
+- PEO = errores ortográficos adjudicados / palabras del texto final × 100 por
+  ejecución (palabras: `[^\W_]+(?:['’\-][^\W_]+)*`, la regla de
+  `WordTokenizer`; se usa la columna `word_count` cuando viene y se avisa si
+  la regex no coincide); media por participante-condición; Δ = asistida − sin
+  asistencia; IC 95 % t de Student, prueba t emparejada bilateral y d_z.
+- PPM = palabras / (duración_ms / 60000); una ejecución sin palabras contables
+  vale 0.
+- TAS = sugerencias adjudicadas con puntaje 0 / evaluadas × 100 agrupada, con
+  intervalo de Wilson (z = 1.959964, acotado a [0, 100]); media ± sd por
+  participante con IC t acotado (descriptivo). TAS aceptada: solo
+  `accepted = true` (aceptación congelada en el lote semántico).
+- Muestra: par completo = al menos una ejecución COMPLETED no excluida por
+  condición; PEO solo participantes con palabras contables en ambas
+  condiciones; PPM toda la cohorte incluida; TAS ejecuciones ASSISTED con al
+  menos una sugerencia evaluada. Varias ejecuciones de un participante y
+  condición se promedian antes de la inferencia. Se informan
+  `participantsTotal/Included/WithIncompletePair/WithoutEligibleRun` y
+  `runsCompleted/Included/Excluded/InIncompletePairs/WithoutCountableWords`
+  como el backend, más las listas de excluidos.
+- Validación determinista: columnas exactas, `condition` conocida,
+  `duration_ms > 0`, `orthography_errors` entero ≥ 0 y ≤ palabras,
+  `semantic_score` ∈ {0, 1, 2}, `included/excluded/accepted` booleanos, sin
+  filas duplicadas por ejecución × sugerencia, datos de ejecución coherentes
+  entre sus filas y bandera `included` consistente con la regla del par
+  completo. Sin adjudicación completa la métrica es `null` con un estado
+  (`ADJUDICATED`, `INCOMPLETE_COVERAGE`, `NO_BATCH`, `NOT_APPLICABLE`,
+  `NO_SAMPLE`), nunca un número parcial.
+- Con n < 2 o varianza nula los campos inferenciales son `null` (nunca NaN).
+- Sin `scipy` (no está instalado en `.venv`): la t de Student (cuantil y
+  función de distribución) se implementa con la beta incompleta regularizada
+  (`math.lgamma` + fracción continua), verificada frente a tablas a 1e-10.
+
+```powershell
+.venv\Scripts\python.exe scripts/analyze_user_experiment.py analysis.csv `
+    --ppm-margin 2.0 --tas-limit 10 --json reports/user-study.json --markdown reports/user-study.md
+# Reconciliación con el backend (falla con código 1 si PEO/PPM/TAS difieren > 1e-6):
+.venv\Scripts\python.exe scripts/analyze_user_experiment.py tests/fixtures/analysis-piloto02-real.csv `
+    --compare-results tests/fixtures/results-piloto02-real.json
+```
+
+Ambos informes llevan `formulaVersion: "user_study_v1"` y `inputSha256` del
+CSV. `--compare-results` compara partición de la muestra, PEO, PPM, TAS, TAS
+aceptada, estados de anotación y filas por participante con `GET …/results`;
+la única diferencia admitida (anotada, no fallo) es `participantsTotal` /
+`participantsWithoutEligibleRun`, porque el CSV solo exporta participantes con
+alguna ejecución completada. `--ppm-margin` y `--tas-limit` deben coincidir con
+`app.research.*` del backend para que `nonInferior`/`upperCiBelowLimit`
+concuerden. Fixtures: `tests/fixtures/experiment-analysis.csv` (sintético, 5
+participantes) y `tests/fixtures/analysis-piloto02-real.csv` +
+`results-piloto02-real.json` (estudio PILOTO-02 real, 1 par completo). Tests:
+`.venv\Scripts\python.exe -m unittest -v test_user_experiment_analysis`.

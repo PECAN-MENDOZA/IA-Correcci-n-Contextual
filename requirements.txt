@@ -22,3 +22,5 @@ pyarrow
 symspellpy==6.9.0
 Levenshtein==0.27.3
 psutil
+# Análisis offline del estudio (scripts/analyze_user_experiment.py): solo librería estándar.
+# scipy no está instalado en .venv; la t de Student se implementa en el propio script.

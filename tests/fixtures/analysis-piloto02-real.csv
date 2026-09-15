@@ -1,0 +1,3 @@
+pseudonym,condition,task,protocol_version,included,excluded,run_id,duration_ms,incident_reasons,word_count,orthography_errors,orthography_batch_id,final_text,suggestion_index,original_text,suggestion,semantic_score,accepted,semantic_batch_id
+P-002,UNASSISTED,TASK_A,1,true,false,033985dc-d55b-404d-9fc6-fbc2c214d8c0,61329,,6,1,8423659d-7531-4391-b230-2dc5ae1bf4fe,Borrador tras la ola de correcciones.,,,,,,
+P-002,ASSISTED,TASK_B,1,true,false,3c593290-3772-4c4b-8cb6-26d54cdde083,28043,,8,1,8423659d-7531-4391-b230-2dc5ae1bf4fe,Mi lugar favorito es la plasa de armas.,0,Mi lugar favorito es la plasa de armas.,Mi lugar favorito es la plaza de armas.,2,false,39c1d362-f391-4bd3-8df3-422ef85986b5
