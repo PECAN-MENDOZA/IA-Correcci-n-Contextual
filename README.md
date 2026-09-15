@@ -47,9 +47,11 @@ teclado_adaptativo/
 ├── train.py                        # CLI: entrenamiento del modelo base
 ├── train_grammar_lora.py           # CLI: entrenamiento del LoRA gramatical GLOBAL
 ├── scripts/merge_grammar_lora.py   # Fusiona el LoRA global en models/t5_correction
-├── evaluate.py                     # Evaluación del pipeline sobre un dataset
+├── evaluate.py                     # Evaluación offline: P/R/F0.5 por edición (exact_token_edits_v1) + WER/CER
+├── setup_model.py                  # Descarga el T5 base a models/t5_base (nunca pisa models/t5_correction)
 ├── test_global_runtime.py          # Tests del runtime global (fakes, sin torch)
 ├── test_alternatives.py            # Tests del selector de alternativas y de la ambigüedad BETO (sin torch)
+├── test_evaluate_metrics.py        # Tests del scorer, del informe y de la guarda de setup_model (sin torch)
 ├── test_lora_guards.py             # Tests de la guarda anti-alucinación
 └── requirements.txt
 ```
@@ -114,8 +116,15 @@ python -m pip install -r requirements.txt
 python main.py
 
 # Tests sin GPU ni modelo
-python -m unittest -v test_global_runtime test_alternatives
+python -m unittest -v test_global_runtime test_alternatives test_evaluate_metrics
 python test_lora_guards.py
+
+# Evaluar el pipeline (ver sección "Evaluación"); --t5-dir añade el T5 global fusionado
+python evaluate.py --no-beto --out reports/rules-dev.json
+python evaluate.py --t5-dir models/t5_correction --model-version "<modelVersion>" --out reports/eval.json
+
+# Descargar el T5 base (a models/t5_base; models/t5_correction está protegido)
+python setup_model.py
 
 # Entrenar modelo base
 python train.py --epochs 3 --batch_size 2
@@ -138,6 +147,60 @@ python scripts/merge_grammar_lora.py
 | 3    | Gramática por reglas (haber impersonal, gustar, concordancia de número) |
 | 4    | Refinamiento gramatical con T5 + LoRA global (beam search, 3 candidatos con score), aceptado solo si pasa la guarda anti-alucinación |
 | 5    | Selección de alternativas: una recomendación, o hasta 3 opciones solo si la oración es ambigua (ver abajo) |
+
+## Evaluación: Precisión, Recall y F0.5 a nivel de edición (`evaluate.py`)
+
+`evaluate.py` evalúa **la sugerencia recomendada** (`correct(text, {})[0]`; las
+alternativas de la capa 5 no se puntúan) contra un dataset
+`categoria|entrada|esperado_1|esperado_2...` (una o más referencias; menos de
+tres campos es un error) y guarda un informe JSON versionado. La métrica
+principal es F0.5 sobre ediciones con el scorer `exact_token_edits_v1`; WER,
+CER, mejora, exactitud y latencia se conservan como diagnósticos.
+
+Scorer `exact_token_edits_v1`:
+
+- tokens: `re.findall(r"\w+|[^\w\s]", texto)` (palabras y signos sueltos);
+- ediciones: opcodes no-equal de `difflib.SequenceMatcher` entre la entrada y
+  el texto, como `(inicio, fin, tokens_reemplazo)` sobre la entrada. Un bloque
+  de reemplazo con el mismo número de tokens a ambos lados (`arbol esta` →
+  `árbol está`) se divide palabra a palabra para que una corrección parcial
+  cuente como TP + FN y no como FP + FN; `ala` → `a la` sigue siendo una edición;
+- por frase se elige la referencia con mejor F0.5 (en empate, más TP y menos
+  FP+FN); TP = predichas ∩ gold, FP = predichas − gold, FN = gold − predichas,
+  sumadas sobre el corpus y por categoría;
+- P = TP/(TP+FP), R = TP/(TP+FN), F0.5 = 1.25·P·R/(0.25·P+R), **0.0 cuando el
+  denominador es 0** (la convención que valida el backend con tolerancia 1e-6;
+  por eso la categoría `correcto`, sin ediciones gold, muestra P = R = 0 y solo
+  aporta falsos positivos).
+
+Informe JSON (`--out`): `development` (true para `data/eval_gold.csv`,
+`pruebas.txt` o `--development`; esos informes no se registran en el backend),
+`timestamp`, `source`, `modelVersion` (`--model-version` > `MODEL_VERSION` >
+`models/grammar_lora/manifest.json` > `global-lora-unversioned`), `modelDir`
+(`--t5-dir`), `scorerVersion`, `dataset`, `datasetSha256` (SHA-256 de los
+bytes exactos del archivo), `global`, `por_categoria`, `latency_ms_avg`,
+`casos` y el bloque `technicalEvaluation`, que es exactamente lo que valida el
+panel Vue y acepta `POST /api/v1/research/technical-evaluations`:
+
+```json
+{"modelVersion": "...", "datasetSha256": "<64 hex>", "scorerVersion": "exact_token_edits_v1",
+ "precision": 0.98, "recall": 1.0, "fZeroFive": 0.985,
+ "truePositives": 54, "falsePositives": 1, "falseNegatives": 0,
+ "categories": [{"category": "tilde", "tp": 12, "fp": 0, "fn": 0, "precision": 1.0, "recall": 1.0, "f05": 1.0}, ...]}
+```
+
+Fuentes: `--no-beto` (solo reglas), por defecto reglas + BETO, `--t5-dir
+models/t5_correction` añade el T5 global fusionado (solo directorios locales
+completos: nunca descarga), `--source http --url ...` mide un servidor. El
+holdout final se identifica por su SHA-256 y no se usa para nada más.
+
+Informes de desarrollo sobre `data/eval_gold.csv` (38 casos, GPU):
+
+| fuente               | TP | FP | FN | P     | R     | F0.5  | exactos | ms/frase |
+|----------------------|----|----|----|-------|-------|-------|---------|----------|
+| reglas               | 45 | 0  | 9  | 1.000 | 0.833 | 0.962 | 29/38   | 0        |
+| reglas + BETO        | 53 | 2  | 1  | 0.964 | 0.981 | 0.967 | 35/38   | 54       |
+| reglas + BETO + T5   | 54 | 1  | 0  | 0.982 | 1.000 | 0.985 | 37/38   | 268      |
 
 ## Alternativas: hasta tres opciones solo cuando la oración es ambigua
 
