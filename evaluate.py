@@ -2,14 +2,16 @@
 evaluate.py — Evaluación offline del pipeline de corrección.
 
 Métrica principal: Precisión, Recall y F0.5 **a nivel de edición** con el
-scorer `exact_token_edits_v1` (ver `extract_edits` / `edit_scores`). WER, CER,
-mejora, exactitud y latencia se conservan como diagnósticos.
+scorer `exact_token_edits_v1` (ver `align_tokens` / `extract_edits` /
+`edit_scores`). WER, CER, mejora, exactitud y latencia se conservan como
+diagnósticos.
 
 No necesita el servidor: por defecto construye el pipeline en el mismo proceso
 (reglas + BETO, y T5 si se pasa `--t5-dir`) y lo evalúa contra el dataset
 gold. También puede medir un servidor en vivo por HTTP. Imprime métricas por
-categoría y globales y guarda un informe JSON versionado que el panel Vue
-valida y el backend acepta (`POST /api/v1/research/technical-evaluations`).
+categoría y globales y guarda un informe JSON versionado que se sube **tal
+cual** al panel Vue (que lo valida) y que el backend acepta
+(`POST /api/v1/research/technical-evaluations`).
 
 Uso:
   python evaluate.py                                   # pipeline en-proceso (reglas + BETO)
@@ -26,42 +28,62 @@ el informe se marca `"development": true` (también con `--development`).
 
 Scorer `exact_token_edits_v1`:
   - tokens = `re.findall(r"\\w+|[^\\w\\s]", texto)` (palabras y signos sueltos);
-  - ediciones = opcodes no-equal de `difflib.SequenceMatcher` entre la entrada
-    y el texto, como `(inicio_en_entrada, fin_en_entrada, tokens_reemplazo)`;
-    un bloque de reemplazo con igual número de tokens a ambos lados se divide
-    palabra a palabra (ver `extract_edits`);
+  - alineación entrada→texto por programación dinámica sobre tokens
+    (`align_tokens`): igual = 0; sustitución 1:1 = 0.1 si solo cambian tildes
+    o mayúsculas, la distancia de Levenshtein de caracteres normalizada si es
+    ≤ 0.5 y 1 en otro caso; división 1:m / unión k:1 (m, k ≤ 4) solo cuando
+    las letras coinciden sin tildes ni mayúsculas (`ala` → `a la`), coste 0.1;
+    inserción = borrado = 1;
+  - ediciones = cada sustitución, división o unión es una edición
+    `(inicio_en_entrada, fin_en_entrada, tokens_reemplazo)`; una racha de
+    inserciones/borrados consecutivos es una sola edición (inserción:
+    inicio == fin; borrado: reemplazo vacío);
   - por frase se elige la referencia con mejor F0.5 (en empate, más TP y menos
     FP+FN); TP = ediciones predichas ∩ gold, FP = predichas − gold,
     FN = gold − predichas, sumadas sobre el corpus;
   - P = TP/(TP+FP), R = TP/(TP+FN), F0.5 = 1.25·P·R/(0.25·P+R); cuando el
     denominador es 0 el valor es 0.0 (convención del backend, tolerancia 1e-6).
 
+Si el modelo lanza una excepción en un caso, la predicción es la entrada (se
+puntúa como "sin cambios"), el caso lleva `error`, el informe lleva `errors`
+(conteo) y `errorList`, y un informe que no es de desarrollo termina con
+código 2.
+
 Este módulo no carga torch ni modelos al importarse (los tests puros de
 `test_evaluate_metrics.py` dependen de ello): el pipeline se construye en
-`build_predictor`, desde `main()`.
+`build_predictor`, desde `main()`. `HF_HUB_OFFLINE=1` se fija en `main()` si
+no estaba definido, para que ni BETO ni T5 intenten descargar nada.
 """
 import argparse
-import difflib
 import hashlib
 import json
 import os
 import re
 import sys
 import time
+import unicodedata
 from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
 
+from infrastructure.versioning import DEFAULT_MODEL_VERSION, REPO_DIR, resolve_model_version  # noqa: F401
+
 SCORER_VERSION = "exact_token_edits_v1"
-DEFAULT_MODEL_VERSION = "global-lora-unversioned"   # igual que application.use_cases.correct_text
-REPO_DIR = Path(__file__).resolve().parent
-GRAMMAR_LORA_MANIFEST = REPO_DIR / "models" / "grammar_lora" / "manifest.json"
 # Datasets de desarrollo: sus informes nunca se registran como evaluación final.
 DEVELOPMENT_DATASETS = {"eval_gold.csv", "pruebas.txt"}
 MAX_CATEGORIES = 50       # límite del backend (TechnicalEvaluationRequest.categories)
 MAX_CATEGORY_NAME = 80    # CategoryResult.category
+MAX_MODEL_VERSION = 160   # TechnicalEvaluationRequest.modelVersion
+EXIT_MODEL_ERRORS = 2     # código de salida si un informe final tuvo errores del modelo
 
 _TOKEN_RE = re.compile(r"\w+|[^\w\s]", re.UNICODE)
+
+# Costes de la alineación (ver docstring del módulo).
+COST_CHEAP = 0.1          # misma forma sin tildes/mayúsculas (también divisiones y uniones)
+CLOSE_DISTANCE = 0.5      # sustitución 1:1 "cercana": distancia normalizada ≤ 0.5
+COST_FAR_SUB = 1.0        # sustitución 1:1 entre tokens distintos
+COST_INDEL = 1.0          # inserción o borrado de un token
+MAX_SPLIT = 4             # tokens como mucho en una división 1:m o unión k:1
 
 
 # ───────────────────────────── scorer exact_token_edits_v1 ─────────────────────────────
@@ -71,30 +93,123 @@ def tokenize(text: str) -> list:
     return _TOKEN_RE.findall(text)
 
 
+def _strip_form(text: str) -> str:
+    """Forma sin tildes/diacríticos ni mayúsculas (`Árbol` → `arbol`, `mañana` → `manana`)."""
+    decomposed = unicodedata.normalize("NFD", text)
+    return "".join(ch for ch in decomposed if not unicodedata.combining(ch)).casefold()
+
+
+def _normalized_distance(a: str, b: str) -> float:
+    """Levenshtein de caracteres dividido por la longitud mayor (0 = iguales, 1 = nada en común)."""
+    longest = max(len(a), len(b))
+    return _edit_distance(a, b) / longest if longest else 0.0
+
+
+def _substitution_cost(source_token: str, target_token: str):
+    """Coste de sustituir un token por otro (None nunca: 1:1 siempre se permite)."""
+    if _strip_form(source_token) == _strip_form(target_token):
+        return COST_CHEAP
+    distance = _normalized_distance(source_token, target_token)
+    return distance if distance <= CLOSE_DISTANCE else COST_FAR_SUB
+
+
+def _segmentation_cost(source_tokens: list, target_tokens: list):
+    """Coste de una división 1:m o unión k:1, o None si las letras no coinciden."""
+    if _strip_form("".join(source_tokens)) == _strip_form("".join(target_tokens)):
+        return COST_CHEAP
+    return None
+
+
+def align_tokens(source: list, target: list) -> list:
+    """
+    Alineación de coste mínimo entre dos listas de tokens, como lista de
+    operaciones `(tipo, i1, i2, j1, j2)` sobre `source[i1:i2]` → `target[j1:j2]`:
+    `match` (tokens idénticos), `sub` (1:1), `split` (1:m), `join` (k:1),
+    `ins` (0:1) y `del` (1:0). Determinista: en empate gana la primera
+    operación considerada (borrado, inserción, diagonal, división, unión).
+    """
+    n, m = len(source), len(target)
+    inf = float("inf")
+    cost = [[inf] * (m + 1) for _ in range(n + 1)]
+    back = [[None] * (m + 1) for _ in range(n + 1)]
+    cost[0][0] = 0.0
+    for i in range(n + 1):
+        for j in range(m + 1):
+            if i == 0 and j == 0:
+                continue
+            candidates = []
+            if i > 0:
+                candidates.append((cost[i - 1][j] + COST_INDEL, ("del", i - 1, i, j, j)))
+            if j > 0:
+                candidates.append((cost[i][j - 1] + COST_INDEL, ("ins", i, i, j - 1, j)))
+            if i > 0 and j > 0:
+                if source[i - 1] == target[j - 1]:
+                    candidates.append((cost[i - 1][j - 1], ("match", i - 1, i, j - 1, j)))
+                else:
+                    step = _substitution_cost(source[i - 1], target[j - 1])
+                    candidates.append((cost[i - 1][j - 1] + step, ("sub", i - 1, i, j - 1, j)))
+            if i > 0:
+                for k in range(2, min(MAX_SPLIT, j) + 1):        # 1 token de entrada → k de salida
+                    step = _segmentation_cost(source[i - 1:i], target[j - k:j])
+                    if step is not None:
+                        candidates.append((cost[i - 1][j - k] + step, ("split", i - 1, i, j - k, j)))
+            if j > 0:
+                for k in range(2, min(MAX_SPLIT, i) + 1):        # k tokens de entrada → 1 de salida
+                    step = _segmentation_cost(source[i - k:i], target[j - 1:j])
+                    if step is not None:
+                        candidates.append((cost[i - k][j - 1] + step, ("join", i - k, i, j - 1, j)))
+            best_cost, best_op = candidates[0]
+            for candidate_cost, op in candidates[1:]:
+                if candidate_cost < best_cost:
+                    best_cost, best_op = candidate_cost, op
+            cost[i][j] = best_cost
+            back[i][j] = best_op
+
+    ops = []
+    i, j = n, m
+    while i > 0 or j > 0:
+        op = back[i][j]
+        ops.append(op)
+        i, j = op[1], op[3]
+    ops.reverse()
+    return ops
+
+
 def extract_edits(source: str, target: str) -> set:
     """
     Ediciones exactas que transforman `source` en `target`, como conjunto de
     `(inicio, fin, tokens_reemplazo)` sobre los tokens de `source`. Una
     inserción tiene inicio == fin; un borrado, reemplazo vacío.
 
-    difflib funde reemplazos contiguos en un solo bloque (`arbol esta` →
-    `árbol está`); cuando el bloque tiene el mismo número de tokens a ambos
-    lados se divide palabra a palabra, para que una corrección parcial cuente
-    como TP + FN y no como FP + FN. Los bloques de distinta longitud
-    (`ala` → `a la`, `uillos` → `niños`) se mantienen como una sola edición.
+    Cada sustitución, división (`ala` → `a la`) o unión (`a la` → `ala`) de
+    `align_tokens` es una edición; las inserciones/borrados consecutivos se
+    funden en una sola. Así una corrección vecina de otra (`árbol` junto a
+    `está`, o una inserción al lado) nunca cambia cómo se cuentan las demás.
     """
     src = tokenize(source)
     tgt = tokenize(target)
-    matcher = difflib.SequenceMatcher(None, src, tgt, autojunk=False)
     edits = set()
-    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
-        if tag == "equal":
-            continue
-        if tag == "replace" and i2 - i1 == j2 - j1:
-            for k in range(i2 - i1):
-                edits.add((i1 + k, i1 + k + 1, (tgt[j1 + k],)))
-        else:
+    run = None            # racha abierta de inserciones/borrados: [i1, i2, tokens]
+
+    def close_run():
+        nonlocal run
+        if run is not None:
+            edits.add((run[0], run[1], tuple(run[2])))
+            run = None
+
+    for kind, i1, i2, j1, j2 in align_tokens(src, tgt):
+        if kind == "match":
+            close_run()
+        elif kind in ("sub", "split", "join"):
+            close_run()
             edits.add((i1, i2, tuple(tgt[j1:j2])))
+        else:                                   # ins / del
+            if run is None:
+                run = [i1, i2, list(tgt[j1:j2])]
+            else:
+                run[1] = i2
+                run[2].extend(tgt[j1:j2])
+    close_run()
     return edits
 
 
@@ -216,27 +331,45 @@ def dataset_sha256(path: str) -> str:
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def resolve_model_version(explicit, env=None, manifest_path: Path = GRAMMAR_LORA_MANIFEST) -> str:
+def is_development(dataset_path: str, flag: bool) -> bool:
+    """`--development` o un dataset de desarrollo (`eval_gold.csv`, `pruebas.txt`)."""
+    return bool(flag) or Path(dataset_path).name in DEVELOPMENT_DATASETS
+
+
+# ───────────────────────────── guardas ─────────────────────────────
+
+def validate_model_version(value) -> str:
+    """`modelVersion` como lo exige el backend: texto no vacío de hasta 160 caracteres (recortado)."""
+    text = value.strip() if isinstance(value, str) else ""
+    if not text:
+        raise ValueError("modelVersion no puede estar vacío")
+    if len(text) > MAX_MODEL_VERSION:
+        raise ValueError(f"modelVersion supera los {MAX_MODEL_VERSION} caracteres ({len(text)})")
+    return text
+
+
+def require_local_t5_dir(path) -> Path:
     """
-    `--model-version` > MODEL_VERSION (env) > manifest.json del LoRA global >
-    default. Misma regla que `main.resolve_model_version()`, replicada aquí
-    porque importar `main` construye la app (carga BETO/T5) a nivel de módulo.
+    Directorio local completo del T5 (`config.json` y `tokenizer_config.json`).
+    Se comprueba ANTES de importar torch: `T5CorrectionModel` descargaría el
+    modelo base si faltara `config.json`, y aquí nunca se descarga nada.
     """
-    if explicit and explicit.strip():
-        return explicit.strip()
+    t5_dir = Path(path)
+    missing = [name for name in ("config.json", "tokenizer_config.json") if not (t5_dir / name).is_file()]
+    if missing:
+        raise SystemExit(f"[ERROR] --t5-dir {t5_dir} no contiene {' ni '.join(missing)}")
+    return t5_dir
+
+
+def ensure_offline(env=None) -> None:
+    """Fija `HF_HUB_OFFLINE=1` si no estaba definido: BETO/T5 solo se leen de la caché local."""
     env = os.environ if env is None else env
-    from_env = str(env.get("MODEL_VERSION", "")).strip()
-    if from_env:
-        return from_env
-    try:
-        if manifest_path.exists():
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            from_manifest = str(manifest.get("modelVersion", "")).strip()
-            if from_manifest:
-                return from_manifest
-    except Exception as exc:
-        print(f"[WARN] No se pudo leer {manifest_path}: {exc}")
-    return DEFAULT_MODEL_VERSION
+    env.setdefault("HF_HUB_OFFLINE", "1")
+
+
+def exit_status(errors: int, development: bool) -> int:
+    """Un informe final (no de desarrollo) con errores del modelo termina con código 2."""
+    return EXIT_MODEL_ERRORS if errors > 0 and not development else 0
 
 
 # ───────────────────────────── predictor ─────────────────────────────
@@ -257,6 +390,7 @@ def build_predictor(args):
         return predict
 
     # --- pipeline en-proceso (torch/modelos se cargan solo aquí) ---
+    t5_dir = require_local_t5_dir(args.t5_dir) if args.t5_dir else None
     sys.path.insert(0, str(REPO_DIR))
     from infrastructure.nlp.phonetic_engine import PhoneticEngine
     from infrastructure.nlp.correction_pipeline import CorrectionPipeline
@@ -268,12 +402,7 @@ def build_predictor(args):
         judge = ContextJudge()
 
     seq2seq = tokenizer = None
-    if args.t5_dir:
-        t5_dir = Path(args.t5_dir)
-        # Solo directorios locales completos: T5CorrectionModel descargaría el
-        # modelo base si faltara config.json, y aquí nunca se descarga nada.
-        if not (t5_dir / "config.json").exists() or not (t5_dir / "tokenizer_config.json").exists():
-            raise SystemExit(f"[ERROR] --t5-dir {t5_dir} no contiene config.json y tokenizer_config.json")
+    if t5_dir is not None:
         from infrastructure.ml.t5_model import T5CorrectionModel, T5SpanishTokenizer
         tokenizer = T5SpanishTokenizer(model_name=str(t5_dir))
         seq2seq = T5CorrectionModel(save_dir=str(t5_dir))
@@ -314,7 +443,7 @@ def summarize(subset: list) -> dict:
 
 
 def _score_cases(cases: list) -> list:
-    """Añade tp/fp/fn, la referencia elegida y `exact` a cada caso {cat, input, golds, pred}."""
+    """Añade tp/fp/fn, la referencia elegida y `exact` a cada caso {cat, input, golds, pred[, error]}."""
     scored = []
     for case in cases:
         s = score_sentence(case["input"], case["golds"], case["pred"])
@@ -328,17 +457,17 @@ def _score_cases(cases: list) -> list:
     return scored
 
 
+def _category_name(cat: str) -> str:
+    """Nombre como lo verán panel y backend: recortado a 80 y sin espacios en los extremos."""
+    return cat.strip()[:MAX_CATEGORY_NAME].strip()
+
+
 def _category_results(by_cat: "OrderedDict") -> list:
-    """Bloque `categories` del contrato: nombres recortados, únicos y como mucho 50."""
-    merged = OrderedDict()
-    for cat, subset in by_cat.items():
-        name = cat.strip()[:MAX_CATEGORY_NAME]
-        merged.setdefault(name, []).extend(subset)
-    if len(merged) > MAX_CATEGORIES:
-        print(f"[WARN] {len(merged)} categorías; el backend acepta {MAX_CATEGORIES}, "
-              f"se registran las primeras")
+    """Bloque `categories` del contrato: nombres únicos recortados; más de 50 es un error del dataset."""
+    if len(by_cat) > MAX_CATEGORIES:
+        raise ValueError(f"{len(by_cat)} categorías; el backend acepta como mucho {MAX_CATEGORIES}")
     categories = []
-    for name, subset in list(merged.items())[:MAX_CATEGORIES]:
+    for name, subset in by_cat.items():
         tp = sum(r["tp"] for r in subset)
         fp = sum(r["fp"] for r in subset)
         fn = sum(r["fn"] for r in subset)
@@ -351,10 +480,15 @@ def _category_results(by_cat: "OrderedDict") -> list:
 def build_report(cases: list, *, model_version: str, dataset_path: str, dataset_hash: str,
                  model_dir, development: bool, source: str, latencies_ms=None) -> dict:
     """
-    Informe JSON versionado. `cases` = [{cat, input, golds, pred}, ...] en el
-    orden del dataset. El bloque `technicalEvaluation` es exactamente lo que
-    valida el panel Vue y acepta el backend; el resto son diagnósticos.
+    Informe JSON versionado. `cases` = [{cat, input, golds, pred[, error]}, ...]
+    en el orden del dataset. Las claves del contrato (`modelVersion`,
+    `datasetSha256`, `scorerVersion`, `precision`, `recall`, `fZeroFive`,
+    `truePositives`, `falsePositives`, `falseNegatives`, `categories`) van en
+    el **nivel superior**, que es lo que valida el panel Vue y acepta el
+    backend; `technicalEvaluation` las repite agrupadas, para leerlas de un
+    vistazo. El resto son diagnósticos.
     """
+    model_version = validate_model_version(model_version)
     scored = _score_cases(cases)
     latencies_ms = list(latencies_ms or [])
     for row, ms in zip(scored, latencies_ms):
@@ -362,8 +496,9 @@ def build_report(cases: list, *, model_version: str, dataset_path: str, dataset_
 
     by_cat = OrderedDict()
     for r in scored:
-        by_cat.setdefault(r["cat"], []).append(r)
+        by_cat.setdefault(_category_name(r["cat"]), []).append(r)
     overall = summarize(scored)
+    error_list = [{"cat": r["cat"], "input": r["input"], "error": r["error"]} for r in scored if "error" in r]
     technical = OrderedDict([
         ("modelVersion", model_version),
         ("datasetSha256", dataset_hash),
@@ -376,21 +511,24 @@ def build_report(cases: list, *, model_version: str, dataset_path: str, dataset_
         ("falseNegatives", overall["fn"]),
         ("categories", _category_results(by_cat)),
     ])
-    return OrderedDict([
+    report = OrderedDict([
         ("development", bool(development)),
         ("timestamp", datetime.now(timezone.utc).isoformat(timespec="seconds")),
         ("source", source),
-        ("modelVersion", model_version),
         ("modelDir", str(model_dir) if model_dir else None),
-        ("scorerVersion", SCORER_VERSION),
         ("dataset", str(dataset_path)),
-        ("datasetSha256", dataset_hash),
+    ])
+    report.update(technical)
+    report.update([
         ("technicalEvaluation", technical),
+        ("errors", len(error_list)),
+        ("errorList", error_list),
         ("global", overall),
         ("por_categoria", OrderedDict((cat, summarize(subset)) for cat, subset in by_cat.items())),
         ("latency_ms_avg", sum(latencies_ms) // len(latencies_ms) if latencies_ms else 0),
         ("casos", scored),
     ])
+    return report
 
 
 def _print_table(report: dict):
@@ -431,10 +569,11 @@ def main():
     except Exception:
         pass
 
+    ensure_offline()
     rows = load_dataset(args.dataset)
     dataset_hash = dataset_sha256(args.dataset)
-    model_version = resolve_model_version(args.model_version)
-    development = args.development or Path(args.dataset).name in DEVELOPMENT_DATASETS
+    model_version = validate_model_version(resolve_model_version(args.model_version))
+    development = is_development(args.dataset, args.development)
     if args.source == "http":
         label = "HTTP " + args.url
     else:
@@ -449,29 +588,33 @@ def main():
     cases, latencies = [], []
     for cat, inp, references in rows:
         t0 = time.time()
+        case = {"cat": cat, "input": inp, "golds": references}
         try:
-            pred = predict(inp)
+            case["pred"] = predict(inp)
         except Exception as e:
-            print(f"[ERROR] '{inp[:40]}...' -> {e}")
-            pred = inp
+            print(f"[ERROR] '{inp[:40]}...' -> {type(e).__name__}: {e}")
+            case["pred"] = inp                      # se puntúa como "sin cambios"
+            case["error"] = f"{type(e).__name__}: {e}"
         latencies.append(int((time.time() - t0) * 1000))
-        cases.append({"cat": cat, "input": inp, "golds": references, "pred": pred})
+        cases.append(case)
 
     report = build_report(
         cases, model_version=model_version, dataset_path=args.dataset, dataset_hash=dataset_hash,
         model_dir=args.t5_dir, development=development, source=label, latencies_ms=latencies,
     )
     _print_table(report)
-    te = report["technicalEvaluation"]
-    print(f"\n  F0.5 = {te['fZeroFive']:.4f}  (P = {te['precision']:.4f}, R = {te['recall']:.4f}; "
-          f"TP {te['truePositives']}, FP {te['falsePositives']}, FN {te['falseNegatives']})")
+    print(f"\n  F0.5 = {report['fZeroFive']:.4f}  (P = {report['precision']:.4f}, R = {report['recall']:.4f}; "
+          f"TP {report['truePositives']}, FP {report['falsePositives']}, FN {report['falseNegatives']})")
     print(f"  latencia media: {report['latency_ms_avg']} ms/frase")
+    if report["errors"]:
+        print(f"  [ERROR] {report['errors']} caso(s) con excepción del modelo (ver `errorList`)")
 
     if args.show_fails:
         print(f"\n{'─'*96}\n  FALLOS\n{'─'*96}")
         for r in report["casos"]:
             if not r["exact"]:
-                print(f"[{r['cat']}] tp={r['tp']} fp={r['fp']} fn={r['fn']}\n"
+                print(f"[{r['cat']}] tp={r['tp']} fp={r['fp']} fn={r['fn']}"
+                      f"{'  ERROR: ' + r['error'] if 'error' in r else ''}\n"
                       f"  IN : {r['input']}\n  OUT: {r['pred']}\n  ESP: {r['gold']}\n")
 
     if args.out:
@@ -479,6 +622,11 @@ def main():
         with open(args.out, "w", encoding="utf-8") as f:
             json.dump(report, f, ensure_ascii=False, indent=2)
         print(f"  reporte guardado en {args.out}")
+
+    status = exit_status(report["errors"], development)
+    if status:
+        print(f"  informe final con errores del modelo: código de salida {status}")
+    sys.exit(status)
 
 
 if __name__ == "__main__":

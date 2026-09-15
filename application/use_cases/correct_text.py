@@ -7,17 +7,18 @@ adaptadores LoRA por alumno: la ruta de inferencia es idéntica para cualquier
 `studentId`, y el identificador solo se devuelve en la respuesta.
 
 `modelVersion` identifica el modelo global que produjo la corrección para que
-el backend pueda trazarlo por ejecución.
+el backend pueda trazarlo por ejecución. El valor por defecto y su resolución
+viven en `infrastructure/versioning.py` (compartido con `evaluate.py`); aquí
+solo se reexporta `DEFAULT_MODEL_VERSION`.
 """
 import time
 from typing import TYPE_CHECKING
 
 from application.dtos import AiCorrectionRequestDTO, AiCorrectionResponseDTO
+from infrastructure.versioning import DEFAULT_MODEL_VERSION  # noqa: F401 (reexportado)
 
 if TYPE_CHECKING:  # solo para tipado: evita cargar torch/transformers al importar
     from infrastructure.nlp.correction_pipeline import CorrectionPipeline
-
-DEFAULT_MODEL_VERSION = "global-lora-unversioned"
 
 
 class CorrectTextUseCase:
