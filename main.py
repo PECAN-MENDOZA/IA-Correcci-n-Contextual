@@ -10,14 +10,16 @@ Variables de entorno:
   PORT            puerto HTTP local (default 8080).
   ENABLE_T5       "false" para desactivar la capa T5 (default "true").
   MODEL_VERSION   identificador del modelo global que se devuelve en cada
-                  respuesta como `modelVersion`. Si no se define, se toma
-                  de models/grammar_lora/manifest.json (clave `modelVersion`)
-                  y, si tampoco existe, `global-lora-unversioned`.
+                  respuesta como `modelVersion`. Si no se define, se compone
+                  desde los manifiestos (`models/t5_correction/model-manifest.json`
+                  + `models/grammar_lora/training-manifest.json`, formato
+                  `<base-tag>@<hash8>+<lora-tag>@<hash8>`; ver
+                  infrastructure/versioning.py) y, si no existen,
+                  `global-lora-unversioned`.
 
 Variables heredadas del lanzador (ROLE, ENABLE_USER_LORA, REDIS_URL) se
 ignoran: ya no existen roles, colas ni adaptadores por alumno.
 """
-import json
 import os
 import sys
 from pathlib import Path
@@ -26,7 +28,8 @@ from infrastructure.persistence.csv_user_repository import CsvUserHistoryReposit
 from infrastructure.nlp.phonetic_engine import PhoneticEngine
 from infrastructure.nlp.context_judge import ContextJudge
 from infrastructure.nlp.correction_pipeline import CorrectionPipeline
-from application.use_cases.correct_text import CorrectTextUseCase, DEFAULT_MODEL_VERSION
+from infrastructure.versioning import resolve_model_version
+from application.use_cases.correct_text import CorrectTextUseCase
 from application.use_cases.save_feedback import SaveFeedbackUseCase
 from interfaces.api.routes import create_app
 import types
@@ -44,33 +47,13 @@ if sys.platform.startswith("win"):
     os.environ["RANK"] = "0"
     os.environ["LOCAL_RANK"] = "0"
 
-T5_MODEL_DIR         = "./models/t5_correction"
-GRAMMAR_LORA_MANIFEST = Path("./models/grammar_lora/manifest.json")
+T5_MODEL_DIR = "./models/t5_correction"
 
 # models/t5_correction contiene el modelo base + adaptador LoRA de concordancia
 # (fusionado), reentrenado correctamente. Actúa como capa 4 de refinamiento
 # gramatical (sujeto-verbo) sobre reglas+BETO, con guardas anti-alucinación en
 # el pipeline. Se puede desactivar con ENABLE_T5=false si hiciera falta.
 ENABLE_T5 = os.environ.get("ENABLE_T5", "true").lower() in ("1", "true", "yes")
-
-
-def resolve_model_version() -> str:
-    """
-    MODEL_VERSION (env) > manifest.json del LoRA global > default.
-    El manifiesto lo genera el entrenamiento global; nunca se descarga nada.
-    """
-    from_env = os.environ.get("MODEL_VERSION", "").strip()
-    if from_env:
-        return from_env
-    try:
-        if GRAMMAR_LORA_MANIFEST.exists():
-            manifest = json.loads(GRAMMAR_LORA_MANIFEST.read_text(encoding="utf-8"))
-            from_manifest = str(manifest.get("modelVersion", "")).strip()
-            if from_manifest:
-                return from_manifest
-    except Exception as exc:
-        print(f"[WARN] No se pudo leer {GRAMMAR_LORA_MANIFEST}: {exc}")
-    return DEFAULT_MODEL_VERSION
 
 
 def build_app():
@@ -99,6 +82,8 @@ def build_app():
         tokenizer=t5_tokenizer,
     )
 
+    # Compartido con evaluate.py y correct_text.py: MODEL_VERSION (env) >
+    # versión compuesta desde los manifiestos de models/ > default.
     model_version = resolve_model_version()
     print(f"[INFO] modelVersion = {model_version}")
 

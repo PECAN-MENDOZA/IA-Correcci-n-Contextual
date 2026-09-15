@@ -38,7 +38,7 @@ teclado_adaptativo/
 │   │   └── correction_pipeline.py  # Pipeline global de corrección (reglas + BETO + T5)
 │   ├── persistence/
 │   │   └── csv_user_repository.py  # Repositorio CSV del feedback aceptado (curación offline)
-│   └── versioning.py               # modelVersion compartido: env > manifiesto del LoRA > default (solo stdlib)
+│   └── versioning.py               # modelVersion compartido: env > compuesto desde manifiestos > LoRA > default (solo stdlib)
 │
 ├── interfaces/                     # Entrypoints externos
 │   └── api/
@@ -47,13 +47,15 @@ teclado_adaptativo/
 ├── main.py                         # Composition Root — ensambla el pipeline global y arranca Flask
 ├── train.py                        # CLI: entrenamiento del modelo base
 ├── train_grammar_lora.py           # CLI: entrenamiento del LoRA gramatical GLOBAL
-├── scripts/merge_grammar_lora.py   # Fusiona el LoRA global en models/t5_correction
+├── scripts/merge_grammar_lora.py   # Fusiona el LoRA global en models/t5_correction y propaga el manifiesto
+├── scripts/model_manifest.py       # Manifiestos reproducibles (training-manifest.json / model-manifest.json) y --write-current
 ├── evaluate.py                     # Evaluación offline: P/R/F0.5 por edición (exact_token_edits_v1) + WER/CER
 ├── setup_model.py                  # Descarga el T5 base a models/t5_base (nunca pisa models/t5_correction)
 ├── test_global_runtime.py          # Tests del runtime global (fakes, sin torch)
 ├── test_alternatives.py            # Tests del selector de alternativas y de la ambigüedad BETO (sin torch)
 ├── test_evaluate_metrics.py        # Tests del scorer, del informe (réplica del validador del panel) y de setup_model (sin torch)
-├── test_versioning.py              # Tests de infrastructure/versioning.py (sin torch)
+├── test_versioning.py              # Tests de infrastructure/versioning.py, incl. la versión compuesta (sin torch)
+├── test_model_manifest.py          # Tests de scripts/model_manifest.py (directorios temporales, sin torch)
 ├── test_lora_guards.py             # Tests de la guarda anti-alucinación
 └── requirements.txt
 ```
@@ -69,12 +71,15 @@ respuesta. El feedback aceptado (`POST /interno/feedback`) se persiste en
 de entrenamiento del LoRA global.
 
 Cada respuesta de `POST /interno/corregir` incluye `modelVersion`, tomado de la
-variable `MODEL_VERSION`, si no de `models/grammar_lora/training-manifest.json`
-(o `manifest.json`, clave `modelVersion`) y, en su defecto,
-`global-lora-unversioned`. La regla vive en `infrastructure/versioning.py`
-(`resolve_model_version`, solo librería estándar) y la comparten el caso de
-uso y `evaluate.py`, para que las correcciones y los informes se tracen al
-mismo identificador.
+variable `MODEL_VERSION`; si no, compuesto desde los manifiestos de `models/`
+con el formato `<base-tag>@<hash8>+<lora-tag>@<hash8>` (ver "Artefactos
+reproducibles"); si no hay manifiesto del modelo fusionado, el `modelVersion`
+de `models/grammar_lora/training-manifest.json` (o `manifest.json`) y, en su
+defecto, `global-lora-unversioned`. La regla vive en
+`infrastructure/versioning.py` (`resolve_model_version` y
+`compose_model_version`, solo librería estándar) y la comparten `main.py`, el
+caso de uso y `evaluate.py`, para que las correcciones y los informes se
+tracen al mismo identificador.
 
 ```
 POST /interno/corregir  {"originalText": "...", "studentId": "..."}
@@ -122,7 +127,7 @@ python -m pip install -r requirements.txt
 python main.py
 
 # Tests sin GPU ni modelo
-python -m unittest -v test_global_runtime test_alternatives test_evaluate_metrics test_versioning
+python -m unittest -v test_global_runtime test_alternatives test_evaluate_metrics test_versioning test_model_manifest
 python test_lora_guards.py
 
 # Evaluar el pipeline (ver sección "Evaluación"); --t5-dir añade el T5 global fusionado
@@ -135,10 +140,66 @@ python setup_model.py
 # Entrenar modelo base
 python train.py --epochs 3 --batch_size 2
 
-# Entrenar y fusionar el LoRA gramatical GLOBAL (único adaptador del sistema)
+# Entrenar y fusionar el LoRA gramatical GLOBAL (único adaptador del sistema);
+# cada paso escribe su manifiesto (ver "Artefactos reproducibles")
 python train_grammar_lora.py
 python scripts/merge_grammar_lora.py
+
+# Manifiestos de artefactos ya entrenados (solo hashes; no entrena ni fusiona)
+python scripts/model_manifest.py --write-current
+python scripts/model_manifest.py --show
 ```
+
+## Artefactos reproducibles y `modelVersion` compuesto
+
+El LoRA gramatical global se versiona por contenido, no por nombre. Dos
+manifiestos JSON acompañan a los pesos (en `models/`, que sigue fuera de git):
+
+| Manifiesto | Lo escribe | Contenido |
+|------------|------------|-----------|
+| `models/grammar_lora/training-manifest.json` | `train_grammar_lora.py`, justo después de `save_pretrained` | modelo base (`vgaraujov/t5-base-spanish` y su revisión en la caché HF), `dataset_sha256` y filas del CSV, **índices exactos** de la partición train/validación (`random.seed(42)`, 300 de validación), hiperparámetros (épocas 3, batch 8 × acumulación 2, lr 3e-4, rank 16, alpha 32, dropout 0.05, módulos `q`/`v`, longitud 96, prefijo `corrige: `), versiones de Python/torch/transformers/peft, hora UTC, `adapter_sha256` (SHA-256 de `adapter_model.safetensors`) y un `modelVersion` parcial `global-lora-v1@<hash8>` |
+| `models/t5_correction/model-manifest.json` | `scripts/merge_grammar_lora.py`, en el directorio temporal antes del intercambio con backup | copia del anterior + `adapter_sha256` (comprobado contra el adaptador fusionado), `model_sha256` (SHA-256 del `model.safetensors` fusionado: los pesos T5 que se sirven), hashes de todos los archivos fusionados, `merged_at_utc`, `base_tag` y el **`modelVersion` compuesto** |
+
+`modelVersion = "<base-tag>@<hash8>+<lora-tag>@<hash8>"`: el primer hash son
+los 8 primeros hex de `model_sha256` (etiqueta `beto-t5-base`) y el segundo
+los de `adapter_sha256` (etiqueta `global-lora-v1`); las etiquetas se pueden
+cambiar con `--base-tag`/`--lora-tag` (`BASE_TAG` en el merge). La composición
+(`infrastructure.versioning.compose_model_version`) es la que usan `main.py`,
+`evaluate.py` y el caso de uso; si cambian los pesos servidos o el adaptador,
+cambia la cadena. `merge_grammar_lora.py` valida el temporal (archivos
+requeridos, manifiesto legible, `model_sha256` igual al archivo) y, si falla,
+no reemplaza `models/t5_correction`.
+
+Los artefactos actuales se entrenaron antes de que existieran los manifiestos:
+`python scripts/model_manifest.py --write-current` los reconstruye
+(`"provenance": "reconstructed"`) hasheando los archivos existentes y leyendo
+los hiperparámetros de `adapter_config.json` y de `TRAINING_DEFAULTS`
+(`scripts/model_manifest.py`, la única fuente de verdad que también usa
+`train_grammar_lora.py`); si `data/training_pairs_clean.csv` sigue en el repo,
+registra su hash y la partición. Nunca reentrena, fusiona ni descarga; se niega
+a componer una versión si el `training-manifest.json` existente describe otro
+adaptador (`--force` lo reconstruye). Versión actual:
+`beto-t5-base@04c598db+global-lora-v1@19ec2e4c`.
+
+### Evaluación final sobre el holdout bloqueado (pendiente del autor)
+
+El archivo aprobado por el asesor debe colocarse **fuera del repositorio**, en
+`C:\Users\Dovamul\Desktop\TESIS\documentos\datos-reservados\holdout-final.csv`
+(formato `categoria|entrada|esperado_1|...`), y no se usa para nada más; ni
+`pruebas.txt` ni `data/eval_gold.csv` lo sustituyen. Cuando exista:
+
+```powershell
+$env:HF_HOME = "models\hf-cache"; $env:HF_HUB_OFFLINE = "1"
+$env:OUT = "models/t5_base"
+python setup_model.py                       # T5 base limpio a models/t5_base (única descarga)
+Remove-Item Env:OUT
+python evaluate.py --dataset C:\Users\Dovamul\Desktop\TESIS\documentos\datos-reservados\holdout-final.csv --t5-dir models/t5_base --model-version t5-base --out reports/t5-base-holdout.json
+python evaluate.py --dataset C:\Users\Dovamul\Desktop\TESIS\documentos\datos-reservados\holdout-final.csv --t5-dir models/t5_correction --model-version "beto-t5-base@04c598db+global-lora-v1@19ec2e4c" --out reports/global-lora-v1-holdout.json
+```
+
+(`--model-version` en la segunda es opcional: sin él, `evaluate.py` compone la
+misma cadena desde los manifiestos.) Antes de comparar F0.5, `datasetSha256`
+debe ser idéntico en ambos informes; ninguno de los dos se ha generado todavía.
 
 ## Pipeline de corrección (global, idéntico para todos los alumnos)
 
@@ -204,8 +265,10 @@ para leerlas de un vistazo):
 ```
 
 `modelVersion` debe ser texto no vacío de hasta 160 caracteres
-(`--model-version` > `MODEL_VERSION` > `models/grammar_lora/training-manifest.json`
-o `manifest.json` > `global-lora-unversioned`; ver `infrastructure/versioning.py`);
+(`--model-version` > `MODEL_VERSION` > compuesto desde
+`models/t5_correction/model-manifest.json` + `models/grammar_lora/training-manifest.json`
+> `modelVersion` de `training-manifest.json` o `manifest.json` >
+`global-lora-unversioned`; ver `infrastructure/versioning.py`);
 `datasetSha256` es el SHA-256 de los bytes exactos del archivo; las categorías
 salen de la columna `categoria` (nombres recortados a 80 caracteres, únicos;
 más de 50 es un error del dataset). Además, como diagnóstico: `development`
