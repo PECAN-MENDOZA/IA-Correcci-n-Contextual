@@ -4,17 +4,16 @@ infrastructure/ml/t5_model.py  v3 → v4 (LoRA)
 Cambios:
   - Rutas absolutas configuradas para evitar errores de directorio en Windows.
   - Lógica de safetensors adaptada: True para modelo local, False para descargas HF.
-  - train_lora(): fine-tuning por usuario con PEFT/LoRA
-    Guarda solo el adaptador (~10-50 MB) en models/loras/<user_id>/
-    El modelo base NO se modifica ni se copia.
-  - generate_with_lora(): inferencia con adaptador LoRA cargado en memoria
-  - validate_lora_dir(): valida que el adaptador sea usable
+  - train_lora(): fine-tuning LoRA genérico con PEFT (guarda solo el
+    adaptador, ~10-50 MB; el modelo base NO se modifica ni se copia).
+  - generate_with_lora(): inferencia con un adaptador LoRA cargado en memoria
+  - validate_lora_dir(): valida que un adaptador sea usable
   - train() intacto para el modelo base (train.py)
   - Fix Windows: USE_LIBUV=0 + no_cuda logic + ddp deshabilitado
 
-Comparativa:
-  Full fine-tuning: ~1 GB por usuario x 100 = ~100 GB
-  LoRA:             ~10-50 MB por usuario x 100 = ~1-5 GB
+El servicio usa UN solo LoRA gramatical global (models/grammar_lora, entrenado
+con train_grammar_lora.py y fusionado con scripts/merge_grammar_lora.py); no
+existen adaptadores por alumno.
 """
 import torch.distributed.tensor
 import os
@@ -47,15 +46,13 @@ import torch.distributed as dist
 if not dist.is_initialized():
     os.environ["TORCH_DISTRIBUTED_DEBUG"] = "OFF"
 
-try:
-    # gpu_lock ahora solo serializa inferencias concurrentes entre sí
-    # (generate_corrections / generate_with_lora). El TrainingWorker
-    # (application/training_queue.py) ya NO lo usa: el entrenamiento
-    # corre en su propia instancia de modelo, en paralelo con esto.
-    from application.training_queue import gpu_lock
-except ImportError:
-    import threading
-    gpu_lock = threading.Lock()
+import threading
+
+# gpu_lock serializa las inferencias concurrentes sobre el modelo compartido
+# (generate_corrections / generate_with_lora) cuando varios hilos del servidor
+# corrigen a la vez. El entrenamiento (train_grammar_lora.py) es un proceso
+# aparte y no pasa por aquí.
+gpu_lock = threading.Lock()
 
 PRETRAINED_MODEL = "vgaraujov/t5-base-spanish"
 
@@ -82,10 +79,9 @@ LORA_CONFIG = {
     "target_modules": ["q", "v"],
 }
 
-# Learning rate conservador para fine-tuning por-usuario. 3e-4 (el valor
-# anterior) es agresivo para datasets de 20-100 pares por alumno; con esto
-# el adaptador converge más lento pero no destruye la fluidez del modelo
-# base. Ver train_lora() y TrainUserModelUseCase.execute().
+# Learning rate conservador para fine-tuning LoRA. 3e-4 (el valor anterior)
+# es agresivo para datasets pequeños; con esto el adaptador converge más lento
+# pero no destruye la fluidez del modelo base. Ver train_lora().
 DEFAULT_LORA_LR = 1e-4
 
 # Guarda anti-alucinación compartida (T5 base y LoRA). Vive en guards.py,

@@ -7,7 +7,6 @@ directorio de trabajo después de la inicialización, o si la carpeta es
 eliminada mientras el servidor está corriendo.
 """
 import csv
-import re
 from pathlib import Path
 from typing import List, Tuple
 
@@ -15,8 +14,6 @@ import pandas as pd
 
 from domain.entities.user_feedback import UserFeedback
 from domain.repositories.interfaces import IUserHistoryRepository
-
-_WORD_RE = re.compile(r'^([^\wáéíóúüñÁÉÍÓÚÜÑ]*)(.*?)([^\wáéíóúüñÁÉÍÓÚÜÑ]*)$')
 
 
 class CsvUserHistoryRepository(IUserHistoryRepository):
@@ -51,23 +48,3 @@ class CsvUserHistoryRepository(IUserHistoryRepository):
         df["corregida"] = df["corregida"].str.strip()
         df = df[(df["erronea"] != "") & (df["corregida"] != "")]
         return list(zip(df["erronea"], df["corregida"]))
-
-    def get_user_vocabulary(self, user_id: str) -> dict:
-        path     = self._dir / f"{user_id}_history.csv"
-        word_map = {}
-        if not path.exists():
-            return word_map
-        with open(path, mode="r", encoding="utf-8") as f:
-            for row in csv.DictReader(f):
-                ew = row.get("erronea",   "").split()
-                cw = row.get("corregida", "").split()
-                if len(ew) != len(cw):
-                    continue
-                for e, c in zip(ew, cw):
-                    m_e = _WORD_RE.match(e)
-                    m_c = _WORD_RE.match(c)
-                    core_e = m_e.group(2) if m_e else e
-                    core_c = m_c.group(2) if m_c else c
-                    if core_e and core_e.lower() != core_c.lower():
-                        word_map[core_e.lower()] = core_c.lower()
-        return word_map

@@ -10,8 +10,8 @@ Uso:
     python3 test_lora_guards.py
 
 NOTA: esto NO reemplaza probar el entrenamiento/inferencia real con el
-modelo T5. Para eso, en un entorno con GPU y el modelo descargado, corre
-train_user.py sobre un usuario de prueba y compara antes/después con
+modelo T5. Para eso, en un entorno con GPU y el modelo descargado, entrena el
+LoRA gramatical global con train_grammar_lora.py y compara antes/después con
 evaluate.py.
 """
 import sys

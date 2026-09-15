@@ -17,8 +17,4 @@ class IUserHistoryRepository(ABC):
 
     @abstractmethod
     def get_user_pairs(self, user_id: str) -> List[Tuple[str, str]]:
-        """Devuelve los pares (erróneo, correcto) del historial de un usuario."""
-
-    @abstractmethod
-    def get_user_vocabulary(self, user_id: str) -> dict:
-        """Devuelve un mapa {palabra_errónea: palabra_correcta} del usuario."""
+        """Devuelve los pares (erróneo, correcto) del historial de un usuario (curación offline)."""

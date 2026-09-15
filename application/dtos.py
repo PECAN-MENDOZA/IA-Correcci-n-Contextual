@@ -17,6 +17,9 @@ class AiCorrectionResponseDTO:
     correctedText: str
     processingTimeMs: int
     suggestions: List[str] = field(default_factory=list)
+    # Identificador del modelo global que produjo la corrección
+    # ("<base>@<hash8>+<lora-tag>@<hash8>" desde el manifiesto, o el default).
+    modelVersion: str = "global-lora-unversioned"
 
 @dataclass
 class AiFeedbackRequestDTO:

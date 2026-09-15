@@ -2,15 +2,13 @@
 infrastructure/ml/guards.py
 
 Guardas anti-alucinación para cualquier generación de texto basada en modelo
-(T5 base o adaptador LoRA por-usuario). Deliberadamente SIN dependencias de
+(T5 base o adaptador LoRA). Deliberadamente SIN dependencias de
 torch/transformers/peft: son funciones puras sobre strings, para que se
 puedan testear sin necesitar el modelo real ni GPU.
 
 Usado por:
-  - infrastructure/nlp/correction_pipeline.py  (refinamiento T5 base)
+  - infrastructure/nlp/correction_pipeline.py  (refinamiento T5 global)
   - infrastructure/ml/t5_model.py              (generate_with_lora)
-  - application/use_cases/correct_text.py      (_LoraProxyPipeline)
-  - application/use_cases/train_model.py       (canario post-entrenamiento)
 """
 
 

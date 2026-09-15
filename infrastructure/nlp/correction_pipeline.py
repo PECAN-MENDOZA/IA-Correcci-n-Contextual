@@ -5,7 +5,6 @@ Orquesta las capas de ortografía y finaliza con Seq2Seq para gramática de form
 """
 import re
 import unicodedata
-from difflib import SequenceMatcher
 from symspellpy import SymSpell, Verbosity
 
 from infrastructure.nlp.phonetic_engine import PhoneticEngine, match_case, to_phonetic, DICT_PATH
@@ -32,11 +31,6 @@ MANUAL_CORRECTIONS = {
 _ACCENTED_RE = re.compile(r'[áéíóúüñÁÉÍÓÚÜÑ]')
 _PUNCT_RE    = re.compile(r'^([^\wáéíóúüñÁÉÍÓÚÜÑ]*)(.*?)([^\wáéíóúüñÁÉÍÓÚÜÑ]*)$')
 
-# Umbral mínimo de similitud para considerar un hit de memoria como válido.
-# 0.82 tolera errores tipográficos menores y variaciones de puntuación
-# sin confundir frases distintas.
-_MEMORY_SIMILARITY_THRESHOLD = 0.82
-
 # Márgenes (en log-prob de BETO) que el mejor candidato debe superar a la
 # palabra original para que la pasada de desambiguación la sobrescriba.
 # Calibrados contra la batería de test_modelo.py:
@@ -62,24 +56,6 @@ def _strip_accents(s: str) -> str:
     )
 
 
-def _normalize_for_lookup(text: str) -> str:
-    """
-    Normalización ligera para comparar frases en memoria:
-    minúsculas, sin tildes, sin puntuación extra, espacios colapsados.
-    No destruye la estructura de la frase.
-    """
-    text = text.lower().strip()
-    text = _strip_accents(text)
-    text = re.sub(r"[^\w\s]", "", text)   # quita puntuación
-    text = re.sub(r"\s+", " ", text)      # colapsa espacios
-    return text
-
-
-def _similarity(a: str, b: str) -> float:
-    """Ratio de similitud entre dos strings (0.0 – 1.0)."""
-    return SequenceMatcher(None, a, b).ratio()
-
-
 class CorrectionPipeline:
     def __init__(
         self,
@@ -94,71 +70,6 @@ class CorrectionPipeline:
         self._symspell.load_dictionary(DICT_PATH, term_index=0, count_index=1)
         self._seq2seq   = seq2seq
         self._tokenizer = tokenizer
-
-        # Memoria de correcciones validadas por el usuario.
-        # Estructura: { normalized_original: {"correction": str, "raw_original": str} }
-        self.user_memory: dict[str, dict] = {}
-
-    # ------------------------------------------------------------------
-    # API pública de memoria
-    # ------------------------------------------------------------------
-
-    def remember(self, original: str, correction: str) -> None:
-        """
-        Registra que el usuario prefiere `correction` cuando el input
-        es `original`. Se llama desde el endpoint de feedback.
-
-        Ejemplo:
-            pipeline.remember("fuy al mercado", "fui al mercado")
-        """
-        key = _normalize_for_lookup(original)
-        self.user_memory[key] = {
-            "correction":    correction.strip(),
-            "raw_original":  original.strip(),
-        }
-
-    def forget(self, original: str) -> bool:
-        """
-        Elimina una entrada de memoria. Devuelve True si existía.
-        Útil para que el usuario pueda revertir un feedback incorrecto.
-        """
-        key = _normalize_for_lookup(original)
-        if key in self.user_memory:
-            del self.user_memory[key]
-            return True
-        return False
-
-    def _lookup_memory(self, text: str) -> str | None:
-        """
-        Busca en user_memory si ya existe una corrección validada para
-        `text` o una frase suficientemente similar.
-
-        Primero intenta exact-match normalizado (O(1)).
-        Si falla, hace fuzzy scan sobre toda la memoria (O(n), pero n
-        es pequeño en uso real — correcciones de un solo usuario).
-
-        Devuelve la corrección guardada o None si no hay hit.
-        """
-        normalized = _normalize_for_lookup(text)
-
-        # 1. Exact match normalizado — el caso más común y más rápido
-        if normalized in self.user_memory:
-            return self.user_memory[normalized]["correction"]
-
-        # 2. Fuzzy match — cubre variaciones tipográficas menores
-        best_score  = 0.0
-        best_result = None
-
-        for key, entry in self.user_memory.items():
-            score = _similarity(normalized, key)
-            if score > best_score:
-                best_score  = score
-                best_result = entry["correction"]
-
-        if best_score >= _MEMORY_SIMILARITY_THRESHOLD:
-            return best_result
-
-        return None
 
     # ------------------------------------------------------------------
     # Desambiguación contextual (BETO)
@@ -221,13 +132,13 @@ class CorrectionPipeline:
     # Pipeline principal
     # ------------------------------------------------------------------
 
-    def correct(self, text: str, user_vocab: dict) -> list[str]:
-        # --- CAPA 0: Memoria de correcciones del usuario ---
-        # Si el usuario ya corrigió esta frase (o una muy similar) antes,
-        # devolvemos esa corrección directamente sin pasar por T5 ni SymSpell.
-        memory_hit = self._lookup_memory(text)
-        if memory_hit is not None:
-            return [memory_hit]
+    def correct(self, text: str, user_vocab: dict | None = None) -> list[str]:
+        """
+        Corrige `text` con el pipeline global. `user_vocab` es un mapa opcional
+        {palabra: reemplazo} de sobrescritura léxica; el runtime del servicio
+        pasa siempre {} (no hay datos por alumno en la inferencia).
+        """
+        user_vocab = user_vocab or {}
 
         # --- CAPAS 1-2: Corrección Ortográfica y Fonética ---
         words = text.split()
@@ -265,7 +176,7 @@ class CorrectionPipeline:
                 best     = match_case(core, MANUAL_CORRECTIONS[lower])
                 resolved = True
 
-            # Vocabulario personalizado del usuario
+            # Sobrescritura léxica explícita (vacía en el runtime global)
             if not resolved and lower in user_vocab:
                 best     = match_case(core, user_vocab[lower])
                 resolved = True
