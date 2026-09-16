@@ -100,12 +100,51 @@ def main() -> int:
         is_lexically_plausible_refinement("esta bien, nos vemos", "Está bien, nos vemos.")
         and is_lexically_plausible_refinement("hola como estas", "Hola, ¿cómo estás?"),
     ))
+    # ── Inserciones, borrados y bloques 1:n / n:1: cerrados salvo lista blanca ──
     results.append(check(
-        "léxica: inserciones, borrados y bloques 1:n / n:1 no se juzgan",
+        "léxica: borrar un negador invierte el sentido (no quiero ir → quiero ir) y se bloquea",
+        not is_lexically_plausible_refinement("no quiero ir", "quiero ir")
+        and not is_lexically_plausible_refinement("nunca llego tarde", "llego tarde")
+        and not is_lexically_plausible_refinement("no hay nadie en casa", "no hay en casa"),
+    ))
+    results.append(check(
+        "léxica: insertar un negador o cuantificador se bloquea (quiero ir → no quiero ir)",
+        not is_lexically_plausible_refinement("quiero ir", "no quiero ir")
+        and not is_lexically_plausible_refinement("los niños juegan", "todos los niños juegan")
+        and not is_lexically_plausible_refinement("ellos llegan tarde", "ellos siempre llegan tarde"),
+    ))
+    results.append(check(
+        "léxica: insertar un artículo o preposición se permite (llego tarde a clase → llegué tarde a la clase)",
         is_lexically_plausible_refinement("llego tarde a clase", "llegué tarde a la clase")
-        and is_lexically_plausible_refinement("muy muy bien", "muy bien")
-        and is_lexically_plausible_refinement("voy a el parque", "voy al parque")
-        and is_lexically_plausible_refinement("voy a ir mañana", "iré mañana"),
+        and is_lexically_plausible_refinement("fui parque", "fui al parque")
+        and is_lexically_plausible_refinement("dijo vendría", "dijo que vendría"),
+    ))
+    results.append(check(
+        "léxica: la unión / división con las mismas letras se permite (ala → a la, por que → porque)",
+        is_lexically_plausible_refinement("voy ala escuela", "voy a la escuela")
+        and is_lexically_plausible_refinement("no sé por que vino", "no sé porque vino")
+        and is_lexically_plausible_refinement("voy a el parque", "voy al parque"),
+    ))
+    results.append(check(
+        "léxica: borrar un duplicado adyacente se permite (muy muy bien → muy bien)",
+        is_lexically_plausible_refinement("muy muy bien", "muy bien")
+        and is_lexically_plausible_refinement("fui a a la casa", "fui a la casa"),
+    ))
+    results.append(check(
+        "léxica: la puntuación suelta se puede insertar o borrar",
+        is_lexically_plausible_refinement("hola como estas", "hola , como estas ?")
+        and is_lexically_plausible_refinement("hola - como estas", "hola como estas"),
+    ))
+    results.append(check(
+        "léxica: insertar o borrar una palabra de contenido se bloquea (fui parque → fui al gran parque)",
+        not is_lexically_plausible_refinement("fui parque", "fui al gran parque")
+        and not is_lexically_plausible_refinement("la vaca comió pasto verde", "la vaca comió pasto")
+        and not is_lexically_plausible_refinement("voy a ir mañana", "iré mañana"),
+    ))
+    results.append(check(
+        "léxica: la lista blanca no rescata un negador dentro de un bloque permitido",
+        not is_lexically_plausible_refinement("quiero ir a clase", "no quiero ir a la clase")
+        and not is_lexically_plausible_refinement("no voy a la casa", "voy a la casa"),
     ))
     results.append(check(
         "léxica: un bloque n:n se juzga palabra a palabra (niño→niños, juega→juegan)",
@@ -117,9 +156,9 @@ def main() -> int:
         is_lexically_plausible_refinement("la vaca comió pasto verde", "la vaca comió maíz verde", min_similarity=0.2),
     ))
     results.append(check(
-        "léxica: identidad y candidato vacío",
+        "léxica: la identidad pasa; el candidato vacío borra palabras de contenido y se bloquea",
         is_lexically_plausible_refinement("hoy fui al mercado", "hoy fui al mercado")
-        and is_lexically_plausible_refinement("hoy fui al mercado", ""),
+        and not is_lexically_plausible_refinement("hoy fui al mercado", ""),
     ))
 
     total, passed = len(results), sum(results)

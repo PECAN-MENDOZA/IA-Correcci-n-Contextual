@@ -7,11 +7,17 @@ aceptada) a partir del CSV de análisis del backend
 reglas de muestra que `StudyMetricsService` (backend), de modo que el análisis
 independiente valide los números de `GET …/results`.
 
-Entrada: CSV de 18 columnas, una fila por ejecución completada × sugerencia
+Entrada: CSV de 19 columnas, una fila por ejecución completada × sugerencia
 evaluada (`pseudonym, condition, task, protocol_version, included, excluded,
 run_id, duration_ms, incident_reasons, word_count, orthography_errors,
 orthography_batch_id, final_text, suggestion_index, original_text,
 suggestion, semantic_score, accepted, semantic_batch_id`).
+
+Palabras: se usa la columna `word_count` del backend (autoritativa) siempre
+que venga; la regex `WORD` solo sirve de comprobación (aviso si no coincide)
+y de respaldo si la columna falta. Es una APROXIMACIÓN de la clase `\w` de
+Java con `UNICODE_CHARACTER_CLASS`: difiere en marcas combinantes (por eso se
+normaliza a NFC antes de contar), en numerales Nl/No y en conectores Pc.
 
 Fórmulas (idénticas al backend):
   * PEO = errores ortográficos adjudicados / palabras del texto final × 100,
@@ -44,6 +50,7 @@ import json
 import math
 import re
 import sys
+import unicodedata
 from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -57,7 +64,8 @@ Z_95 = 1.959964
 CONFIDENCE = 0.95
 
 WORD = re.compile(r"[^\W_]+(?:['’\-][^\W_]+)*", re.UNICODE)
-"""Misma regla que `WordTokenizer.WORD` del backend: letras/dígitos Unicode con apóstrofes o guiones internos."""
+"""Misma regla que `WordTokenizer.WORD` del backend (letras/dígitos Unicode con apóstrofes o guiones
+internos); aproximación de `\w` de Java (ver docstring del módulo): la columna `word_count` manda."""
 
 CONDITIONS = ("ASSISTED", "UNASSISTED")
 
@@ -275,10 +283,10 @@ def relative_reduction(unassisted: float, assisted: float) -> Optional[float]:
 
 
 def word_count(text: Optional[str]) -> int:
-    """Palabras contables del texto según `WORD` (misma regla que el backend)."""
+    """Palabras contables del texto según `WORD` (aproximación de la regla del backend; NFC primero)."""
     if not text or not text.strip():
         return 0
-    return sum(1 for _ in WORD.finditer(text))
+    return sum(1 for _ in WORD.finditer(unicodedata.normalize("NFC", text)))
 
 
 def _parse_int(value: Optional[str], column: str, minimum: int = 0, blank_ok: bool = False) -> Optional[int]:
@@ -363,6 +371,9 @@ def load_rows(path: Path) -> Tuple[List[Dict[str, str]], str]:
             raise AnalysisValidationError(f"unknown column(s): {', '.join(unknown)}")
         rows: List[Dict[str, str]] = []
         for index, raw in enumerate(reader, start=2):
+            if raw.get(None):
+                raise AnalysisValidationError(
+                    f"line {index}: too many fields ({len(header) + len(raw[None])} > {len(header)})")
             row = {column: (raw.get(column) or "") for column in COLUMNS}
             row["_line"] = index
             rows.append(row)
@@ -773,15 +784,37 @@ def _compare_block(offline: Optional[Dict[str, Any]], backend: Optional[Dict[str
             out.append(f"{prefix}.{key}: offline={offline.get(key)!r} backend={backend.get(key)!r}")
 
 
+NOT_ADJUDICATED_OFFLINE = ("NO_BATCH", "INCOMPLETE_COVERAGE")
+"""Estados offline compatibles con `NOT_ADJUDICATED` del backend (el CSV no distingue el lote sin adjudicar)."""
+
+
+def _compare_status(block: str, offline: Optional[str], backend: Optional[str], out: List[str],
+                    notes: List[str]) -> None:
+    """Compara la CLASE de adjudicación, no el literal.
+
+    `ADJUDICATED` debe coincidir en ambos lados; `NO_SAMPLE` y `NOT_APPLICABLE` se derivan del CSV y se exigen
+    literales; `NOT_ADJUDICATED` (el lote más reciente no tiene adjudicación vigente) no es derivable del CSV,
+    que solo puede reportar `NO_BATCH` o `INCOMPLETE_COVERAGE`: se acepta con una nota.
+    """
+    if offline == backend:
+        return
+    if backend == "NOT_ADJUDICATED" and offline in NOT_ADJUDICATED_OFFLINE:
+        notes.append(f"{block}.status: backend reports NOT_ADJUDICATED, which the CSV cannot distinguish from "
+                     f"{offline} (no adjudicated score in the export); same adjudication class")
+        return
+    out.append(f"{block}.status: offline={offline!r} backend={backend!r}")
+
+
 def compare_results(report: Dict[str, Any], backend: Dict[str, Any],
                     tolerance: float = 1e-6) -> Tuple[List[str], List[str]]:
     """Compara el informe offline con `GET …/results`; devuelve (discrepancias, notas informativas).
 
     El CSV solo exporta participantes con al menos una ejecución completada, así que `participantsTotal` y
     `participantsWithoutEligibleRun` pueden ser menores que en el backend exactamente en el número de
-    participantes sin ejecuciones; esa diferencia se anota, no se considera discrepancia. Todo lo demás
-    (partición de la muestra, PEO, PPM, TAS, TAS aceptada, estados de anotación y filas por participante)
-    debe coincidir con tolerancia `tolerance`.
+    participantes sin ejecuciones; esa diferencia se anota, no se considera discrepancia. Los estados de
+    anotación se comparan por clase (`_compare_status`: `NOT_ADJUDICATED` del backend equivale a
+    `NO_BATCH`/`INCOMPLETE_COVERAGE` offline, con nota). Todo lo demás (partición de la muestra, PEO, PPM,
+    TAS, TAS aceptada y filas por participante) debe coincidir con tolerancia `tolerance`.
     """
     out: List[str] = []
     notes: List[str] = []
@@ -817,7 +850,8 @@ def compare_results(report: Dict[str, Any], backend: Dict[str, Any],
     for block in ("tas", "tasAccepted"):
         _compare_block(report.get(block), backend.get(block), block, TAS_KEYS, tolerance, out)
     for block in ("orthographyAnnotation", "semanticAnnotation"):
-        _compare_block(report.get(block), backend.get(block), block, ("status",), tolerance, out)
+        _compare_status(block, (report.get(block) or {}).get("status"), (backend.get(block) or {}).get("status"),
+                        out, notes)
 
     offline_rows = {row["pseudonym"]: row for row in report["participants"]}
     backend_rows = {row["pseudonym"]: row for row in backend.get("participants") or []}
@@ -866,8 +900,8 @@ def _tas_lines(tas: Dict[str, Any]) -> List[str]:
 
 
 def render_markdown(report: Dict[str, Any], reconciliation: Optional[Tuple[List[str], List[str]]] = None,
-                    results_name: str = "") -> str:
-    """Resumen legible del informe (mismos números que el JSON)."""
+                    results_name: str = "", tolerance: float = 1e-6) -> str:
+    """Resumen legible del informe (mismos números que el JSON); `tolerance` es la usada en la reconciliación."""
     sample = report["sample"]
     lines = [
         "# Análisis offline del estudio con usuarios",
@@ -947,7 +981,7 @@ def render_markdown(report: Dict[str, Any], reconciliation: Optional[Tuple[List[
         discrepancies, notes = reconciliation
         lines += ["", "## Reconciliación con el backend", "", f"- Resultados comparados: `{results_name}`"]
         if discrepancies:
-            lines.append(f"- **{len(discrepancies)} discrepancia(s)** (tolerancia 1e-6):")
+            lines.append(f"- **{len(discrepancies)} discrepancia(s)** (tolerancia {tolerance:g}):")
             lines += [f"  - {item}" for item in discrepancies]
         else:
             lines.append("- PEO, PPM, TAS, TAS aceptada, partición de la muestra y filas por participante "
@@ -968,8 +1002,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--markdown", type=Path, default=None, help="ruta del informe Markdown")
     parser.add_argument("--compare-results", type=Path, default=None,
                         help="JSON de GET …/results del mismo estudio; falla si PEO/PPM/TAS difieren")
-    parser.add_argument("--tolerance", type=float, default=1e-6, help="tolerancia absoluta de la comparación")
+    parser.add_argument("--tolerance", type=float, default=1e-6, help="tolerancia absoluta de la comparación (>= 0)")
     args = parser.parse_args(argv)
+    if not (math.isfinite(args.tolerance) and args.tolerance >= 0):
+        print(f"error: --tolerance must be a finite number >= 0 (was {args.tolerance})", file=sys.stderr)
+        return 2
     for stream in (sys.stdout, sys.stderr):
         # Consolas con página de códigos limitada (cp1252) no deben abortar el análisis por un carácter.
         try:
@@ -987,7 +1024,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     reconciliation = None
     if args.compare_results is not None:
-        backend = json.loads(args.compare_results.read_text(encoding="utf-8"))
+        try:
+            backend = json.loads(args.compare_results.read_text(encoding="utf-8"))
+            if not isinstance(backend, dict):
+                raise ValueError("the results file is not a JSON object")
+        except (OSError, ValueError) as exc:
+            print(f"error: cannot read {args.compare_results}: {exc}", file=sys.stderr)
+            return 2
         reconciliation = compare_results(report, backend, tolerance=args.tolerance)
         report["reconciliation"] = {
             "resultsFile": args.compare_results.name,
@@ -1002,7 +1045,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.markdown is not None:
         args.markdown.parent.mkdir(parents=True, exist_ok=True)
         args.markdown.write_text(render_markdown(report, reconciliation, args.compare_results.name
-                                                 if args.compare_results else ""), encoding="utf-8")
+                                                 if args.compare_results else "", tolerance=args.tolerance),
+                                 encoding="utf-8")
 
     def cfmt(value: Any, digits: int = 4) -> str:
         """Formato ASCII para la consola (el Markdown conserva los guiones largos)."""

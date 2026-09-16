@@ -1,13 +1,18 @@
 """
-test_modelo.py
-Prueba el pipeline en dos fases bien diferenciadas:
+test_modelo.py — script MANUAL de humo por HTTP (no es un test unitario).
 
-  FASE 1 — Primera corrección (sin feedback previo)
-  FASE 2 — Retest inmediato tras feedback (prueba de memoria simbólica)
+Envía una batería de frases a un servidor YA ARRANCADO (`python main.py`,
+`http://localhost:8080`) y, para cada caso, muestra la corrección, manda un
+feedback y vuelve a corregir. Desde la Task 1 el runtime es un único modelo
+global: el feedback solo se persiste para curación offline y NO cambia la
+siguiente corrección, así que la "fase 2" mide únicamente que el servicio es
+estable/determinista, no una memoria por alumno (ya no existe). No forma parte
+de la batería de `unittest` (usa el modelo real y `requests`) y no debe
+apuntarse al puerto 5000 del servicio en producción local.
 
-El fine-tuning con T5 es un proceso separado que ocurre en segundo plano
-y requiere acumular >= 10 pares por usuario. Este script NO lo mide porque
-tarda minutos y necesita muchas más rondas de feedback para activarse.
+Uso:
+    python main.py            # en otra terminal (PORT=8080)
+    python test_modelo.py
 """
 import requests
 import json
@@ -109,10 +114,10 @@ def acierto(resultado: dict, esperado: str) -> bool:
 # EJECUCIÓN
 # ─────────────────────────────────────────────
 print(f"\n{NEGRITA}{'═'*60}")
-print("  TEST DE CORRECCIÓN + MEMORIA SIMBÓLICA")
+print("  SMOKE HTTP: CORRECCIÓN + FEEDBACK (modelo global, sin memoria)")
 print(f"{'═'*60}{RESET}\n")
 
-stats = {"acierto_1": 0, "acierto_memoria": 0, "total": len(casos)}
+stats = {"acierto_1": 0, "acierto_retest": 0, "total": len(casos)}
 
 for i, caso in enumerate(casos, 1):
     original = caso["original"]
@@ -133,28 +138,28 @@ for i, caso in enumerate(casos, 1):
 
         if acierto(res1, esperado):
             stats["acierto_1"] += 1
-            stats["acierto_memoria"] += 1   # ya acertó, cuenta para ambos
+            stats["acierto_retest"] += 1    # ya acertó, cuenta para ambos
             print(f"  {VERDE}✓ Correcto a la primera{RESET}")
         else:
             print(f"  {AMARIL}⚠ Incorrecto — enviando feedback...{RESET}")
 
-            # ── FASE 2: Feedback + retest inmediato ────────────────
+            # ── FASE 2: Feedback (solo se persiste) + retest inmediato ──
             ok = enviar_feedback(original, esperado)
             if ok:
-                print(f"  {VERDE}✓ Feedback registrado en memoria{RESET}")
+                print(f"  {VERDE}✓ Feedback persistido (204){RESET}")
 
-                # El retest es INMEDIATO: remember() es síncrono,
-                # no hay que esperar ningún entrenamiento.
+                # El retest solo comprueba que el servicio sigue respondiendo
+                # igual: el feedback no altera el modelo global.
                 res2 = corregir(original)
                 if res2:
                     corr2 = res2.get("correctedText", "")
                     print(f"  {NEGRITA}2do intento{RESET}: {corr2}")
 
                     if acierto(res2, esperado):
-                        stats["acierto_memoria"] += 1
-                        print(f"  {VERDE}✓ Memoria simbólica funcionó{RESET}")
+                        stats["acierto_retest"] += 1
+                        print(f"  {VERDE}✓ Acierto en el retest{RESET}")
                     else:
-                        print(f"  {ROJO}✗ La memoria no devolvió el resultado esperado{RESET}")
+                        print(f"  {ROJO}✗ El retest no devolvió el resultado esperado (esperable: no hay memoria){RESET}")
             else:
                 print(f"  {ROJO}✗ El feedback no fue aceptado por la API{RESET}")
     else:
@@ -168,12 +173,11 @@ print("  RESUMEN")
 print(f"{'═'*60}{RESET}")
 print(f"  Casos totales           : {stats['total']}")
 print(f"  Aciertos a la 1ra       : {stats['acierto_1']} / {stats['total']}")
-print(f"  Aciertos tras memoria   : {stats['acierto_memoria']} / {stats['total']}")
-tasa = stats["acierto_memoria"] / stats["total"] * 100
+print(f"  Aciertos tras el retest : {stats['acierto_retest']} / {stats['total']}")
+tasa = stats["acierto_retest"] / stats["total"] * 100
 color = VERDE if tasa >= 80 else AMARIL if tasa >= 50 else ROJO
 print(f"  Tasa final              : {color}{tasa:.0f}%{RESET}")
 print(f"{NEGRITA}{'═'*60}{RESET}\n")
 
-print("NOTA: El fine-tuning con T5 ocurre en segundo plano y requiere")
-print(f"      acumular >= 10 pares por usuario (actualmente {stats['total']} en este test).")
-print("      Para verlo en acción, ejecuta el script varias veces.")
+print("NOTA: no hay entrenamiento por alumno: el feedback aceptado solo se persiste")
+print("      en data/users/<studentId>_history.csv para curación offline del LoRA global.")

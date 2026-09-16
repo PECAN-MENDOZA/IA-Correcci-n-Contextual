@@ -1,40 +1,40 @@
-text,expected_options,notes
-mañana voy al parque con mis amigos,1,clara: ya está bien escrita
-los niño juega en el parque,1,clara: concordancia (niños juegan)
-ayer fui al mercado con mi mamá,1,clara: ya está bien escrita
-el perro corre muy rapido,1,clara: tilde (rápido)
-mi hermano tiene diez años,1,clara: ya está bien escrita
-hoy hace mucho calor en la ciudad,1,clara: ya está bien escrita
-ellos fue al mercado,1,clara: concordancia (fueron)
-tengo que hacer la tarea de matematicas,1,clara: tilde (matemáticas)
-hola como estas,1,clara: solo la lectura interrogativa (hola cómo estás) es válida
-el gato duerme en la cama,1,clara: ya está bien escrita
-boy a comer con mi familia,1,clara: homófono que el contexto decide (voy)
-se que no vendra hoy,1,clara: solo sé es válida
-el tubo un accidente en la carretera,1,clara: solo tuvo es válida
-la gente son muy amables,1,clara: concordancia (es muy amable)
-xq ellos juega mucho,1,clara: abreviatura (porque) + concordancia (juegan)
-esta bien nos vemos luego,1,clara: solo está es válida (el brief la esperaba como 2 si BETO empataba)
-esta tarde llega,2,homófono ambiguo: esta tarde (hoy) / está tarde (llega con retraso)
-esta lista para salir,2,homófono ambiguo: esta lista (la lista) / está lista (preparada)
-si quiero ir contigo,2,homófono ambiguo: si (condicional) / sí (afirmación)
-el papa llego temprano,2,homófono ambiguo: el papá / el Papa (+ llegó)
-les gusta la casa,2,homófono ambiguo: casa / caza
-voy a botar mañana,2,homófono ambiguo: botar / votar
-compro pan en la tienda,2,homófono ambiguo: compro (presente) / compró (pasado)
-termino el trabajo hoy,2,homófono ambiguo: termino / terminó
-llego tarde a clase,2,homófono ambiguo: llego / llegó
-hablo con mi profesor,2,homófono ambiguo: hablo / habló
-se callo de repente,2,homófono ambiguo: se calló (dejó de hablar) / se cayó (al suelo)
-la tasa es muy alta,2,homófono ambiguo: la tasa (porcentaje) / la taza (vasija)
-a mi me gusta que ellos juega mucho,2-3,indicativo/subjuntivo: juegan (coloquial) / jueguen (+ base con mí)
-espero que ellos viene mañana,1,clara: solo subjuntivo (vengan); vienen tras espero que es un error y no otra lectura
-es posible que ellos llega tarde,1,clara: solo subjuntivo (lleguen); llegan tras es posible que es un error
-ojala que nosotros gana el partido,1,clara: solo subjuntivo (ganemos); ganamos tras ojalá que es un error (+ ojalá)
-me alegra que ustedes esta aqui,1,clara: solo subjuntivo (estén); están tras me alegra que es un error (+ aquí)
-quizás ellos llega tarde,2,indicativo/subjuntivo: quizás admite ambos modos (llegan / lleguen)
-tal vez nosotros gana el partido,2,indicativo/subjuntivo: tal vez admite ambos modos (ganamos / ganemos)
-aunque ellos juega bien perdemos,2,indicativo/subjuntivo: aunque concesivo (juegan = hecho / jueguen = hipótesis)
-cuando ellos llega comemos,2,indicativo/subjuntivo: cuando temporal (llegan = habitual / lleguen = futuro)
-mientras ellos come nosotros descansamos,2,indicativo/subjuntivo: mientras temporal (comen = simultáneo / coman = futuro)
-no creo que ellos viene hoy,2,indicativo/subjuntivo: vengan (estándar) / vienen (indicativo asertivo coloquial tras no creo que)
+text,expected_options,forbidden_readings,notes
+mañana voy al parque con mis amigos,1,iré,clara: ya está bien escrita
+los niño juega en el parque,1,niño;juega,clara: concordancia (niños juegan)
+ayer fui al mercado con mi mamá,1,anoche,clara: ya está bien escrita
+el perro corre muy rapido,1,rapido,clara: tilde (rápido)
+mi hermano tiene diez años,1,10,clara: ya está bien escrita
+hoy hace mucho calor en la ciudad,1,muchísimo,clara: ya está bien escrita
+ellos fue al mercado,1,fue;él,clara: concordancia (fueron)
+tengo que hacer la tarea de matematicas,1,matematicas,clara: tilde (matemáticas)
+hola como estas,1,como;estas,clara: solo la lectura interrogativa (hola cómo estás) es válida
+el gato duerme en la cama,1,gatito,clara: ya está bien escrita
+boy a comer con mi familia,1,boy;iré,clara: homófono que el contexto decide (voy)
+se que no vendra hoy,1,se;vendra,clara: solo sé es válida
+el tubo un accidente en la carretera,1,tubo,clara: solo tuvo es válida
+la gente son muy amables,1,con,clara: concordancia (es muy amable)
+xq ellos juega mucho,1,juega;xq,clara: abreviatura (porque) + concordancia (juegan)
+esta bien nos vemos luego,1,esta;después,clara: solo está es válida (el brief la esperaba como 2 si BETO empataba)
+esta tarde llega,2,,homófono ambiguo: esta tarde (hoy) / está tarde (llega con retraso)
+esta lista para salir,2,,homófono ambiguo: esta lista (la lista) / está lista (preparada)
+si quiero ir contigo,2,,homófono ambiguo: si (condicional) / sí (afirmación)
+el papa llego temprano,2,llego,homófono ambiguo: el papá / el Papa (+ llegó)
+les gusta la casa,2,encanta,homófono ambiguo: casa / caza
+voy a botar mañana,2,tirar;salir,homófono ambiguo: botar / votar
+compro pan en la tienda,2,harina,homófono ambiguo: compro (presente) / compró (pasado)
+termino el trabajo hoy,2,acabo,homófono ambiguo: termino / terminó
+llego tarde a clase,2,,homófono ambiguo: llego / llegó
+hablo con mi profesor,2,el,homófono ambiguo: hablo / habló
+se callo de repente,2,,homófono ambiguo: se calló (dejó de hablar) / se cayó (al suelo)
+la tasa es muy alta,2,elevada,homófono ambiguo: la tasa (porcentaje) / la taza (vasija)
+a mi me gusta que ellos juega mucho,2-3,juega,indicativo/subjuntivo: juegan (coloquial) / jueguen; la base con juega (concordancia) no es una lectura
+espero que ellos viene mañana,1,viene;vienen;vendrán,clara: solo subjuntivo (vengan); vienen tras espero que es un error y no otra lectura
+es posible que ellos llega tarde,1,llega;llegan;llegue,clara: solo subjuntivo (lleguen); llegan tras es posible que es un error
+ojala que nosotros gana el partido,1,gana;ganamos;ojala,clara: solo subjuntivo (ganemos); ganamos tras ojalá que es un error (+ ojalá)
+me alegra que ustedes esta aqui,1,esta;está;están;aqui,clara: solo subjuntivo (estén); están tras me alegra que es un error (+ aquí)
+quizás ellos llega tarde,2,quizas;llega,indicativo/subjuntivo: quizás admite ambos modos (llegan / lleguen); quizas sin tilde no es una lectura
+tal vez nosotros gana el partido,2,gana;gane,indicativo/subjuntivo: tal vez admite ambos modos (ganamos / ganemos)
+aunque ellos juega bien perdemos,2,juega;ganamos,indicativo/subjuntivo: aunque concesivo (juegan = hecho / jueguen = hipótesis)
+cuando ellos llega comemos,2,llega;él,indicativo/subjuntivo: cuando temporal (llegan = habitual / lleguen = futuro)
+mientras ellos come nosotros descansamos,2,come;descansan,indicativo/subjuntivo: mientras temporal (comen = simultáneo / coman = futuro)
+no creo que ellos viene hoy,2,viene,indicativo/subjuntivo: vengan (estándar) / vienen (indicativo asertivo coloquial tras no creo que); el filtro de modo trata "no creo que" como subjuntivo obligatorio y no ofrece vienen (FN conocido)

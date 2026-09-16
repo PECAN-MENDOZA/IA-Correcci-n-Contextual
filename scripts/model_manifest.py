@@ -29,6 +29,7 @@ están en `models/` y escribe ambos manifiestos con `"provenance":
 Uso (desde la raíz del repositorio):
     python scripts/model_manifest.py --write-current [--force] [--base-tag X] [--lora-tag Y]
     python scripts/model_manifest.py --show            # versión compuesta actual
+    python scripts/model_manifest.py --base-version models/t5_base   # `t5-base@<hash8>` del T5 sin LoRA (baseline)
 """
 import argparse
 import csv
@@ -59,9 +60,9 @@ from infrastructure.versioning import (  # noqa: E402
 __all__ = [
     "BASE_MODEL", "BASE_TAG", "LORA_TAG", "MODEL_MANIFEST_NAME", "REPO_DIR",
     "TRAINING_DEFAULTS", "TRAINING_MANIFEST_NAME", "adapter_fields",
-    "compose_model_version", "hf_snapshot_revision", "library_versions",
+    "base_version", "compose_model_version", "hf_snapshot_revision", "library_versions",
     "load_pairs", "merged_model_manifest", "read_json",
-    "reconstructed_training_manifest", "sha256_file", "split_indices",
+    "reconstructed_training_manifest", "resolve_merge_base", "sha256_file", "split_indices",
     "training_manifest", "utc_now", "validate_merged_dir", "write_current",
     "write_json",
 ]
@@ -72,8 +73,10 @@ BASE_MODEL = "vgaraujov/t5-base-spanish"
 DEFAULT_DATASET = "data/training_pairs_clean.csv"
 ADAPTER_WEIGHTS = "adapter_model.safetensors"
 MERGED_WEIGHTS = "model.safetensors"
-# Archivos que el pipeline exige en `models/t5_correction` (además del manifiesto).
+# Archivos que el pipeline exige en `models/t5_correction` (además del manifiesto)
+# y, aparte, el vocabulario del tokenizer (uno de `TOKENIZER_VOCAB`).
 MERGED_REQUIRED = ("config.json", "tokenizer_config.json", "generation_config.json", MERGED_WEIGHTS)
+TOKENIZER_VOCAB = ("spiece.model", "tokenizer.json")
 LIBRARIES = ("torch", "transformers", "peft", "safetensors")
 
 # Hiperparámetros por defecto de `train_grammar_lora.py` (única fuente de verdad;
@@ -266,14 +269,40 @@ def merged_model_manifest(training: dict, merged_dir, adapter_dir, *, base_tag: 
     return manifest
 
 
+def resolve_merge_base(training: dict, env_base=None) -> tuple:
+    """
+    `(base_model, revision)` con los que se debe fusionar el adaptador: los que
+    registró el manifiesto de entrenamiento (`base_model`, `base_model_revision`).
+    Un override por entorno (`BASE`) debe coincidir con el manifiesto; un
+    manifiesto `provenance: trained` sin revisión no es reproducible y se
+    rechaza (uno `reconstructed` puede no tenerla: se carga la revisión por
+    defecto y queda anotado). ValueError con el motivo.
+    """
+    base_model = str(training.get("base_model") or "").strip() or BASE_MODEL
+    if not str(training.get("base_model") or "").strip() and training.get("provenance") == "trained":
+        raise ValueError("el manifiesto de entrenamiento no registra `base_model`")
+    env_base = str(env_base or "").strip()
+    if env_base and env_base != base_model:
+        raise ValueError(f"BASE={env_base} no coincide con el modelo base del manifiesto de entrenamiento "
+                         f"({base_model}); el adaptador se entrenó sobre ese base y solo se fusiona con él")
+    revision = str(training.get("base_model_revision") or "").strip() or None
+    if revision is None and training.get("provenance") == "trained":
+        raise ValueError("el manifiesto de entrenamiento no registra `base_model_revision`: sin la revisión del "
+                         "base no se puede reproducir la fusión (reentrena con la caché de HF disponible)")
+    return base_model, revision
+
+
 def validate_merged_dir(merged_dir) -> list:
     """
     Errores (lista vacía = válido) del directorio fusionado antes del intercambio:
-    archivos requeridos, manifiesto JSON legible con `modelVersion` y `model_sha256`
-    igual al hash real de `model.safetensors`.
+    archivos requeridos, vocabulario del tokenizer (`spiece.model` o
+    `tokenizer.json`), manifiesto JSON legible con `modelVersion` y
+    `model_sha256` igual al hash real de `model.safetensors`.
     """
     merged_dir = Path(merged_dir)
     errors = [f"falta {name}" for name in MERGED_REQUIRED if not (merged_dir / name).is_file()]
+    if not any((merged_dir / name).is_file() for name in TOKENIZER_VOCAB):
+        errors.append("falta el vocabulario del tokenizer (" + " o ".join(TOKENIZER_VOCAB) + ")")
     manifest_path = merged_dir / MODEL_MANIFEST_NAME
     if not manifest_path.is_file():
         errors.append(f"falta {MODEL_MANIFEST_NAME}")
@@ -291,6 +320,20 @@ def validate_merged_dir(merged_dir) -> list:
     if weights.is_file() and manifest.get("model_sha256") != sha256_file(weights):
         errors.append(f"{MODEL_MANIFEST_NAME}: model_sha256 no coincide con {MERGED_WEIGHTS}")
     return errors
+
+
+def base_version(model_dir, tag: str = "t5-base") -> str:
+    """
+    `<tag>@<hash8>` de un T5 SIN LoRA (p. ej. `models/t5_base`, el baseline del
+    holdout): los 8 primeros hex del SHA-256 de su `model.safetensors`. Es la
+    cadena que hay que pasar a `evaluate.py --model-version` para ese
+    directorio (no tiene `model-manifest.json`, así que la versión no se puede
+    componer). FileNotFoundError si faltan los pesos.
+    """
+    weights = Path(model_dir) / MERGED_WEIGHTS
+    if not weights.is_file():
+        raise FileNotFoundError(f"No existe {weights}")
+    return f"{tag}@{sha256_file(weights)[:HASH8]}"
 
 
 # ── reconstrucción para artefactos ya existentes ─────────────────────────────
@@ -382,6 +425,8 @@ def main(argv=None) -> int:
     parser.add_argument("--write-current", action="store_true",
                         help="escribe los manifiestos de los artefactos existentes en models/ (solo hashes)")
     parser.add_argument("--show", action="store_true", help="muestra el modelVersion que resolvería el servidor")
+    parser.add_argument("--base-version", metavar="DIR", default=None,
+                        help="imprime `t5-base@<hash8>` (SHA-256 de DIR/model.safetensors) para un T5 sin LoRA")
     parser.add_argument("--force", action="store_true",
                         help="con --write-current: reconstruye training-manifest.json aunque exista")
     parser.add_argument("--base-tag", default=BASE_TAG, help=f"etiqueta del modelo fusionado (default {BASE_TAG})")
@@ -401,6 +446,13 @@ def main(argv=None) -> int:
         return 0
     if args.show:
         print(resolve_model_version(env={}, repo_dir=repo_dir))
+        return 0
+    if args.base_version:
+        try:
+            print(base_version(args.base_version))
+        except FileNotFoundError as exc:
+            print(f"[ERROR] {exc}")
+            return 1
         return 0
     parser.print_help()
     return 2

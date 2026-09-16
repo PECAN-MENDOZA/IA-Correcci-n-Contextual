@@ -2,7 +2,7 @@
 test_user_experiment_analysis.py
 
 Tests de `scripts/analyze_user_experiment.py`: reproducción offline de PEO,
-PPM y TAS a partir del `analysis.csv` del backend (18 columnas reales) con
+PPM y TAS a partir del `analysis.csv` del backend (19 columnas reales) con
 las mismas fórmulas y reglas de muestra que `StudyMetricsService`.
 
 Puros: solo librería estándar (csv/json/math/statistics), sin modelo, sin red
@@ -13,6 +13,7 @@ PILOTO-02 (`tests/fixtures/analysis-piloto02-real.csv` frente a
 Uso:
     .venv\\Scripts\\python.exe -m unittest -v test_user_experiment_analysis
 """
+import csv
 import hashlib
 import json
 import math
@@ -67,6 +68,17 @@ class FormulaTests(unittest.TestCase):
         self.assertEqual(word_count(""), 0)
         self.assertEqual(word_count("   ...  --- "), 0)
         self.assertEqual(word_count("_sub_ palabra_"), 2)
+
+    def test_word_count_normalises_combining_marks_like_java(self):
+        # "cafés" en NFD (e + tilde combinante): Java (\w con UNICODE_CHARACTER_CLASS)
+        # cuenta 1 palabra; sin NFC Python contaría 2. La aproximación se documenta.
+        self.assertEqual(word_count("cafés bien"), 2)
+        self.assertEqual(word_count("niñós"), 1)
+
+    def test_paired_summary_without_pairs_is_all_null(self):
+        summary = paired_summary([])
+        self.assertEqual(summary["n"], 0)
+        self.assertTrue(all(summary[key] is None for key in summary if key != "n"))
 
     def test_row_metrics(self):
         row = {"final_text": "uno dos tres cuatro", "duration_ms": "120000", "orthography_errors": "1"}
@@ -363,6 +375,56 @@ class ValidationTests(unittest.TestCase):
         finally:
             path.unlink()
 
+    def _analyze(self, lines):
+        path = _write_csv(lines)
+        try:
+            rows, sha = load_rows(path)
+            return analyze(rows, input_sha256=sha, input_name="x.csv")
+        finally:
+            path.unlink()
+
+    def test_incomplete_coverage_status(self):
+        # Dos ejecuciones incluidas, solo una adjudicada: INCOMPLETE_COVERAGE (nunca un PEO parcial).
+        report = self._analyze([
+            self._row(run="r1", cond="ASSISTED", inc="true", err="1", idx="0", orig="a", sug="b", score="2", acc="true", sb="s1"),
+            self._row(run="r2", cond="UNASSISTED", inc="true", err=""),
+            self._row(run="r3", cond="ASSISTED", inc="true", err="0", idx="0", orig="a", sug="c", score="", acc="false", sb=""),
+        ])
+        self.assertEqual(report["orthographyAnnotation"]["status"], "INCOMPLETE_COVERAGE")
+        self.assertEqual(report["semanticAnnotation"]["status"], "INCOMPLETE_COVERAGE")
+        self.assertIsNone(report["peo"])
+        self.assertIsNone(report["tas"])
+
+    def test_not_applicable_status_without_countable_words_or_suggestions(self):
+        report = self._analyze([
+            self._row(run="r1", cond="ASSISTED", inc="true", text="...", wc="0", err="0"),
+            self._row(run="r2", cond="UNASSISTED", inc="true", text="---", wc="0", err="0"),
+        ])
+        self.assertEqual(report["orthographyAnnotation"]["status"], "NOT_APPLICABLE")
+        self.assertEqual(report["semanticAnnotation"]["status"], "NOT_APPLICABLE")
+        self.assertEqual(report["sample"]["runsWithoutCountableWords"], 2)
+        self.assertEqual(report["ppm"]["paired"]["assistedMean"], 0.0)
+
+    def test_no_sample_status_without_complete_pairs(self):
+        report = self._analyze([self._row(run="r1", cond="ASSISTED", inc="false", err="0")])
+        self.assertEqual(report["orthographyAnnotation"]["status"], "NO_SAMPLE")
+        self.assertEqual(report["semanticAnnotation"]["status"], "NO_SAMPLE")
+        self.assertIsNone(report["ppm"])
+        self.assertEqual(report["sample"]["participantsWithIncompletePair"], 1)
+
+    def test_word_count_mismatch_is_a_warning_and_the_csv_value_wins(self):
+        report = self._analyze([
+            self._row(run="r1", cond="ASSISTED", inc="true", wc="5", err="1", text="uno dos"),
+            self._row(run="r2", cond="UNASSISTED", inc="true", wc="2", err="0", text="uno dos"),
+        ])
+        self.assertEqual(len(report["warnings"]), 1)
+        self.assertIn("word_count=5", report["warnings"][0])
+        self.assertIn("counts 2", report["warnings"][0])
+        self.assertAlmostEqual(report["participants"][0]["peoAssisted"], 20.0, places=12)
+
+    def test_rows_with_more_fields_than_the_header_are_rejected(self):
+        self._assert_rejected([self._row() + ",extra"], "too many fields")
+
 
 class ReconciliationTests(unittest.TestCase):
     """El análisis offline reproduce `GET …/results` del backend para el mismo CSV real (PILOTO-02)."""
@@ -415,6 +477,52 @@ class ReconciliationTests(unittest.TestCase):
         self.assertIn("participants[P-002].ppmAssisted", joined)
         self.assertEqual(len(discrepancies), 3)
 
+    def test_participants_total_gap_must_match_without_eligible_gap(self):
+        tampered = json.loads(json.dumps(self.backend))
+        tampered["sample"]["participantsTotal"] += 1            # gap 2 vs withoutEligible gap 1
+        self.assertTrue(any("participantsTotal" in d for d in compare_results(self.report, tampered)[0]))
+        tampered = json.loads(json.dumps(self.backend))
+        tampered["sample"]["participantsTotal"] = 0             # gap negativo
+        self.assertTrue(any("participantsTotal" in d for d in compare_results(self.report, tampered)[0]))
+        tampered = json.loads(json.dumps(self.backend))
+        del tampered["sample"]["participantsTotal"]             # clave ausente
+        self.assertTrue(any("participantsTotal" in d for d in compare_results(self.report, tampered)[0]))
+
+    def test_not_adjudicated_backend_status_is_accepted_with_a_note(self):
+        # El backend puede estar en NOT_ADJUDICATED (lote nuevo sin adjudicación
+        # vigente); el CSV solo puede ver NO_BATCH / INCOMPLETE_COVERAGE. Si los
+        # números coinciden, no es discrepancia: se anota.
+        with REAL_CSV.open(encoding="utf-8-sig", newline="") as handle:
+            table = list(csv.reader(handle))
+        err_i = table[0].index("orthography_errors")
+        for cells in table[1:]:
+            cells[err_i] = ""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "blank.csv"
+            with path.open("w", encoding="utf-8", newline="") as handle:
+                csv.writer(handle).writerows(table)
+            rows, sha = load_rows(path)
+            report = analyze(rows, input_sha256=sha, input_name="blank.csv")
+        self.assertEqual(report["orthographyAnnotation"]["status"], "NO_BATCH")
+        backend = json.loads(json.dumps(self.backend))
+        backend["orthographyAnnotation"]["status"] = "NOT_ADJUDICATED"
+        backend["peo"] = None
+        for row in backend["participants"]:
+            for key in ("peoAssisted", "peoUnassisted", "peoDelta", "peoRelativeReduction"):
+                row[key] = None
+        discrepancies, notes = compare_results(report, backend)
+        self.assertEqual(discrepancies, [])
+        self.assertTrue(any("NOT_ADJUDICATED" in note and "NO_BATCH" in note for note in notes))
+        # ADJUDICATED en el backend con NO_BATCH offline sí es una discrepancia.
+        backend["orthographyAnnotation"]["status"] = "ADJUDICATED"
+        discrepancies, _ = compare_results(report, backend)
+        self.assertTrue(any("orthographyAnnotation.status" in d for d in discrepancies))
+        # NO_SAMPLE / NOT_APPLICABLE se exigen literales.
+        backend = json.loads(json.dumps(self.backend))
+        backend["semanticAnnotation"]["status"] = "NOT_APPLICABLE"
+        discrepancies, _ = compare_results(self.report, backend)
+        self.assertTrue(any("semanticAnnotation.status" in d for d in discrepancies))
+
 
 class CliTests(unittest.TestCase):
     """Punto de entrada: escribe JSON y Markdown y devuelve un código de salida claro."""
@@ -446,6 +554,35 @@ class CliTests(unittest.TestCase):
     def test_main_rejects_invalid_thresholds(self):
         self.assertEqual(main([str(REAL_CSV), "--ppm-margin", "0"]), 2)
         self.assertEqual(main([str(REAL_CSV), "--tas-limit", "101"]), 2)
+
+    def test_main_validates_tolerance(self):
+        for bad in ("-1e-6", "nan", "inf"):
+            self.assertEqual(main([str(REAL_CSV), "--compare-results", str(REAL_RESULTS), f"--tolerance={bad}"]), 2)
+        self.assertEqual(main([str(REAL_CSV), "--compare-results", str(REAL_RESULTS), "--tolerance", "0"]), 0)
+
+    def test_main_reports_unreadable_results_file_as_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(main([str(REAL_CSV), "--compare-results", str(Path(tmp) / "no-existe.json")]), 2)
+            broken = Path(tmp) / "broken.json"
+            broken.write_text("{ roto", encoding="utf-8")
+            self.assertEqual(main([str(REAL_CSV), "--compare-results", str(broken)]), 2)
+            not_object = Path(tmp) / "list.json"
+            not_object.write_text("[1, 2]", encoding="utf-8")
+            self.assertEqual(main([str(REAL_CSV), "--compare-results", str(not_object)]), 2)
+
+    def test_markdown_shows_the_tolerance_used(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tampered = json.loads(REAL_RESULTS.read_text(encoding="utf-8"))
+            tampered["ppm"]["paired"]["assistedMean"] += 1e-3
+            results = Path(tmp) / "results.json"
+            results.write_text(json.dumps(tampered), encoding="utf-8")
+            md_path = Path(tmp) / "out.md"
+            self.assertEqual(main([str(REAL_CSV), "--compare-results", str(results), "--tolerance", "1e-4",
+                                   "--markdown", str(md_path)]), 1)
+            markdown = md_path.read_text(encoding="utf-8")
+            self.assertIn("tolerancia 0.0001", markdown)
+            self.assertNotIn("1e-6", markdown)
+            self.assertEqual(main([str(REAL_CSV), "--compare-results", str(results), "--tolerance", "1e-2"]), 0)
 
 
 if __name__ == "__main__":

@@ -31,6 +31,7 @@ from evaluate import (
     MAX_CATEGORIES,
     MAX_CATEGORY_NAME,
     MAX_MODEL_VERSION,
+    MODEL_MANIFEST_NAME,
     REPO_DIR,
     SCORER_VERSION,
     align_tokens,
@@ -38,10 +39,12 @@ from evaluate import (
     dataset_sha256,
     edit_scores,
     ensure_offline,
+    evaluation_model_version,
     exit_status,
     extract_edits,
     is_development,
     load_dataset,
+    pipeline_info,
     prf,
     require_local_t5_dir,
     resolve_model_version,
@@ -481,6 +484,76 @@ class ResolveModelVersionTests(unittest.TestCase):
             self.assertEqual(resolve_model_version(None, {}, Path(tmp)), "global-lora-unversioned")
 
 
+class EvaluationModelVersionTests(unittest.TestCase):
+    """La versión del informe describe el pipeline evaluado, nunca los manifiestos de `models/` por defecto."""
+
+    COMPOSED = "beto-t5-base@01234567+global-lora-v1@fedcba98"
+
+    def _t5_dir(self, tmp, manifest=None, name="t5"):
+        t5_dir = Path(tmp) / name
+        t5_dir.mkdir()
+        if manifest is not None:
+            (t5_dir / MODEL_MANIFEST_NAME).write_text(
+                manifest if isinstance(manifest, str) else json.dumps(manifest), encoding="utf-8")
+        return t5_dir
+
+    def test_explicit_flag_and_env_win_in_that_order(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            t5_dir = self._t5_dir(tmp, {"model_sha256": "0123456789abcdef" * 4, "adapter_sha256": "fedcba9876543210" * 4})
+            self.assertEqual(evaluation_model_version(" flag ", source="pipeline", t5_dir=t5_dir, no_beto=False,
+                                                      env={"MODEL_VERSION": "env-v"}), "flag")
+            self.assertEqual(evaluation_model_version(None, source="pipeline", t5_dir=t5_dir, no_beto=False,
+                                                      env={"MODEL_VERSION": "env-v"}), "env-v")
+            self.assertEqual(evaluation_model_version("flag", source="pipeline", t5_dir=None, no_beto=True, env={}), "flag")
+            self.assertEqual(evaluation_model_version("flag", source="http", t5_dir=None, no_beto=False, env={},
+                                                      server_version="srv"), "flag")
+
+    def test_full_pipeline_composes_from_the_evaluated_t5_dir_manifest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            t5_dir = self._t5_dir(tmp, {"model_sha256": "0123456789abcdef" * 4, "adapter_sha256": "fedcba9876543210" * 4})
+            self.assertEqual(evaluation_model_version(None, source="pipeline", t5_dir=t5_dir, no_beto=False, env={}),
+                             self.COMPOSED)
+            # Un `--t5-dir` distinto de models/t5_correction usa SU manifiesto, no el del repo.
+            other = self._t5_dir(tmp, {"model_sha256": "a" * 64, "adapter_sha256": "b" * 64, "base_tag": "t5-base",
+                                       "lora_tag": "sin-lora"}, name="otro")
+            self.assertEqual(evaluation_model_version(None, source="pipeline", t5_dir=other, no_beto=False, env={}),
+                             "t5-base@aaaaaaaa+sin-lora@bbbbbbbb")
+
+    def test_t5_dir_without_readable_manifest_requires_an_explicit_version(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for index, manifest in enumerate((None, "{ roto", {"model_sha256": "a" * 64})):
+                t5_dir = self._t5_dir(tmp, manifest, name=f"t5-{index}")
+                with self.assertRaises(ValueError) as ctx:
+                    evaluation_model_version(None, source="pipeline", t5_dir=t5_dir, no_beto=False, env={})
+                self.assertIn("--model-version", str(ctx.exception))
+                self.assertIn(MODEL_MANIFEST_NAME, str(ctx.exception))
+
+    def test_rules_only_and_no_beto_require_an_explicit_version(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            t5_dir = self._t5_dir(tmp, {"model_sha256": "0123456789abcdef" * 4, "adapter_sha256": "fedcba9876543210" * 4})
+            for kwargs in (dict(t5_dir=None, no_beto=False), dict(t5_dir=None, no_beto=True),
+                           dict(t5_dir=t5_dir, no_beto=True)):
+                with self.assertRaises(ValueError) as ctx:
+                    evaluation_model_version(None, source="pipeline", env={}, **kwargs)
+                self.assertIn("--model-version", str(ctx.exception))
+
+    def test_http_takes_the_server_version(self):
+        self.assertEqual(evaluation_model_version(None, source="http", t5_dir=None, no_beto=False, env={},
+                                                  server_version=" srv@1 "), "srv@1")
+        with self.assertRaises(ValueError) as ctx:
+            evaluation_model_version(None, source="http", t5_dir=None, no_beto=False, env={}, server_version=None)
+        self.assertIn("modelVersion", str(ctx.exception))
+
+    def test_cli_exits_2_without_version_for_rules_only_before_loading_anything(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dataset = Path(tmp) / "mini.csv"
+            dataset.write_text("tilde|el arbol|el árbol\n", encoding="utf-8")
+            proc = subprocess.run([sys.executable, str(REPO_DIR / "evaluate.py"), "--no-beto", "--dataset", str(dataset)],
+                                  cwd=str(REPO_DIR), capture_output=True, text=True, encoding="utf-8", errors="replace")
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertIn("--model-version", proc.stdout + proc.stderr)
+
+
 class ValidateModelVersionTests(unittest.TestCase):
     def test_accepts_trimmed_text_up_to_160_chars(self):
         self.assertEqual(validate_model_version("  t5@abcd1234+grammar@ef567890 "), "t5@abcd1234+grammar@ef567890")
@@ -663,6 +736,20 @@ class BuildReportTests(unittest.TestCase):
     def test_report_is_json_serializable(self):
         json.dumps(self._report(), ensure_ascii=False)
 
+    def test_report_records_pipeline_thresholds_and_commit(self):
+        # `modelVersion` identifica pesos, no código: el informe registra los
+        # umbrales de la capa 5 y el commit para que dos informes con la misma
+        # versión y reglas distintas se distingan.
+        from infrastructure.nlp.alternatives import THRESHOLDS
+        report = self._report(pipeline=pipeline_info(commit="abc1234"))
+        self.assertEqual(report["pipeline"]["thresholds"], THRESHOLDS)
+        self.assertEqual(report["pipeline"]["commit"], "abc1234")
+        self.assertEqual(panel_errors(report), [])
+        info = pipeline_info()
+        self.assertTrue(info["commit"] is None or re.fullmatch(r"[0-9a-f]{7,40}(-dirty)?", info["commit"]),
+                        info["commit"])
+        self.assertIsNone(self._report()["pipeline"])
+
 
 class SetupModelGuardTests(unittest.TestCase):
     def test_default_save_dir_is_not_the_global_checkpoint(self):
@@ -683,6 +770,11 @@ class SetupModelGuardTests(unittest.TestCase):
     def test_explicit_allow_flag_permits_overwrite(self):
         save_dir = setup_model.resolve_save_dir({"OUT": "./models/t5_correction", "ALLOW_MODEL_OVERWRITE": "true"})
         self.assertEqual(save_dir.resolve(), setup_model.PROTECTED_DIR.resolve())
+
+    def test_revision_comes_from_the_environment(self):
+        self.assertIsNone(setup_model.resolve_revision({}))
+        self.assertIsNone(setup_model.resolve_revision({"MODEL_REVISION": "  "}))
+        self.assertEqual(setup_model.resolve_revision({"MODEL_REVISION": " abc123 "}), "abc123")
 
 
 class NoHeavyImportsTests(unittest.TestCase):

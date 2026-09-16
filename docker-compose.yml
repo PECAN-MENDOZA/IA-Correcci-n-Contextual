@@ -26,7 +26,7 @@ services:
     restart: unless-stopped
     environment:
       PORT: "8080"
-      # MODEL_VERSION: "t5-base-spanish@xxxxxxxx+grammar@yyyyyyyy"  # opcional
+      # MODEL_VERSION: "beto-t5-base@04c598db+global-lora-v1@19ec2e4c"  # opcional; obligatoria si ENABLE_T5=false
     ports:
       - "8080:8080"
     volumes:

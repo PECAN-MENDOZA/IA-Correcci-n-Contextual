@@ -28,10 +28,12 @@ from scripts.model_manifest import (
     TRAINING_MANIFEST_NAME,
     REPO_DIR,
     adapter_fields,
+    base_version,
     compose_model_version,
     load_pairs,
     merged_model_manifest,
     reconstructed_training_manifest,
+    resolve_merge_base,
     sha256_file,
     split_indices,
     training_manifest,
@@ -54,12 +56,14 @@ def _fake_adapter(directory: Path, weights: bytes = b"adapter-bytes", rank: int 
     return directory
 
 
-def _fake_merged(directory: Path, weights: bytes = b"merged-bytes") -> Path:
-    """Crea un modelo fusionado falso con los archivos que el pipeline exige."""
+def _fake_merged(directory: Path, weights: bytes = b"merged-bytes", vocab: str = "spiece.model") -> Path:
+    """Crea un modelo fusionado falso con los archivos que el pipeline exige (incluido el vocabulario)."""
     directory.mkdir(parents=True, exist_ok=True)
     (directory / "model.safetensors").write_bytes(weights)
     for name in ("config.json", "tokenizer_config.json", "generation_config.json"):
         (directory / name).write_text("{}", encoding="utf-8")
+    if vocab:
+        (directory / vocab).write_bytes(b"vocab")
     return directory
 
 
@@ -230,6 +234,80 @@ class ValidateMergedDirTests(unittest.TestCase):
             errors = validate_merged_dir(merged)
             self.assertTrue(any("model_sha256" in e for e in errors))  # hash no coincide con el archivo
 
+    def test_tokenizer_vocabulary_is_required(self):
+        # tokenizer_config.json solo no basta: sin spiece.model ni tokenizer.json
+        # el pipeline no puede tokenizar. Cualquiera de los dos vale.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            adapter = _fake_adapter(root / "grammar_lora")
+            training = training_manifest(_dataset(root), {"seed": 42}, now=FIXED_NOW)
+            training.update(adapter_fields(adapter))
+            merged = _fake_merged(root / "sin-vocab", vocab=None)
+            write_json(merged / MODEL_MANIFEST_NAME, merged_model_manifest(training, merged, adapter))
+            errors = validate_merged_dir(merged)
+            self.assertEqual(len(errors), 1)
+            self.assertIn("spiece.model", errors[0])
+            self.assertIn("tokenizer.json", errors[0])
+            for vocab in ("spiece.model", "tokenizer.json"):
+                merged = _fake_merged(root / vocab.replace(".", "-"), vocab=vocab)
+                write_json(merged / MODEL_MANIFEST_NAME, merged_model_manifest(training, merged, adapter))
+                self.assertEqual(validate_merged_dir(merged), [])
+
+
+class ResolveMergeBaseTests(unittest.TestCase):
+    """El merge carga el base que registró el entrenamiento (nombre + revisión), nunca otro."""
+
+    def test_base_and_revision_come_from_the_training_manifest(self):
+        training = {"provenance": "trained", "base_model": BASE_MODEL, "base_model_revision": "abc123"}
+        self.assertEqual(resolve_merge_base(training), (BASE_MODEL, "abc123"))
+        self.assertEqual(resolve_merge_base(training, env_base=BASE_MODEL), (BASE_MODEL, "abc123"))
+        self.assertEqual(resolve_merge_base(training, env_base="  "), (BASE_MODEL, "abc123"))
+
+    def test_env_override_must_match(self):
+        training = {"provenance": "trained", "base_model": BASE_MODEL, "base_model_revision": "abc123"}
+        with self.assertRaises(ValueError) as ctx:
+            resolve_merge_base(training, env_base="otro/modelo")
+        self.assertIn("otro/modelo", str(ctx.exception))
+        self.assertIn(BASE_MODEL, str(ctx.exception))
+
+    def test_trained_manifest_without_revision_is_rejected(self):
+        with self.assertRaises(ValueError) as ctx:
+            resolve_merge_base({"provenance": "trained", "base_model": BASE_MODEL, "base_model_revision": None})
+        self.assertIn("base_model_revision", str(ctx.exception))
+        with self.assertRaises(ValueError):
+            resolve_merge_base({"provenance": "trained", "base_model": ""})
+
+    def test_reconstructed_manifest_may_lack_the_revision(self):
+        training = {"provenance": "reconstructed", "base_model": BASE_MODEL, "base_model_revision": None}
+        self.assertEqual(resolve_merge_base(training), (BASE_MODEL, None))
+        self.assertEqual(resolve_merge_base({"provenance": "reconstructed"}), (BASE_MODEL, None))
+
+
+class TrainingAndMergeScriptTests(unittest.TestCase):
+    """Los scripts con torch no se importan: se inspecciona el código fuente (como test_versioning con main.py)."""
+
+    def test_training_seeds_everything_before_loading_the_base_model_and_peft(self):
+        source = (REPO_DIR / "train_grammar_lora.py").read_text(encoding="utf-8")
+        seeds_def = source.index("def configure_seeds(")
+        seeds_call = source.index("= configure_seeds(SEED)", seeds_def)     # la llamada real, no la del docstring
+        self.assertLess(seeds_call, source.index("from_pretrained(", seeds_def))
+        self.assertLess(seeds_call, source.index("get_peft_model(", seeds_def))
+        body = source[seeds_def:seeds_call]
+        for call in ("random.seed(", "torch.manual_seed(", "torch.cuda.manual_seed_all("):
+            self.assertIn(call, body)
+        self.assertIn("torch.Generator", source)
+        self.assertRegex(source, r"DataLoader\(PairDS\(train_pairs\)[^)]*generator=")
+        self.assertIn('manifest["deterministic"]', source)
+
+    def test_merge_uses_the_recorded_base_revision_and_fails_uniformly(self):
+        source = (REPO_DIR / "scripts" / "merge_grammar_lora.py").read_text(encoding="utf-8")
+        self.assertIn("resolve_merge_base(", source)
+        self.assertRegex(source, r"from_pretrained\(BASE[^)]*revision=REVISION")
+        self.assertNotIn('os.environ.get("BASE", "vgaraujov/t5-base-spanish")', source)
+        self.assertRegex(source, r"except \(FileNotFoundError, ValueError, OSError\) as exc:\s*\n\s*sys\.exit\(f?\"\[ERROR\]")
+        # El manifiesto/validación se hace sobre el temporal, antes de tocar OUT.
+        self.assertLess(source.index("validate_merged_dir(TMP)"), source.index("shutil.move(TMP, OUT)"))
+
 
 class WriteCurrentTests(unittest.TestCase):
     """`--write-current` reconstruye los manifiestos de los artefactos existentes sin reentrenar."""
@@ -330,6 +408,24 @@ class NoHeavyImportsTests(unittest.TestCase):
                               cwd=str(REPO_DIR), capture_output=True, text=True)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn("--write-current", proc.stdout)
+        self.assertIn("--base-version", proc.stdout)
+
+
+class BaseVersionTests(unittest.TestCase):
+    """`--base-version DIR`: versión hasheada de un T5 sin LoRA (el baseline del holdout)."""
+
+    def test_base_version_hashes_the_weights_with_the_given_tag(self):
+        with tempfile.TemporaryDirectory() as directory:
+            merged = _fake_merged(Path(directory) / "t5_base", b"pesos-base")
+            expected = hashlib.sha256(b"pesos-base").hexdigest()[:8]
+            self.assertEqual(base_version(merged), f"t5-base@{expected}")
+            self.assertEqual(base_version(merged, tag="otro"), f"otro@{expected}")
+            with self.assertRaises(FileNotFoundError):
+                base_version(Path(directory) / "no-existe")
+            proc = subprocess.run([sys.executable, str(REPO_DIR / "scripts" / "model_manifest.py"),
+                                   "--base-version", str(merged)], cwd=str(REPO_DIR), capture_output=True, text=True)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertEqual(proc.stdout.strip(), f"t5-base@{expected}")
 
 
 if __name__ == "__main__":

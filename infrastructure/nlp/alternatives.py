@@ -32,12 +32,36 @@ y las segundas lecturas de BETO) se ofrecen únicamente si:
   (e) cada tramo que editan respecto a la BASE (lo que T5 tocó realmente) es
       una variante léxica cercana (similitud sin tildes ≥ MIN_SPAN_SIMILARITY):
       "juega/jueguen", "esta/está", "tubo/tuvo" son otras lecturas de la misma
-      palabra; "luego/después" o "voy/iré" son paráfrasis, no correcciones.
-      Borrar un token igual a su vecino ("muy muy" → "muy") cuenta como
-      edición válida.
+      palabra; "luego/después" o "voy/iré" son paráfrasis, no correcciones;
+  (f) SEÑAL POSITIVA DE AMBIGÜEDAD (ola final): estar cerca del mejor beam no
+      prueba que la frase admita dos lecturas. Un beam de T5 (o la base) solo
+      es alternativa si
+        (i)  difiere de la RECOMENDADA únicamente por reemplazos 1:1 que son
+             flexiones del mismo lexema (prefijo común sin tildes ≥
+             INFLECTION_MIN_PREFIX del más corto y similitud ≥
+             MIN_SPAN_SIMILARITY) y al menos uno de ellos es un contraste de
+             MODO (indicativo ↔ subjuntivo: juegan/jueguen, llegan/lleguen,
+             gana/gane, comen/coman; `_mood_pair`) o SOLO DE TILDE
+             (callo/calló, papa/papá, como/cómo, esta/está) en el que la
+             alternativa no vuelve a la forma del original (el original nunca
+             es una corrección, tampoco por tramo). Corregir número o persona
+             (juega/juegan, fue/fueron, lleguen/llegue) lo fija el sujeto y
+             nunca es "otra lectura"; una inserción o borrado tampoco;
+        (ii) o es una segunda lectura de BETO (empate < betoTieMargin en un
+             homófono, `variants=`), que trae su propia señal.
+  (g) FILTRO DE MODO: si la recomendada contiene un disparador de subjuntivo
+      obligatorio (`SUBJUNCTIVE_TRIGGERS`: ojalá, es posible que, es
+      necesario que, espero que, quiero que, me alegra que, me gusta que,
+      para que, antes de que, dudo que, no creo que), la variante en
+      INDICATIVO del verbo que gobierna (tras el disparador) no se ofrece: solo
+      cabe el subjuntivo, como recomendada o como alternativa. La conjugación
+      (-ar: subjuntivo en -e; -er/-ir: en -a) se decide buscando el infinitivo
+      en `lexicon` (las frecuencias de `PhoneticEngine`); si no se puede
+      decidir, el par no se ofrece (fail-closed). No cambia la recomendada.
 
 La base va justo detrás de la recomendada (el tope no la elimina); el resto
-por score descendente.
+por score descendente. En la práctica la base ya no aparece como "refinado +
+base": solo volvería a la forma del original en el tramo que T5 corrigió.
 """
 import difflib
 import re
@@ -48,8 +72,10 @@ from infrastructure.ml.guards import is_safe_refinement
 # Umbrales de la capa 5 y de la señal de ambigüedad de BETO (capa 2.5). Son
 # constantes de código, sin override por entorno: el mismo `modelVersion` debe
 # comportarse igual en el servicio, en evaluate.py y en una ejecución manual.
-# evaluate.py y el manifiesto del modelo los registran tal cual. Calibración:
-# data/ambiguity_calibration.csv + scripts/calibrate_alternatives.py.
+# evaluate.py los registra en el bloque `pipeline` del informe junto con el
+# commit (el manifiesto del modelo no los incluye: identifica pesos, no
+# código). Calibración: data/ambiguity_calibration.csv +
+# scripts/calibrate_alternatives.py (`--check` es la prueba de aceptación).
 THRESHOLDS = {
     # (d) Margen de score (log-prob de beam normalizada por longitud) respecto
     # al mejor candidato para ofrecer una alternativa. Beams reales del T5
@@ -85,11 +111,39 @@ THRESHOLDS = {
     # fue→fueron 0.67. No es una guarda general contra sustituciones léxicas:
     # luego→después 0.33, tuvo→provocó 0.36 y ayer→anoche 0.40 pasan.
     "recommendedMinSimilarity": 0.3,
+    # (f)(i): dos palabras son flexiones del mismo lexema si su prefijo común
+    # (sin tildes) cubre al menos esta fracción de la más corta (y la
+    # similitud es ≥ minSpanSimilarity): llegan/lleguen 0.67 · gana/gane 0.75
+    # · están/estén 0.6 · juegan/jueguen 0.67; voy/iré 0.0 · luego/después 0.0.
+    "inflectionMinPrefix": 0.6,
 }
 
 SCORE_MARGIN               = THRESHOLDS["scoreMargin"]
 MIN_SPAN_SIMILARITY        = THRESHOLDS["minSpanSimilarity"]
 RECOMMENDED_MIN_SIMILARITY = THRESHOLDS["recommendedMinSimilarity"]
+INFLECTION_MIN_PREFIX      = THRESHOLDS["inflectionMinPrefix"]
+
+# (g) Disparadores de subjuntivo obligatorio (palabras sin tildes ni
+# mayúsculas, en orden): tras ellos la subordinada solo admite subjuntivo.
+SUBJUNCTIVE_TRIGGERS = (
+    ("ojala",),
+    ("es", "posible", "que"),
+    ("es", "necesario", "que"),
+    ("espero", "que"),
+    ("quiero", "que"),
+    ("me", "alegra", "que"),
+    ("me", "gusta", "que"),
+    ("para", "que"),
+    ("antes", "de", "que"),
+    ("dudo", "que"),
+    ("no", "creo", "que"),
+)
+
+# Terminaciones del presente cuyo contraste de vocal temática distingue
+# indicativo y subjuntivo (misma persona): -ar canta/cante, cantan/canten;
+# -er/-ir come/coma, comen/coman.
+_MOOD_ENDINGS = (("a", "e"), ("an", "en"), ("as", "es"), ("amos", "emos"), ("ais", "eis"))
+_MIN_STEM = 2
 
 _TRAILING_PUNCT_RE = re.compile(r"[\s.!?…]+$")
 _SPACES_RE         = re.compile(r"\s+")
@@ -189,6 +243,200 @@ def _span_similarity(base_words: list[str], cand_words: list[str]) -> float:
     return similarity
 
 
+# ---------------------------------------------------------------------------
+# (f) señal positiva de ambigüedad y (g) filtro de modo
+# ---------------------------------------------------------------------------
+
+def _norm_words(text: str) -> list[str]:
+    """Palabras normalizadas (`_norm_word`: con tildes, casefold, sin puntuación exterior)."""
+    return [_norm_word(w) for w in _words_for_edits(text)]
+
+
+def _plain(word: str) -> str:
+    return _strip_accents(word).lower()
+
+
+def _is_inflection(a: str, b: str) -> bool:
+    """Flexión del mismo lexema según el brief: prefijo común sin tildes ≥ INFLECTION_MIN_PREFIX y similitud ≥ MIN_SPAN_SIMILARITY."""
+    pa, pb = _plain(a), _plain(b)
+    shorter = min(len(pa), len(pb))
+    if shorter == 0:
+        return False
+    prefix = 0
+    for ca, cb in zip(pa, pb):
+        if ca != cb:
+            break
+        prefix += 1
+    return prefix >= INFLECTION_MIN_PREFIX * shorter and _similarity(a, b) >= MIN_SPAN_SIMILARITY
+
+
+def _canonical_stem(stem: str, vowel: str) -> str:
+    """
+    Raíz comparable entre la forma ante `a` y la forma ante `e`: ante e la
+    ortografía escribe gu/qu/g/c donde ante a escribe g/c/j/z (llega/llegue,
+    busca/busque, coge/coja, cruza/cruce).
+    """
+    if vowel != "e":
+        return stem
+    if stem.endswith("gu"):
+        return stem[:-2] + "g"
+    if stem.endswith("qu"):
+        return stem[:-2] + "c"
+    if stem.endswith("g"):
+        return stem[:-1] + "j"
+    if stem.endswith("c"):
+        return stem[:-1] + "z"
+    return stem
+
+
+def _mood_split(a: str, b: str):
+    """
+    `(vocal_a, vocal_b, raíz_ante_a, raíz_ante_e)` si `a` y `b` (sin tildes)
+    son la misma persona del presente con vocal temática distinta (a ↔ e)
+    sobre la misma raíz; None si no (número/persona distintos, raíz distinta o
+    demasiado corta, solo tildes).
+    """
+    pa, pb = _plain(a), _plain(b)
+    if pa == pb:
+        return None
+    for ending_a, ending_e in _MOOD_ENDINGS:
+        for x, y, ex, ey in ((pa, pb, ending_a, ending_e), (pa, pb, ending_e, ending_a)):
+            if x.endswith(ex) and y.endswith(ey):
+                stem_x, stem_y = x[:-len(ex)], y[:-len(ey)]
+                if len(stem_x) >= _MIN_STEM and len(stem_y) >= _MIN_STEM \
+                        and _canonical_stem(stem_x, ex[0]) == _canonical_stem(stem_y, ey[0]):
+                    stems = {ex[0]: stem_x, ey[0]: stem_y}
+                    return ex[0], ey[0], stems["a"], stems["e"]
+    return None
+
+
+def _mood_pair(a: str, b: str):
+    """
+    `(vocal_a, vocal_b)` si `a` y `b` son un contraste de modo:
+    llegan/lleguen → ("a", "e"); jueguen/juegan → ("e", "a"); None si no.
+    """
+    split = _mood_split(a, b)
+    return None if split is None else (split[0], split[1])
+
+
+def _stem_variants(stem: str) -> list[str]:
+    """Raíz tal cual y con el diptongo/cierre vocálico deshecho (jueg→jug, vien→ven, sigu→segu)."""
+    variants = [stem]
+    for old, new in (("ie", "e"), ("ue", "o"), ("ue", "u"), ("i", "e")):
+        index = stem.rfind(old)
+        if index >= 0:
+            variants.append(stem[:index] + new + stem[index + len(old):])
+    return variants
+
+
+def _verb_class(stem_a: str, stem_e: str, lexicon):
+    """
+    "ar" si la raíz (tal como se escribe ante a) + "ar" está en `lexicon`,
+    "er" si la raíz (ante e) + "er"/"ir" lo está; None si ninguna o ambas
+    (no se puede saber cuál de las dos formas es el indicativo).
+    """
+    if not lexicon:
+        return None
+    is_ar = any(v + "ar" in lexicon for v in _stem_variants(stem_a))
+    is_er = any(v + suffix in lexicon for v in _stem_variants(stem_e) for suffix in ("er", "ir"))
+    if is_ar and not is_er:
+        return "ar"
+    if is_er and not is_ar:
+        return "er"
+    return None
+
+
+def _candidate_is_indicative(rec_word: str, cand_word: str, lexicon):
+    """
+    Para un par de modo (recomendada, candidata): True si la candidata es el
+    indicativo, False si es el subjuntivo, None si `lexicon` no decide la
+    conjugación (-ar: indicativo en a; -er/-ir: indicativo en e).
+    """
+    split = _mood_split(rec_word, cand_word)
+    if split is None:
+        return None
+    _, cand_vowel, stem_a, stem_e = split
+    verb_class = _verb_class(stem_a, stem_e, lexicon)
+    if verb_class is None:
+        return None
+    return cand_vowel == ("a" if verb_class == "ar" else "e")
+
+
+def _aligned_original(original_words: list[str], rec_words: list[str]) -> dict:
+    """{índice en la recomendada: palabra del original alineada} para tramos iguales o reemplazos 1:1."""
+    aligned = {}
+    matcher = difflib.SequenceMatcher(a=original_words, b=rec_words, autojunk=False)
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal" or (tag == "replace" and i2 - i1 == j2 - j1):
+            for offset in range(j2 - j1):
+                aligned[j1 + offset] = original_words[i1 + offset]
+    return aligned
+
+
+def _reading_contrasts(rec_words: list[str], cand_words: list[str]):
+    """
+    Reemplazos 1:1 `(índice, palabra_recomendada, palabra_candidata)` entre la
+    recomendada y el candidato, o None si difieren por algo que no sea un
+    reemplazo 1:1 (inserción, borrado, 1:n).
+    """
+    matcher = difflib.SequenceMatcher(a=rec_words, b=cand_words, autojunk=False)
+    contrasts = []
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            continue
+        if tag != "replace" or i2 - i1 != j2 - j1:
+            return None
+        contrasts.extend((i1 + k, rec_words[i1 + k], cand_words[j1 + k]) for k in range(i2 - i1))
+    return contrasts
+
+
+def _has_reading_signal(contrasts, aligned_original: dict) -> bool:
+    """
+    (f)(i): todos los contrastes son flexiones del mismo lexema y al menos uno
+    es de modo o solo de tilde, con la forma candidata distinta de la del
+    original en esa posición (un tramo alineado desconocido no da señal).
+    """
+    if not contrasts:
+        return False
+    signal = False
+    for index, rec_word, cand_word in contrasts:
+        if not _is_inflection(rec_word, cand_word):
+            return False
+        original_word = aligned_original.get(index)
+        if original_word is None or cand_word == original_word:
+            continue
+        if _plain(rec_word) == _plain(cand_word) or _mood_pair(rec_word, cand_word) is not None:
+            signal = True
+    return signal
+
+
+def _trigger_end(rec_words: list[str]):
+    """Índice de la primera palabra tras un disparador de subjuntivo obligatorio, o None."""
+    plain = [_plain(w) for w in rec_words]
+    for trigger in SUBJUNCTIVE_TRIGGERS:
+        n = len(trigger)
+        for start in range(len(plain) - n + 1):
+            if tuple(plain[start:start + n]) == trigger:
+                return start + n
+    return None
+
+
+def _indicative_after_trigger(contrasts, trigger_end, lexicon) -> bool:
+    """
+    (g): True si algún contraste de modo tras el disparador ofrece el
+    indicativo (o no se puede decidir cuál es el indicativo: fail-closed).
+    """
+    if trigger_end is None or not contrasts:
+        return False
+    for index, rec_word, cand_word in contrasts:
+        if index < trigger_end or _mood_pair(rec_word, cand_word) is None:
+            continue
+        indicative = _candidate_is_indicative(rec_word, cand_word, lexicon)
+        if indicative is None or indicative:
+            return True
+    return False
+
+
 def select_alternatives(
     original_text: str,
     base_text: str,
@@ -197,6 +445,7 @@ def select_alternatives(
     score_margin: float = 1.0,
     recommended: str | None = None,
     variants: list[tuple[str, float]] | None = None,
+    lexicon=None,
 ) -> list[str]:
     """
     Devuelve la lista final de sugerencias (recomendada primero, nunca vacía)
@@ -212,10 +461,23 @@ def select_alternatives(
     puede ir detrás, como cualquier extra). `CorrectionPipeline.correct` pasa
     `recommended` explícito (beam 1 seguro y léxicamente plausible, o base).
     Si la recomendada explícita no es segura, se recomienda la base.
+
+    `lexicon` (cualquier contenedor con `in`, p. ej. `PhoneticEngine.word_freqs`)
+    decide la conjugación en el filtro de modo (g); sin él, tras un
+    disparador de subjuntivo obligatorio no se ofrece ningún par de modo.
     """
     base   = base_text.strip()
     scored = [(str(t).strip(), float(s)) for t, s in candidates if t and str(t).strip()]
-    scored += [(str(t).strip(), float(s)) for t, s in (variants or []) if t and str(t).strip()]
+    variant_texts: set[str] = set()          # segundas lecturas de BETO: señal (ii) propia
+    for text, score in (variants or []):
+        text = str(text or "").strip()
+        if text:
+            variant_texts.add(text)
+            scored.append((text, float(score)))
+    # Una variante idéntica a la base (el empate lo absorbió una capa
+    # posterior, p. ej. "mi/mí" y luego la regla de gustar) no es una segunda
+    # lectura: se trata como la base y necesita la señal (i).
+    variant_texts.discard(base)
 
     if recommended is None:
         first = str(candidates[0][0] or "").strip() if candidates else ""
@@ -238,6 +500,9 @@ def select_alternatives(
     original_norm  = _normalize(original_text)
     original_words = _words_for_edits(original_text)
     base_words     = _words_for_edits(base)
+    rec_norm_words = _norm_words(recommended)
+    aligned_orig   = _aligned_original(_norm_words(original_text), rec_norm_words)
+    trigger_end    = _trigger_end(rec_norm_words)
 
     chosen: list[str]                 = [recommended]
     chosen_norms: set[str]            = {_normalize(recommended)}
@@ -259,6 +524,11 @@ def select_alternatives(
         if signature in chosen_signatures:                                 # (c)
             continue
         if _span_similarity(base_words, cand_words) < MIN_SPAN_SIMILARITY: # (e)
+            continue
+        contrasts = _reading_contrasts(rec_norm_words, _norm_words(text))
+        if text not in variant_texts and not _has_reading_signal(contrasts, aligned_orig):   # (f)(i)
+            continue
+        if _indicative_after_trigger(contrasts, trigger_end, lexicon):     # (g)
             continue
 
         chosen.append(text)

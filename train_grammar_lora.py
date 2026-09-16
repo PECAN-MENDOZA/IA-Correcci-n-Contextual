@@ -11,6 +11,12 @@ versiones de librerías, hora UTC y SHA-256 del adaptador) y hace un sanity-chec
 al final. Después, `scripts/merge_grammar_lora.py` fusiona el adaptador y
 propaga el manifiesto a models/t5_correction/model-manifest.json.
 
+Reproducibilidad: `configure_seeds(SEED)` siembra `random`, `torch` y CUDA
+ANTES de cargar el base y de `get_peft_model` (la inicialización aleatoria del
+adaptador queda sembrada), el DataLoader baraja con un `torch.Generator`
+sembrado y el manifiesto registra las banderas deterministas efectivas
+(`deterministic`).
+
 Uso (dentro de un contenedor con torch+peft):
     python train_grammar_lora.py
 Variables: EPOCHS, BATCH, ACCUM, LR, R, SEED por entorno (opcional); los valores
@@ -68,6 +74,33 @@ GEN_CFG = GenerationConfig(decoder_start_token_id=0, eos_token_id=1,
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"[INFO] device={device}  seed={SEED} epochs={EPOCHS} batch={BATCH}x{ACCUM} lr={LR} r={R}", flush=True)
 
+
+def configure_seeds(seed: int) -> dict:
+    """
+    Siembra toda la aleatoriedad efectiva ANTES de crear el modelo y el
+    adaptador (la inicialización de LoRA usa el generador global de torch) y
+    fija cuDNN en modo determinista. Devuelve las banderas para el manifiesto.
+    """
+    random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    return {
+        "seed": seed,
+        "python_random": True,
+        "torch_manual_seed": True,
+        "cuda_manual_seed_all": True,
+        "cudnn_deterministic": torch.backends.cudnn.deterministic,
+        "cudnn_benchmark": torch.backends.cudnn.benchmark,
+        "use_deterministic_algorithms": False,       # no se fuerza: algunos kernels CUDA lo rechazan
+        "dataloader_generator_seed": seed,
+        "seeded_before_model_and_peft_init": True,
+    }
+
+
+DETERMINISTIC = configure_seeds(SEED)
+
 tok   = AutoTokenizer.from_pretrained(BASE)
 model = AutoModelForSeq2SeqLM.from_pretrained(BASE, use_safetensors=False)
 model.gradient_checkpointing_enable()
@@ -85,8 +118,6 @@ model.print_trainable_parameters()
 pairs = load_pairs(CSV_PATH)
 train_idx, val_idx = split_indices(len(pairs), SEED, VAL_N)
 val_pairs, train_pairs = [pairs[i] for i in val_idx], [pairs[i] for i in train_idx]
-random.seed(SEED)
-torch.manual_seed(SEED)
 print(f"[INFO] train={len(train_pairs)} val={len(val_pairs)}", flush=True)
 
 
@@ -110,7 +141,10 @@ class PairDS(Dataset):
                 "labels": labels}
 
 
-train_loader = DataLoader(PairDS(train_pairs), batch_size=BATCH, shuffle=True)
+# El barajado de cada época sale de un generador sembrado propio (no del
+# global, que ya consumieron la inicialización del adaptador y el dropout).
+loader_generator = torch.Generator().manual_seed(SEED)
+train_loader = DataLoader(PairDS(train_pairs), batch_size=BATCH, shuffle=True, generator=loader_generator)
 val_loader   = DataLoader(PairDS(val_pairs), batch_size=BATCH)
 opt = AdamW(model.parameters(), lr=LR, weight_decay=0.01)
 
@@ -152,6 +186,7 @@ print(f"[OK] adaptador guardado en {OUT_DIR}", flush=True)
 # ── manifiesto de entrenamiento (junto al adaptador, tras guardarlo) ─────────
 manifest = training_manifest(CSV_PATH, PARAMETERS, base_model=BASE,
                              base_model_revision=hf_snapshot_revision(BASE))
+manifest["deterministic"] = DETERMINISTIC        # semillas y banderas efectivas
 manifest.update(adapter_fields(OUT_DIR))          # adapter_sha256 + modelVersion parcial
 manifest_path = write_json(os.path.join(OUT_DIR, TRAINING_MANIFEST_NAME), manifest)
 print(f"[OK] manifiesto escrito en {manifest_path} (dataset {manifest['dataset_sha256'][:8]}, "

@@ -14,12 +14,20 @@ cual** al panel Vue (que lo valida) y que el backend acepta
 (`POST /api/v1/research/technical-evaluations`).
 
 Uso:
-  python evaluate.py                                   # pipeline en-proceso (reglas + BETO)
-  python evaluate.py --no-beto                         # baseline: solo reglas (para comparar)
+  python evaluate.py --model-version rules-beto        # pipeline en-proceso (reglas + BETO)
+  python evaluate.py --no-beto --model-version rules   # baseline: solo reglas (para comparar)
   python evaluate.py --t5-dir models/t5_correction     # reglas + BETO + T5 (modelo global fusionado)
   python evaluate.py --source http --url http://35.224.215.77
-  python evaluate.py --dataset data/holdout.csv --model-version "t5@abcd1234+grammar@ef567890" \
+  python evaluate.py --dataset data/holdout.csv --t5-dir models/t5_base --model-version "t5-base@abcd1234" \
                      --out reports/holdout.json
+
+`modelVersion` del informe (`evaluation_model_version`): `--model-version` >
+`MODEL_VERSION` (entorno) > con `--t5-dir` y BETO, la versión compuesta desde
+`<t5-dir>/model-manifest.json` (el manifiesto del modelo EVALUADO, nunca el de
+`models/t5_correction` por defecto) > en `--source http`, el `modelVersion` que
+devuelve el servidor. Sin `--t5-dir` o con `--no-beto` la versión debe ser
+explícita (código de salida 2 si falta): el pipeline evaluado no es el que
+nombra ninguna versión compuesta.
 
 Dataset: `categoria|entrada|esperado_1|esperado_2...` (una o más referencias;
 menos de tres campos es un error). El informe registra el SHA-256 de los bytes
@@ -59,6 +67,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 import unicodedata
@@ -66,7 +75,13 @@ from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
 
-from infrastructure.versioning import DEFAULT_MODEL_VERSION, REPO_DIR, resolve_model_version  # noqa: F401
+from infrastructure.versioning import (  # noqa: F401
+    DEFAULT_MODEL_VERSION,
+    MODEL_MANIFEST_NAME,
+    REPO_DIR,
+    compose_model_version,
+    resolve_model_version,
+)
 
 SCORER_VERSION = "exact_token_edits_v1"
 # Datasets de desarrollo: sus informes nunca se registran como evaluación final.
@@ -75,6 +90,7 @@ MAX_CATEGORIES = 50       # límite del backend (TechnicalEvaluationRequest.cate
 MAX_CATEGORY_NAME = 80    # CategoryResult.category
 MAX_MODEL_VERSION = 160   # TechnicalEvaluationRequest.modelVersion
 EXIT_MODEL_ERRORS = 2     # código de salida si un informe final tuvo errores del modelo
+EXIT_BAD_VERSION = 2      # código de salida si no se puede determinar el modelVersion del informe
 
 _TOKEN_RE = re.compile(r"\w+|[^\w\s]", re.UNICODE)
 
@@ -348,6 +364,92 @@ def validate_model_version(value) -> str:
     return text
 
 
+def compose_from_t5_dir(t5_dir) -> str:
+    """
+    Versión compuesta `<base-tag>@<hash8>+<lora-tag>@<hash8>` desde
+    `<t5_dir>/model-manifest.json` (sus propios `model_sha256` y `adapter_sha256`).
+    ValueError si el manifiesto no existe, no se puede leer o no trae los hashes.
+    """
+    manifest_path = Path(t5_dir) / MODEL_MANIFEST_NAME
+    if not manifest_path.is_file():
+        raise ValueError(f"no existe {manifest_path}")
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise ValueError(f"{manifest_path} ilegible: {exc}") from exc
+    if not isinstance(manifest, dict):
+        raise ValueError(f"{manifest_path} no es un objeto JSON")
+    return compose_model_version(manifest, manifest)
+
+
+def evaluation_model_version(explicit, *, source: str, t5_dir, no_beto: bool,
+                             server_version=None, env=None) -> str:
+    """
+    `modelVersion` del informe. Precedencia: `explicit` (`--model-version`) >
+    `MODEL_VERSION` (entorno) > según lo evaluado:
+      - `--source http`: el `modelVersion` que devolvió el servidor;
+      - pipeline con `--t5-dir` y BETO: compuesta desde `<t5-dir>/model-manifest.json`;
+      - pipeline sin `--t5-dir` o con `--no-beto`: hace falta `--model-version`.
+    Nunca se hereda la versión de `models/t5_correction` para un pipeline que no
+    la sirve. ValueError con el motivo cuando no se puede determinar.
+    """
+    explicit = str(explicit or "").strip()
+    if explicit:
+        return explicit
+    env = os.environ if env is None else env
+    from_env = str(env.get("MODEL_VERSION", "") or "").strip()
+    if from_env:
+        return from_env
+    if source == "http":
+        server_version = str(server_version or "").strip()
+        if not server_version:
+            raise ValueError("el servidor no devolvió `modelVersion`; pasa --model-version")
+        return server_version
+    if t5_dir is None:
+        raise ValueError("sin --t5-dir el pipeline evaluado es reglas(+BETO): pasa --model-version "
+                         "(p. ej. rules-dev o rules-beto-dev); no se hereda la versión de models/")
+    if no_beto:
+        raise ValueError("con --no-beto el pipeline evaluado no es el modelo global (reglas + BETO + T5): "
+                         "pasa --model-version explícita")
+    try:
+        return compose_from_t5_dir(t5_dir)
+    except ValueError as exc:
+        raise ValueError(f"no se pudo componer modelVersion desde {Path(t5_dir) / MODEL_MANIFEST_NAME} "
+                         f"({exc}); pasa --model-version") from exc
+
+
+def git_commit(repo_dir=REPO_DIR):
+    """
+    Commit HEAD del checkout (hex), con sufijo `-dirty` si hay cambios sin
+    commitear en archivos versionados (el informe no debe atribuirse a un
+    commit limpio que no corrió); None si git no está disponible.
+    """
+    try:
+        head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(repo_dir), capture_output=True,
+                              text=True, timeout=10)
+        status = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=str(repo_dir),
+                                capture_output=True, text=True, timeout=10)
+    except Exception:
+        return None
+    value = head.stdout.strip().lower() if head.returncode == 0 else ""
+    if not re.fullmatch(r"[0-9a-f]{7,40}", value):
+        return None
+    dirty = status.returncode == 0 and bool(status.stdout.strip())
+    return value + ("-dirty" if dirty else "")
+
+
+def pipeline_info(commit=None) -> dict:
+    """
+    Bloque diagnóstico `pipeline` del informe: los umbrales de la capa 5
+    (`alternatives.THRESHOLDS`, constantes de código de ESTE checkout) y el
+    commit. `modelVersion` identifica pesos, no código: dos commits con reglas o
+    umbrales distintos y el mismo `modelVersion` dan informes distintos.
+    Import diferido: `alternatives` no carga torch.
+    """
+    from infrastructure.nlp.alternatives import THRESHOLDS
+    return {"thresholds": dict(THRESHOLDS), "commit": commit if commit is not None else git_commit()}
+
+
 def require_local_t5_dir(path) -> Path:
     """
     Directorio local completo del T5 (`config.json` y `tokenizer_config.json`).
@@ -375,9 +477,16 @@ def exit_status(errors: int, development: bool) -> int:
 # ───────────────────────────── predictor ─────────────────────────────
 
 def build_predictor(args):
-    """Devuelve una función predict(text) -> corrección recomendada, según el origen elegido."""
+    """
+    Devuelve una función predict(text) -> corrección recomendada, según el origen
+    elegido. En modo http, `predict.server_info["modelVersions"]` acumula los
+    `modelVersion` distintos que devolvió el servidor (la fuente de la versión
+    del informe).
+    """
     if args.source == "http":
         import urllib.request
+
+        server_info = {"modelVersions": []}
 
         def predict(text: str) -> str:
             payload = json.dumps({"originalText": text, "studentId": "eval"}).encode("utf-8")
@@ -386,7 +495,13 @@ def build_predictor(args):
                 data=payload, headers={"Content-Type": "application/json"},
             )
             with urllib.request.urlopen(req, timeout=40) as r:
-                return json.loads(r.read().decode("utf-8")).get("correctedText", "")
+                body = json.loads(r.read().decode("utf-8"))
+            version = str(body.get("modelVersion", "") or "").strip()
+            if version and version not in server_info["modelVersions"]:
+                server_info["modelVersions"].append(version)
+            return body.get("correctedText", "")
+
+        predict.server_info = server_info
         return predict
 
     # --- pipeline en-proceso (torch/modelos se cargan solo aquí) ---
@@ -478,7 +593,7 @@ def _category_results(by_cat: "OrderedDict") -> list:
 
 
 def build_report(cases: list, *, model_version: str, dataset_path: str, dataset_hash: str,
-                 model_dir, development: bool, source: str, latencies_ms=None) -> dict:
+                 model_dir, development: bool, source: str, latencies_ms=None, pipeline=None) -> dict:
     """
     Informe JSON versionado. `cases` = [{cat, input, golds, pred[, error]}, ...]
     en el orden del dataset. Las claves del contrato (`modelVersion`,
@@ -486,7 +601,8 @@ def build_report(cases: list, *, model_version: str, dataset_path: str, dataset_
     `truePositives`, `falsePositives`, `falseNegatives`, `categories`) van en
     el **nivel superior**, que es lo que valida el panel Vue y acepta el
     backend; `technicalEvaluation` las repite agrupadas, para leerlas de un
-    vistazo. El resto son diagnósticos.
+    vistazo. El resto son diagnósticos, incluido `pipeline` (`pipeline_info()`:
+    umbrales de la capa 5 y commit del código que corrió).
     """
     model_version = validate_model_version(model_version)
     scored = _score_cases(cases)
@@ -517,6 +633,7 @@ def build_report(cases: list, *, model_version: str, dataset_path: str, dataset_
         ("source", source),
         ("modelDir", str(model_dir) if model_dir else None),
         ("dataset", str(dataset_path)),
+        ("pipeline", dict(pipeline) if pipeline else None),
     ])
     report.update(technical)
     report.update([
@@ -554,8 +671,9 @@ def main():
     ap.add_argument("--t5-dir", default=None,
                     help="directorio local del T5 global (p. ej. models/t5_correction); sin él, reglas(+BETO)")
     ap.add_argument("--model-version", default=None,
-                    help="identificador del modelo evaluado (default: MODEL_VERSION > manifiesto > "
-                         f"{DEFAULT_MODEL_VERSION})")
+                    help="identificador del modelo evaluado (default: MODEL_VERSION > con --t5-dir, el "
+                         f"{MODEL_MANIFEST_NAME} de ese directorio > en http, el del servidor; obligatorio "
+                         "sin --t5-dir o con --no-beto)")
     ap.add_argument("--development", action="store_true",
                     help="marca el informe como de desarrollo (automático para eval_gold.csv / pruebas.txt)")
     ap.add_argument("--out", default=None, help="ruta para guardar el reporte JSON")
@@ -572,14 +690,26 @@ def main():
     ensure_offline()
     rows = load_dataset(args.dataset)
     dataset_hash = dataset_sha256(args.dataset)
-    model_version = validate_model_version(resolve_model_version(args.model_version))
     development = is_development(args.dataset, args.development)
     if args.source == "http":
         label = "HTTP " + args.url
     else:
         label = "reglas" + ("" if args.no_beto else " + BETO") + (" + T5" if args.t5_dir else "")
+
+    # La versión del informe describe lo evaluado (ver evaluation_model_version).
+    # En modo http la da el servidor y solo se conoce tras la primera respuesta.
+    def resolve_report_version(server_version=None) -> str:
+        try:
+            return validate_model_version(evaluation_model_version(
+                args.model_version, source=args.source, t5_dir=args.t5_dir, no_beto=args.no_beto,
+                server_version=server_version))
+        except ValueError as exc:
+            print(f"[ERROR] modelVersion: {exc}", file=sys.stderr)
+            sys.exit(EXIT_BAD_VERSION)
+
+    model_version = resolve_report_version() if args.source != "http" else None
     print(f"\n{'='*96}\n  EVALUACIÓN — {len(rows)} casos — fuente: {label}\n"
-          f"  modelVersion: {model_version}   scorer: {SCORER_VERSION}\n"
+          f"  modelVersion: {model_version or '(la devuelve el servidor)'}   scorer: {SCORER_VERSION}\n"
           f"  dataset: {args.dataset}  sha256: {dataset_hash}"
           f"{'   [DESARROLLO]' if development else ''}\n{'='*96}")
 
@@ -598,9 +728,19 @@ def main():
         latencies.append(int((time.time() - t0) * 1000))
         cases.append(case)
 
+    if model_version is None:                      # http: la versión la dio el servidor
+        versions = getattr(predict, "server_info", {}).get("modelVersions", [])
+        if len(versions) > 1:
+            print(f"[ERROR] modelVersion: el servidor devolvió varias versiones durante la evaluación: {versions}",
+                  file=sys.stderr)
+            sys.exit(EXIT_BAD_VERSION)
+        model_version = resolve_report_version(versions[0] if versions else None)
+        print(f"  modelVersion (servidor): {model_version}")
+
     report = build_report(
         cases, model_version=model_version, dataset_path=args.dataset, dataset_hash=dataset_hash,
         model_dir=args.t5_dir, development=development, source=label, latencies_ms=latencies,
+        pipeline=pipeline_info(),
     )
     _print_table(report)
     print(f"\n  F0.5 = {report['fZeroFive']:.4f}  (P = {report['precision']:.4f}, R = {report['recall']:.4f}; "

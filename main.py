@@ -11,11 +11,14 @@ Variables de entorno:
   ENABLE_T5       "false" para desactivar la capa T5 (default "true").
   MODEL_VERSION   identificador del modelo global que se devuelve en cada
                   respuesta como `modelVersion`. Si no se define, se compone
-                  desde los manifiestos (`models/t5_correction/model-manifest.json`
-                  + `models/grammar_lora/training-manifest.json`, formato
+                  desde `models/t5_correction/model-manifest.json` (formato
                   `<base-tag>@<hash8>+<lora-tag>@<hash8>`; ver
-                  infrastructure/versioning.py) y, si no existen,
-                  `global-lora-unversioned`.
+                  infrastructure/versioning.py) y, si no existe,
+                  `global-lora-unversioned`. Esa versión compuesta solo se
+                  sirve con el T5 fusionado cargado: con ENABLE_T5=false o si
+                  la carga falla, el servidor se niega a arrancar salvo que
+                  MODEL_VERSION sea explícita (el backend congela esta cadena
+                  por ejecución y debe nombrar el pipeline que corrigió).
 
 Variables heredadas del lanzador (ROLE, ENABLE_USER_LORA, REDIS_URL) se
 ignoran: ya no existen roles, colas ni adaptadores por alumno.
@@ -28,7 +31,7 @@ from infrastructure.persistence.csv_user_repository import CsvUserHistoryReposit
 from infrastructure.nlp.phonetic_engine import PhoneticEngine
 from infrastructure.nlp.context_judge import ContextJudge
 from infrastructure.nlp.correction_pipeline import CorrectionPipeline
-from infrastructure.versioning import resolve_model_version
+from infrastructure.versioning import resolve_model_version, served_model_version
 from application.use_cases.correct_text import CorrectTextUseCase
 from application.use_cases.save_feedback import SaveFeedbackUseCase
 from interfaces.api.routes import create_app
@@ -83,8 +86,17 @@ def build_app():
     )
 
     # Compartido con evaluate.py y correct_text.py: MODEL_VERSION (env) >
-    # versión compuesta desde los manifiestos de models/ > default.
-    model_version = resolve_model_version()
+    # versión compuesta desde el manifiesto del modelo fusionado > default.
+    # La compuesta solo se sirve si el T5 fusionado está cargado; sin T5 y
+    # sin MODEL_VERSION explícita el servidor no arranca.
+    try:
+        model_version = served_model_version(
+            t5_loaded=t5_model is not None,
+            explicit=os.environ.get("MODEL_VERSION"),
+            composed=resolve_model_version(),
+        )
+    except ValueError as exc:
+        sys.exit(f"[ERROR] {exc}")
     print(f"[INFO] modelVersion = {model_version}")
 
     correct_uc  = CorrectTextUseCase(pipeline, model_version=model_version)

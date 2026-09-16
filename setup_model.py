@@ -4,6 +4,12 @@ setup_model.py — Descarga el T5 base en español y lo guarda en un directorio 
 Uso:
     python setup_model.py                       # → ./models/t5_base
     OUT=./models/otro python setup_model.py     # → directorio elegido
+    MODEL_REVISION=<sha del commit HF> python setup_model.py   # revisión explícita (reproducible)
+
+Necesita red (descarga de Hugging Face): NO fijar `HF_HUB_OFFLINE=1` antes de
+ejecutarlo; se fija después, para las evaluaciones. `MODEL_REVISION` fija la
+revisión del repositorio de HF (`revision=` de `from_pretrained`), de modo que
+el baseline sea el mismo en cualquier máquina; sin ella se descarga `main`.
 
 `models/t5_correction` es el checkpoint GLOBAL (base + LoRA gramatical
 fusionado, el que sirve main.py y evalúa evaluate.py): este script se niega a
@@ -43,14 +49,21 @@ def resolve_save_dir(env=None) -> Path:
     return save_dir
 
 
+def resolve_revision(env=None):
+    """Revisión de HF pedida por `MODEL_REVISION` (o None: `main`)."""
+    env = os.environ if env is None else env
+    return str(env.get("MODEL_REVISION", "") or "").strip() or None
+
+
 def main():
     save_dir = resolve_save_dir()
+    revision = resolve_revision()
 
     from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
-    print(f"Descargando {MODEL_NAME}...")
-    model = AutoModelForSeq2SeqLM.from_pretrained(MODEL_NAME)
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+    print(f"Descargando {MODEL_NAME} (revision={revision or 'main'})...")
+    model = AutoModelForSeq2SeqLM.from_pretrained(MODEL_NAME, revision=revision)
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, revision=revision)
 
     print(f"Guardando modelo y tokenizador en {save_dir}...")
     save_dir.mkdir(parents=True, exist_ok=True)

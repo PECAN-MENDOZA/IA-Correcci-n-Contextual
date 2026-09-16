@@ -16,11 +16,17 @@ Los hashes vienen de dos manifiestos que escribe `scripts/model_manifest.py`:
 (clave `adapter_sha256`, lo escribe `train_grammar_lora.py`).
 
 Precedencia: valor explícito (p. ej. `--model-version`) > `MODEL_VERSION`
-(entorno) > versión compuesta (manifiesto del modelo fusionado + manifiesto
-del LoRA; el del modelo fusionado ya embebe `adapter_sha256`, así que basta él
-solo) > `modelVersion` del manifiesto del LoRA (`training-manifest.json`, y si
-no existe `manifest.json`) > `DEFAULT_MODEL_VERSION`. Aquí nunca se descarga
-ni se carga nada: solo librería estándar.
+(entorno) > versión compuesta (SOLO desde el manifiesto del modelo fusionado,
+que embebe el `adapter_sha256` del adaptador que realmente se fusionó) >
+`modelVersion` del manifiesto del LoRA (`training-manifest.json`, y si no
+existe `manifest.json`) > `DEFAULT_MODEL_VERSION`.
+
+Nunca se mezclan generaciones: si `training-manifest.json` describe un
+adaptador distinto del fusionado (LoRA reentrenado pero todavía no fusionado),
+se avisa y la versión sigue describiendo los pesos servidos. La versión
+compuesta solo puede servirse si el T5 fusionado está cargado
+(`served_model_version`). Aquí nunca se descarga ni se carga nada: solo
+librería estándar.
 """
 import json
 import os
@@ -97,20 +103,55 @@ def _version_from_manifest(path: Path) -> str:
 
 def _composed_version(repo_dir: Path) -> str:
     """
-    Versión compuesta si existe el manifiesto del modelo fusionado. El LoRA se toma
-    de `training-manifest.json` si existe; si no, del propio manifiesto fusionado
-    (que embebe `adapter_sha256`). Avisa y devuelve "" si faltan los hashes.
+    Versión compuesta si existe el manifiesto del modelo fusionado, SOLO a
+    partir de sus propios `model_sha256` y `adapter_sha256` (el adaptador que
+    de verdad está fusionado en los pesos servidos). Si además existe
+    `training-manifest.json` y su `adapter_sha256` es otro (LoRA reentrenado y
+    aún no fusionado), avisa "adaptador entrenado ≠ adaptador fusionado" y
+    sigue usando el fusionado: nunca se mezclan generaciones. Avisa y devuelve
+    "" si al manifiesto fusionado le falta algún hash.
     """
     base_path = model_manifest_path(repo_dir)
     base = _read_manifest(base_path)
     if base is None:
         return ""
-    lora = _read_manifest(manifest_candidates(repo_dir)[0]) or base
     try:
-        return compose_model_version(base, lora)
+        version = compose_model_version(base, base)
     except ValueError as exc:
         warnings.warn(f"No se pudo componer modelVersion desde {base_path}: {exc}", RuntimeWarning, stacklevel=3)
         return ""
+    training_path = manifest_candidates(repo_dir)[0]
+    training = _read_manifest(training_path)
+    if training is not None:
+        trained = str(training.get("adapter_sha256", "") or "").strip().lower()
+        merged = str(base.get("adapter_sha256", "") or "").strip().lower()
+        if trained and trained != merged:
+            warnings.warn(
+                f"adaptador entrenado ≠ adaptador fusionado: {training_path} describe el adaptador "
+                f"{trained[:HASH8]} pero {base_path} fusionó {merged[:HASH8]}; modelVersion describe "
+                f"el fusionado ({version}). Fusiona el LoRA nuevo con scripts/merge_grammar_lora.py.",
+                RuntimeWarning, stacklevel=3)
+    return version
+
+
+def served_model_version(t5_loaded: bool, explicit, composed: str) -> str:
+    """
+    Versión que puede anunciar el servidor. `explicit` es `MODEL_VERSION` (entorno)
+    y `composed` la resuelta desde los manifiestos (`resolve_model_version`).
+    Con el T5 fusionado cargado se sirve `composed`; con una versión explícita
+    se sirve esa (el operador asume la trazabilidad). Sin T5 y sin versión
+    explícita se rechaza: el pipeline servido (reglas + BETO) no es el que
+    nombra la versión compuesta, ni el LoRA, ni el default `global-lora-*`.
+    """
+    explicit = str(explicit or "").strip()
+    if explicit:
+        return explicit
+    if t5_loaded:
+        return str(composed).strip()
+    raise ValueError(
+        "el T5 fusionado no está cargado (ENABLE_T5=false o fallo de carga) y no hay MODEL_VERSION "
+        f"explícita: la versión '{composed}' describiría un modelo que no se está sirviendo. "
+        "Define MODEL_VERSION (p. ej. 'rules-beto-only') o corrige la carga del T5.")
 
 
 def resolve_model_version(explicit=None, env=None, repo_dir: Path = REPO_DIR) -> str:

@@ -2,17 +2,26 @@
 scripts/calibrate_alternatives.py
 
 Calibración de la capa 5 (alternativas) con el pipeline REAL (reglas + BETO +
-T5 global) sobre `data/ambiguity_calibration.csv` (`text,expected_options,notes`):
-para cada frase imprime las sugerencias devueltas por `CorrectionPipeline.correct`
-y resume precisión/recall de "ofrece ≥ 2 opciones" frente a la etiqueta
+T5 global) sobre `data/ambiguity_calibration.csv`
+(`text,expected_options,forbidden_readings,notes`): para cada frase imprime las
+sugerencias devueltas por `CorrectionPipeline.correct` y resume
+precisión/recall de "ofrece ≥ 2 opciones" frente a la etiqueta
 (`expected_options` ≥ 2 = ambigua). Los umbrales son los de
 `infrastructure.nlp.alternatives.THRESHOLDS` (constantes de código; este script
 no los modifica: sirve para decidir con datos si hay que cambiarlos en código).
 
+`--check` convierte la calibración en PRUEBA DE ACEPTACIÓN (código de salida 1
+si falla): falla si más de `MAX_CLEAR_FP` (2) de las 20 frases claras reciben
+≥ 2 opciones, o si alguna alternativa ofrecida (posiciones 1..n; la
+recomendada sigue la regla del beam 1 y no se juzga aquí) contiene una
+palabra de la columna `forbidden_readings` de su fila (lecturas inválidas
+conocidas: `quizas`, `llegan` tras "es posible que", ...). El recall se
+informa, no se exige.
+
 Uso (desde la raíz del repo, con el modelo local y sin descargar nada):
     $env:HF_HOME = "models\\hf-cache"
     .venv\\Scripts\\python.exe scripts\\calibrate_alternatives.py [--t5-dir models/t5_correction]
-                                                              [--no-beto] [--no-t5]
+                                                              [--no-beto] [--no-t5] [--check]
                                                               [--verbose] [--out reporte.json]
 
 `--verbose --out` guarda por frase la base, los beams crudos de T5 con el
@@ -20,12 +29,15 @@ veredicto de las guardas del beam recomendado (`t5Raw`), los beams que llegan
 a la capa 5 (`t5`) y las variantes de BETO, para barrer umbrales y guardas
 offline con el selector puro.
 
-No usa el puerto 5000 ni el servicio: carga los modelos en proceso.
+No usa el puerto 5000 ni el servicio: carga los modelos en proceso. Las
+funciones `load_cases`, `evaluate_case` y `summarize` son puras (se prueban en
+test_alternatives.py sin modelo).
 """
 import argparse
 import csv
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -40,6 +52,11 @@ os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 from infrastructure.ml.guards import is_lexically_plausible_refinement, is_safe_refinement  # noqa: E402
 from infrastructure.nlp.alternatives import THRESHOLDS  # noqa: E402
 
+# Prueba de aceptación: como mucho tantas frases claras con ≥ 2 opciones.
+MAX_CLEAR_FP = 2
+
+_OUTER_PUNCT_RE = re.compile(r"^[^\w]+|[^\w]+$")
+
 
 def load_cases(path: Path) -> list[dict]:
     with path.open(encoding="utf-8", newline="") as fh:
@@ -48,13 +65,66 @@ def load_cases(path: Path) -> list[dict]:
     for row in rows:
         label = str(row["expected_options"]).strip()
         minimum = int(label.split("-")[0])   # "2-3" → 2
+        forbidden = [f.strip() for f in (row.get("forbidden_readings") or "").split(";") if f.strip()]
         cases.append({
             "text": row["text"].strip(),
             "expected": label,
             "expected_ambiguous": minimum >= 2,
+            "forbidden": forbidden,
             "notes": (row.get("notes") or "").strip(),
         })
     return cases
+
+
+def _tokens(text: str) -> set[str]:
+    """Palabras de una sugerencia: casefold, sin puntuación exterior, CON tildes."""
+    return {_OUTER_PUNCT_RE.sub("", w).casefold() for w in text.split()}
+
+
+def forbidden_offered(suggestions: list[str], forbidden: list[str]) -> list[tuple[str, str]]:
+    """`(alternativa, forma prohibida)` por cada alternativa (no la recomendada) que contenga una lectura inválida."""
+    found = []
+    for alternative in suggestions[1:]:
+        words = _tokens(alternative)
+        for form in forbidden:
+            if form.casefold() in words:
+                found.append((alternative, form))
+    return found
+
+
+def evaluate_case(case: dict, suggestions: list[str]) -> dict:
+    """Resultado de una frase: sugerencias, si ofreció ≥ 2 y las lecturas prohibidas ofrecidas."""
+    return {**case, "suggestions": list(suggestions), "offered_ambiguous": len(suggestions) >= 2,
+            "forbidden_offered": forbidden_offered(suggestions, case.get("forbidden", []))}
+
+
+def summarize(results: list[dict]) -> dict:
+    """Métricas de "ofrece ≥ 2 opciones" vs. etiqueta + veredicto de la prueba de aceptación."""
+    tp = sum(1 for r in results if r["offered_ambiguous"] and r["expected_ambiguous"])
+    fp = sum(1 for r in results if r["offered_ambiguous"] and not r["expected_ambiguous"])
+    fn = sum(1 for r in results if not r["offered_ambiguous"] and r["expected_ambiguous"])
+    tn = len(results) - tp - fp - fn
+    precision, recall, f1 = prf(tp, fp, fn)
+    forbidden = [(r["text"], alternative, form) for r in results for alternative, form in r.get("forbidden_offered", [])]
+    reasons = []
+    if fp > MAX_CLEAR_FP:
+        reasons.append(f"FP en frases claras {fp} > {MAX_CLEAR_FP}")
+    for text, alternative, form in forbidden:
+        reasons.append(f"lectura prohibida '{form}' ofrecida en '{text}' → '{alternative}'")
+    return {
+        "thresholds": THRESHOLDS,
+        "cases": len(results),
+        "expectedAmbiguous": tp + fn,
+        "clearSentences": fp + tn,
+        "offeredAmbiguous": tp + fp,
+        "tp": tp, "fp": fp, "fn": fn, "tn": tn,
+        "precision": round(precision, 4),
+        "recall": round(recall, 4),
+        "f1": round(f1, 4),
+        "maxOptionsOffered": max((len(r["suggestions"]) for r in results), default=0),
+        "forbiddenOffered": [{"text": t, "alternative": a, "form": f} for t, a, f in forbidden],
+        "check": {"maxClearFp": MAX_CLEAR_FP, "passed": not reasons, "reasons": reasons},
+    }
 
 
 def build_pipeline(args):
@@ -96,8 +166,8 @@ def trace_internals(pipeline, sink: dict):
     original_disambiguate = pipeline._disambiguate_context
     original_refine = pipeline._refine_with_model
 
-    def disambiguate(sentence):
-        text, variants = original_disambiguate(sentence)
+    def disambiguate(sentence, *args, **kwargs):
+        text, variants = original_disambiguate(sentence, *args, **kwargs)
         sink["beto"] = [(v, round(s, 3)) for v, s in variants]
         return text, variants
 
@@ -140,6 +210,9 @@ def main():
     ap.add_argument("--no-t5", action="store_true", help="pipeline sin T5 (solo reglas + BETO)")
     ap.add_argument("--verbose", action="store_true", help="muestra beams de T5 y variantes de BETO por frase")
     ap.add_argument("--out", default=None, help="ruta para guardar los resultados en JSON")
+    ap.add_argument("--check", action="store_true",
+                    help=f"prueba de aceptación: código 1 si FP en frases claras > {MAX_CLEAR_FP} "
+                         "o si se ofrece alguna lectura de forbidden_readings")
     args = ap.parse_args()
 
     try:
@@ -158,12 +231,16 @@ def main():
     for case in cases:
         internals.clear()
         suggestions = pipeline.correct(case["text"], {})
-        offered = len(suggestions) >= 2
-        results.append({**case, "suggestions": suggestions, "offered_ambiguous": offered,
-                        **({"internals": dict(internals)} if args.verbose else {})})
+        result = evaluate_case(case, suggestions)
+        if args.verbose:
+            result["internals"] = dict(internals)
+        results.append(result)
+        offered = result["offered_ambiguous"]
         mark = "OK " if offered == case["expected_ambiguous"] else ("FP " if offered else "FN ")
         print(f"[{mark}] esperado={case['expected']:<3} obtenido={len(suggestions)}  {case['text']}")
         print(f"       → {suggestions}")
+        for alternative, form in result["forbidden_offered"]:
+            print(f"       !! lectura prohibida '{form}' en la alternativa '{alternative}'")
         if args.verbose:
             if internals.get("t5") is not None:
                 print(f"       T5:   {internals['t5']}")
@@ -175,29 +252,19 @@ def main():
         if mark != "OK ":
             print(f"       ({case['notes']})")
 
-    tp = sum(1 for r in results if r["offered_ambiguous"] and r["expected_ambiguous"])
-    fp = sum(1 for r in results if r["offered_ambiguous"] and not r["expected_ambiguous"])
-    fn = sum(1 for r in results if not r["offered_ambiguous"] and r["expected_ambiguous"])
-    tn = len(results) - tp - fp - fn
-    precision, recall, f1 = prf(tp, fp, fn)
-
-    summary = {
-        "thresholds": THRESHOLDS,
-        "cases": len(results),
-        "expectedAmbiguous": tp + fn,
-        "offeredAmbiguous": tp + fp,
-        "tp": tp, "fp": fp, "fn": fn, "tn": tn,
-        "precision": round(precision, 4),
-        "recall": round(recall, 4),
-        "f1": round(f1, 4),
-        "maxOptionsOffered": max((len(r["suggestions"]) for r in results), default=0),
-    }
+    summary = summarize(results)
     print("\nResumen (ofrece ≥ 2 opciones vs. etiqueta ambigua):")
     print(f"  frases={summary['cases']}  ambiguas esperadas={summary['expectedAmbiguous']}  "
-          f"ofrecidas={summary['offeredAmbiguous']}")
-    print(f"  TP={tp} FP={fp} FN={fn} TN={tn}")
-    print(f"  precisión={precision:.3f}  recall={recall:.3f}  F1={f1:.3f}  "
+          f"claras={summary['clearSentences']}  ofrecidas={summary['offeredAmbiguous']}")
+    print(f"  TP={summary['tp']} FP={summary['fp']} FN={summary['fn']} TN={summary['tn']}")
+    print(f"  precisión={summary['precision']:.3f}  recall={summary['recall']:.3f}  F1={summary['f1']:.3f}  "
           f"máx. opciones={summary['maxOptionsOffered']}")
+    print(f"  lecturas prohibidas ofrecidas={len(summary['forbiddenOffered'])}")
+    check = summary["check"]
+    verdict = "PASA" if check["passed"] else "FALLA"
+    print(f"  aceptación (FP claras ≤ {MAX_CLEAR_FP}/{summary['clearSentences']} y sin lecturas prohibidas): {verdict}")
+    for reason in check["reasons"]:
+        print(f"    - {reason}")
 
     if args.out:
         out_path = Path(args.out)
@@ -206,6 +273,10 @@ def main():
                             encoding="utf-8")
         print(f"[OK] Resultados guardados en {out_path}")
 
+    if args.check and not check["passed"]:
+        return 1
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -107,13 +107,20 @@ class CorrectionPipeline:
     # Desambiguación contextual (BETO)
     # ------------------------------------------------------------------
 
-    def _disambiguate_context(self, sentence: str) -> tuple[str, list[tuple[str, float]]]:
+    def _disambiguate_context(self, sentence: str,
+                              trusted_accents=frozenset()) -> tuple[str, list[tuple[str, float]]]:
         """
         Pasada palabra-a-palabra: para cada término con homófonos/variantes de
         acento reales, deja que BETO elija el más coherente con la frase.
         Solo sobrescribe si la mejora en log-prob supera el margen del tipo de
         cambio (acento / homófono / monosílabo). Es idempotente y greedy:
         cada decisión usa como contexto las decisiones ya tomadas a su izquierda.
+
+        `trusted_accents` son las palabras (minúsculas) que el alumno escribió
+        CON tilde: esas nunca se sobrescriben por su variante sin tilde ni la
+        generan como segunda lectura (la tilde escrita se confía, como en la
+        capa 1). Una tilde que puso la capa 2 (`restore_accent`) no está
+        protegida: BETO puede seguir decidiéndola por contexto (papá / Papa).
 
         Devuelve `(texto, ambiguous_variants)`. Cuando las dos mejores lecturas
         de una posición quedan a menos de `_BETO_TIE_MARGIN` (el contexto no
@@ -165,6 +172,12 @@ class CorrectionPipeline:
                 continue
 
             alt_core = _PUNCT_RE.match(alt).group(2).lower()
+            if lower in trusted_accents and _strip_accents(alt_core) == _strip_accents(lower):
+                # Tilde escrita por el alumno: se respeta (como en la capa 1).
+                # Ni se sobrescribe "quizás" por "quizas" aunque BETO la
+                # prefiera, ni se ofrece la variante sin tilde como segunda
+                # lectura.
+                continue
             if len(lower) <= 2:
                 margin = _MARGIN_MONO
             elif _strip_accents(alt_core) == _strip_accents(lower):
@@ -305,10 +318,14 @@ class CorrectionPipeline:
         # según el resto de la frase y elige la más coherente.
         # Cuando el contexto no decide entre dos lecturas (esta/está, tubo/tuvo)
         # la segunda lectura se conserva como candidato para ofrecerla al alumno.
+        # Las tildes que el alumno escribió (capa 1: "se respetan") no se
+        # deshacen: BETO no puede quitar la tilde de "quizás" aunque prefiera
+        # "quizas" (las que puso restore_accent sí siguen a su criterio).
         ambiguous_variants: list[tuple[str, float]] = []
+        written_accents = {core.lower() for core in pre_words if core and _has_accent(core)}
         if self._judge is not None:
             try:
-                base_corrected, ambiguous_variants = self._disambiguate_context(base_corrected)
+                base_corrected, ambiguous_variants = self._disambiguate_context(base_corrected, written_accents)
             except Exception as e:
                 print(f"[WARN] Desambiguación contextual (BETO) falló: {e}")
 
@@ -335,14 +352,17 @@ class CorrectionPipeline:
         # BETO (score = −|diferencia|) se anclan al mejor beam solo para
         # ordenarlas junto a los demás beams: van como `variants` (nunca son la
         # recomendada) y su puerta real es _BETO_TIE_MARGIN (≤ _SCORE_MARGIN,
-        # así que (d) no las filtra). La base va justo detrás de la recomendada
-        # cuando difiere de ella.
+        # así que (d) no las filtra). Un beam (o la base) solo se ofrece con
+        # señal positiva de ambigüedad (contraste de modo o de tilde sobre una
+        # palabra corregida); el léxico de frecuencias decide la conjugación
+        # en el filtro de modo tras "es posible que", "ojalá", etc.
         recommended = refined[0][0] if refined else base_corrected
         best_score  = max((s for _, s in refined), default=0.0)
         return select_alternatives(
             text, base_corrected, refined,
             score_margin=_SCORE_MARGIN, recommended=recommended,
             variants=[(v, best_score + s) for v, s in ambiguous_variants],
+            lexicon=getattr(self._phonetic, "word_freqs", None) or None,
         )
 
     def _refine_with_model(self, text: str) -> list[tuple[str, float]]:

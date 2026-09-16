@@ -173,26 +173,42 @@ class CorrectPipelineTests(unittest.TestCase):
         self.assertTrue(outcome["ok"], "la clase falló en el proceso limpio")
         self.assertEqual(outcome["loaded"], [], "módulos pesados cargados en un test puro")
 
-    def test_real_beams_offer_indicative_subjunctive_and_base(self):
+    def test_real_beams_offer_indicative_and_subjunctive(self):
         # Beams reales del smoke sobre "a mi me gusta que ellos juega mucho"
-        # (la capa 3 ya puso "mí"): tres lecturas, la recomendada intacta.
+        # (la capa 3 ya puso "mí"): juegan (recomendada) y jueguen son un
+        # contraste de modo; la base (juega: forma del original e indicativo
+        # tras "me gusta que") no se ofrece. El léxico de frecuencias del motor
+        # fonético decide la conjugación (jugar → -ar).
         seq2seq = FakeSeq2Seq([("a mí me gusta que ellos juegan mucho", -0.044),
                                ("a mí me gusta que ellos jueguen mucho", -0.184),
                                ("A mí me gusta que ellos juegan mucho", -0.372)])
-        pipe = self._pipeline(judge=FakeJudge({}), seq2seq=seq2seq)
+        pipe = self._pipeline(judge=FakeJudge({}), seq2seq=seq2seq, word_freqs={"jugar": 1000})
         out = pipe.correct("a mi me gusta que ellos juega mucho", {})
         self.assertEqual(out, ["a mí me gusta que ellos juegan mucho",
-                               "a mí me gusta que ellos juega mucho",
                                "a mí me gusta que ellos jueguen mucho"])
         self.assertEqual(seq2seq.calls, [("a mí me gusta que ellos juega mucho", self.mod._T5_NUM_RETURNS)])
+        # Sin léxico no se puede saber cuál es el indicativo: fail-closed.
+        pipe = self._pipeline(judge=FakeJudge({}), seq2seq=FakeSeq2Seq(seq2seq._beams))
+        self.assertEqual(pipe.correct("a mi me gusta que ellos juega mucho", {}),
+                         ["a mí me gusta que ellos juegan mucho"])
 
     def test_manual_correction_does_not_lose_t5_agreement(self):
         # "xq→porque" (capa 1) y T5 corrige juega→juegan: la recomendada es el
-        # beam y la base queda como alternativa.
+        # beam; la base (juega) no es otra lectura (concordancia, forma original).
         seq2seq = FakeSeq2Seq([("porque ellos juegan mucho", -0.04)])
         pipe = self._pipeline(judge=FakeJudge({}), seq2seq=seq2seq)
-        self.assertEqual(pipe.correct("xq ellos juega mucho", {}),
-                         ["porque ellos juegan mucho", "porque ellos juega mucho"])
+        self.assertEqual(pipe.correct("xq ellos juega mucho", {}), ["porque ellos juegan mucho"])
+
+    def test_obligatory_subjunctive_filters_indicative_alternatives_end_to_end(self):
+        # Beams reales de "es posible que ellos llega tarde": lleguen
+        # (recomendada), llegan (indicativo tras es posible que: fuera) y
+        # llegue (número: sin señal). Una sola opción.
+        seq2seq = FakeSeq2Seq([("es posible que ellos lleguen tarde", -0.123),
+                               ("es posible que ellos llegan tarde", -0.158),
+                               ("es posible que ellos llegue tarde", -0.409)])
+        pipe = self._pipeline(judge=FakeJudge({}), seq2seq=seq2seq, word_freqs={"llegar": 1000})
+        self.assertEqual(pipe.correct("es posible que ellos llega tarde", {}),
+                         ["es posible que ellos lleguen tarde"])
 
     def test_short_irregular_verb_correction_is_recommended(self):
         seq2seq = FakeSeq2Seq([("la gente es muy amable", -0.05)])
@@ -249,6 +265,21 @@ class CorrectPipelineTests(unittest.TestCase):
         self.assertEqual(self.mod._RECOMMENDED_MIN_SIMILARITY,
                          self.mod.THRESHOLDS["recommendedMinSimilarity"])
 
+    def test_first_beam_that_drops_a_negation_recommends_base(self):
+        # Un beam 1 que borra "no" (o inserta un cuantificador) pasa la guarda
+        # de cantidad pero no la léxica: la recomendada es la base y el beam
+        # no se ofrece ni como alternativa.
+        seq2seq = FakeSeq2Seq([("quiero ir", -0.05), ("no quiero ir.", -0.1)])
+        pipe = self._pipeline(judge=FakeJudge({}), seq2seq=seq2seq)
+        self.assertEqual(pipe.correct("no quiero ir", {}), ["no quiero ir"])
+        seq2seq = FakeSeq2Seq([("todos los niños juegan", -0.05)])
+        pipe = self._pipeline(judge=FakeJudge({}), seq2seq=seq2seq)
+        self.assertEqual(pipe.correct("los niños juegan", {}), ["los niños juegan"])
+        # Insertar un artículo sí es una corrección recomendable.
+        seq2seq = FakeSeq2Seq([("llegué tarde a la clase", -0.05)])
+        pipe = self._pipeline(judge=FakeJudge({}), seq2seq=seq2seq)
+        self.assertEqual(pipe.correct("llego tarde a clase", {})[0], "llegué tarde a la clase")
+
     def test_lexical_guard_keeps_irregular_agreement_in_first_beam(self):
         # es→son (0.40), hizo→hicieron (0.50), viene→vengan (0.55) siguen
         # recomendándose; una flexión no es una sustitución léxica.
@@ -297,6 +328,16 @@ class CorrectPipelineTests(unittest.TestCase):
         pipe = self._pipeline(judge=FakeJudge({"tubo": -2.13, "tuvo": -2.0}), homophones={"tubo": ["tuvo"]})
         self.assertEqual(pipe.correct("el tubo un accidente", {}),
                          ["el tubo un accidente", "él tuvo un accidente"])
+
+    def test_written_accent_survives_beto_and_is_not_offered_without_it(self):
+        # "quizás" escrito con tilde: BETO prefiere "quizas" (dif > 0.5) pero
+        # la tilde escrita se respeta y la base con "quizas" ya no aparece como
+        # opción 2. T5 solo corrige la concordancia (llega→llegan: sin señal).
+        seq2seq = FakeSeq2Seq([("quizás ellos llega tarde", -0.12), ("quizás ellos llegan tarde", -0.35)])
+        pipe = self._pipeline(judge=FakeJudge({"quizás": -3.0, "quizas": -1.0}),
+                              seq2seq=seq2seq, homophones={"quizás": ["quizas"]})
+        self.assertEqual(pipe.correct("quizás ellos llega tarde", {}), ["quizás ellos llega tarde"])
+        self.assertEqual(seq2seq.calls[0][0], "quizás ellos llega tarde")
 
     def test_beto_overwrite_still_wins_when_confident(self):
         pipe = self._pipeline(judge=FakeJudge({"esta": -3.0, "está": -1.0}), homophones={"esta": ["está"]})
