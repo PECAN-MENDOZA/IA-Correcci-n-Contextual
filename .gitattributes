@@ -1,0 +1,7 @@
+# Los CSV que se identifican por su SHA-256 (fixtures del análisis del estudio,
+# gold de desarrollo y set de calibración) se guardan y se extraen byte a byte,
+# sin conversión de fin de línea: así `inputSha256` / `datasetSha256` no
+# dependen de `core.autocrlf` del checkout.
+tests/fixtures/*.csv -text
+data/eval_gold.csv -text
+data/ambiguity_calibration.csv -text

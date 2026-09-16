@@ -4,17 +4,16 @@ infrastructure/ml/t5_model.py  v3 → v4 (LoRA)
 Cambios:
   - Rutas absolutas configuradas para evitar errores de directorio en Windows.
   - Lógica de safetensors adaptada: True para modelo local, False para descargas HF.
-  - train_lora(): fine-tuning por usuario con PEFT/LoRA
-    Guarda solo el adaptador (~10-50 MB) en models/loras/<user_id>/
-    El modelo base NO se modifica ni se copia.
-  - generate_with_lora(): inferencia con adaptador LoRA cargado en memoria
-  - validate_lora_dir(): valida que el adaptador sea usable
+  - train_lora(): fine-tuning LoRA genérico con PEFT (guarda solo el
+    adaptador, ~10-50 MB; el modelo base NO se modifica ni se copia).
+  - generate_with_lora(): inferencia con un adaptador LoRA cargado en memoria
+  - validate_lora_dir(): valida que un adaptador sea usable
   - train() intacto para el modelo base (train.py)
   - Fix Windows: USE_LIBUV=0 + no_cuda logic + ddp deshabilitado
 
-Comparativa:
-  Full fine-tuning: ~1 GB por usuario x 100 = ~100 GB
-  LoRA:             ~10-50 MB por usuario x 100 = ~1-5 GB
+El servicio usa UN solo LoRA gramatical global (models/grammar_lora, entrenado
+con train_grammar_lora.py y fusionado con scripts/merge_grammar_lora.py); no
+existen adaptadores por alumno.
 """
 import torch.distributed.tensor
 import os
@@ -47,15 +46,13 @@ import torch.distributed as dist
 if not dist.is_initialized():
     os.environ["TORCH_DISTRIBUTED_DEBUG"] = "OFF"
 
-try:
-    # gpu_lock ahora solo serializa inferencias concurrentes entre sí
-    # (generate_corrections / generate_with_lora). El TrainingWorker
-    # (application/training_queue.py) ya NO lo usa: el entrenamiento
-    # corre en su propia instancia de modelo, en paralelo con esto.
-    from application.training_queue import gpu_lock
-except ImportError:
-    import threading
-    gpu_lock = threading.Lock()
+import threading
+
+# gpu_lock serializa las inferencias concurrentes sobre el modelo compartido
+# (generate_corrections / generate_with_lora) cuando varios hilos del servidor
+# corrigen a la vez. El entrenamiento (train_grammar_lora.py) es un proceso
+# aparte y no pasa por aquí.
+gpu_lock = threading.Lock()
 
 PRETRAINED_MODEL = "vgaraujov/t5-base-spanish"
 
@@ -82,10 +79,9 @@ LORA_CONFIG = {
     "target_modules": ["q", "v"],
 }
 
-# Learning rate conservador para fine-tuning por-usuario. 3e-4 (el valor
-# anterior) es agresivo para datasets de 20-100 pares por alumno; con esto
-# el adaptador converge más lento pero no destruye la fluidez del modelo
-# base. Ver train_lora() y TrainUserModelUseCase.execute().
+# Learning rate conservador para fine-tuning LoRA. 3e-4 (el valor anterior)
+# es agresivo para datasets pequeños; con esto el adaptador converge más lento
+# pero no destruye la fluidez del modelo base. Ver train_lora().
 DEFAULT_LORA_LR = 1e-4
 
 # Guarda anti-alucinación compartida (T5 base y LoRA). Vive en guards.py,
@@ -238,7 +234,13 @@ class T5CorrectionModel:
             pass
 
     def generate_corrections(self, text: str, tokenizer: T5SpanishTokenizer,
-                              num_returns: int = 2) -> List[str]:
+                              num_returns: int = 2) -> List[Tuple[str, float]]:
+        """
+        Beam search determinista (num_beams=4). Devuelve hasta `num_returns`
+        candidatos como `[(texto, score)]`, de mejor a peor, donde `score` es
+        el `sequences_scores` del beam (log-prob normalizada por longitud) que
+        el selector de alternativas usa para medir la ambigüedad.
+        """
         inputs         = tokenizer.encode_single(text)
         input_ids      = inputs["input_ids"].to(self.device)
         attention_mask = inputs["attention_mask"].to(self.device)
@@ -256,8 +258,10 @@ class T5CorrectionModel:
                     num_return_sequences=min(num_returns, 4),
                     do_sample=False,
                     early_stopping=True,
+                    output_scores=True,
+                    return_dict_in_generate=True,
                 )
-        return [tokenizer.decode(out, skip_special=True).strip() for out in outputs]
+        return _decode_scored(outputs, tokenizer)
 
     def train(self, train_dataset, eval_dataset, tokenizer, epochs=3, batch_size=4,
               learning_rate=3e-4, save_dir_override=None):
@@ -396,11 +400,22 @@ class T5CorrectionModel:
 
 
 def generate_with_lora(base_model: T5CorrectionModel, tokenizer: T5SpanishTokenizer,
-                        lora_dir: Path, text: str, num_returns: int = 2) -> List[str]:
+                       lora_dir: Path, text: str, num_returns: int = 2) -> List[Tuple[str, float]]:
+    """
+    Genera con un adaptador LoRA cargado sobre el modelo base. Mismo contrato
+    que `generate_corrections`: beam search determinista con 4 beams,
+    `min(num_returns, 4)` secuencias y `[(texto, score)]` de mejor a peor. El
+    modelo base se restaura siempre (también si `generate()` falla), dentro
+    del lock de GPU.
+    """
     try:
         from peft import PeftModel
     except ImportError:
         raise ImportError("PEFT no instalado. Ejecuta: pip install peft")
+
+    if num_returns < 1:
+        raise ValueError(f"num_returns debe ser >= 1 (recibido {num_returns})")
+    n = min(num_returns, 4)
 
     # Limpiar adaptador previo si quedó pegado
     base_model._clean_peft_if_attached()
@@ -417,33 +432,56 @@ def generate_with_lora(base_model: T5CorrectionModel, tokenizer: T5SpanishTokeni
         peft_model = PeftModel.from_pretrained(
             base_model.model, str(lora_dir), is_trainable=False
         )
-        peft_model.to(device)
-        peft_model.eval()
-
-        with torch.no_grad():
-            # Determinista (beam search), igual que generate_corrections() para
-            # el T5 base. El muestreo estocástico (do_sample=True + temperature/
-            # top_p) que había antes aquí era la principal fuente de respuestas
-            # no reproducibles y "inventadas": con un adaptador entrenado sobre
-            # pocos ejemplos por usuario, samplear con temperatura alta amplifica
-            # cualquier ruido del fine-tuning en vez de suavizarlo.
-            outputs = peft_model.generate(
-                input_ids=input_ids,          # ← keyword argument, no posicional
-                attention_mask=attention_mask,
-                max_new_tokens=MAX_TARGET_LEN,
-                num_beams=max(4, num_returns),
-                num_return_sequences=num_returns,
-                do_sample=False,
-                early_stopping=True,
-            )
-
-        # Desacoplar adaptador y restaurar modelo base limpio
         try:
-            peft_model.unload()
-        except Exception:
-            pass
-        base_model.model = peft_model.get_base_model()
-        base_model.model.generation_config = GenerationConfig(**_SAFE_GENERATION_CONFIG)
-        base_model.model.to(device)
+            peft_model.to(device)
+            peft_model.eval()
 
-    return [tokenizer.decode(out, skip_special=True).strip() for out in outputs]
+            with torch.no_grad():
+                # Determinista (beam search), igual que generate_corrections() para
+                # el T5 base. El muestreo estocástico (do_sample=True + temperature/
+                # top_p) que había antes aquí era la principal fuente de respuestas
+                # no reproducibles y "inventadas": con un adaptador entrenado sobre
+                # pocos ejemplos, samplear con temperatura alta amplifica cualquier
+                # ruido del fine-tuning en vez de suavizarlo.
+                outputs = peft_model.generate(
+                    input_ids=input_ids,          # ← keyword argument, no posicional
+                    attention_mask=attention_mask,
+                    max_new_tokens=MAX_TARGET_LEN,
+                    num_beams=4,
+                    num_return_sequences=n,
+                    do_sample=False,
+                    early_stopping=True,
+                    output_scores=True,
+                    return_dict_in_generate=True,
+                )
+        finally:
+            # Desacoplar adaptador y restaurar modelo base limpio, pase lo que pase
+            try:
+                peft_model.unload()
+            except Exception:
+                pass
+            base_model.model = peft_model.get_base_model()
+            base_model.model.generation_config = GenerationConfig(**_SAFE_GENERATION_CONFIG)
+            base_model.model.to(device)
+
+    return _decode_scored(outputs, tokenizer)
+
+
+def _decode_scored(outputs, tokenizer: T5SpanishTokenizer) -> List[Tuple[str, float]]:
+    """
+    Convierte la salida de `generate(..., return_dict_in_generate=True)` en
+    `[(texto, score)]`. Con beam search `sequences_scores` trae la log-prob
+    normalizada por longitud de cada secuencia devuelta; si no viene (p. ej.
+    decodificación greedy) se asigna 0.0 a todas. Mismo contrato para el T5
+    base (generate_corrections) y para un adaptador LoRA (generate_with_lora).
+    """
+    sequences = outputs.sequences
+    scores    = getattr(outputs, "sequences_scores", None)
+    if scores is None:
+        scores = [0.0] * len(sequences)
+    else:
+        scores = [float(s) for s in scores.tolist()]
+    return [
+        (tokenizer.decode(seq, skip_special=True).strip(), score)
+        for seq, score in zip(sequences, scores)
+    ]

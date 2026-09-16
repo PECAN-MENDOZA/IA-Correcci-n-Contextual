@@ -41,7 +41,8 @@ def create_app(
             "studentId": result.studentId,
             "correctedText": result.correctedText,
             "processingTimeMs": result.processingTimeMs,
-            "suggestions": result.suggestions
+            "suggestions": result.suggestions,
+            "modelVersion": result.modelVersion,
         }
         
         return Response(
@@ -49,7 +50,7 @@ def create_app(
             status=200, mimetype="application/json; charset=utf-8"
         )
         
-    # Endpoint interno para feedback (entrenamiento)
+    # Endpoint interno para feedback (solo persistencia para curación)
     @app.route("/interno/feedback", methods=["POST"])
     def feedback():
         data = request.json or {}
