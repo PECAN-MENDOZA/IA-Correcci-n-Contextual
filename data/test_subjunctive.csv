@@ -1,0 +1,25 @@
+# Set de test de SUBJUNTIVO obligatorio con verbos irregulares (categoria|entrada|esperado).
+# Disparadores, sujetos y complementos distintos de las plantillas de
+# scripts/generate_subjunctive_data.py -> mide generalización.
+# 'correcto' = ya correcto (indicativo legítimo o subjuntivo bien puesto), no debe cambiar.
+categoria|entrada|esperado
+subjuntivo|quiero que tu vienes conmigo|quiero que tú vengas conmigo
+subjuntivo|espero que tienes un buen viaje|espero que tengas un buen viaje
+subjuntivo|es necesario que haces la maleta esta noche|es necesario que hagas la maleta esta noche
+subjuntivo|ojalá que mi abuela viene en navidad|ojalá que mi abuela venga en navidad
+subjuntivo|mi tía quiere que le dices la hora|mi tía quiere que le digas la hora
+subjuntivo|es posible que ellos salen de viaje el lunes|es posible que ellos salgan de viaje el lunes
+subjuntivo|no creo que ella sabe la dirección|no creo que ella sepa la dirección
+subjuntivo|te pido que pones el celular en la mochila|te pido que pongas el celular en la mochila
+subjuntivo|es importante que ustedes traen el uniforme limpio|es importante que ustedes traigan el uniforme limpio
+subjuntivo|dudo que él va a la biblioteca hoy|dudo que él vaya a la biblioteca hoy
+subjuntivo|me alegra que eres mi compañero de banco|me alegra que seas mi compañero de banco
+subjuntivo|espero que están contentos con la nota|espero que estén contentos con la nota
+subjuntivo|prefiero que nosotros llegamos antes del timbre|prefiero que nosotros lleguemos antes del timbre
+subjuntivo|es mejor que juegas después de almorzar|es mejor que juegues después de almorzar
+subjuntivo|necesito que me das tu número de cuenta|necesito que me des tu número de cuenta
+subjuntivo|antes de que empieza la película apaga la luz|antes de que empiece la película apaga la luz
+correcto|creo que ellos vienen a la reunión|creo que ellos vienen a la reunión
+correcto|sé que tú tienes la llave del salón|sé que tú tienes la llave del salón
+correcto|quiero que vengas a mi cumpleaños|quiero que vengas a mi cumpleaños
+correcto|mi mamá dice que ella sale a las seis|mi mamá dice que ella sale a las seis

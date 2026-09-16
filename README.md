@@ -177,14 +177,18 @@ python train.py --epochs 3 --batch_size 2
 
 # Entrenar y fusionar el LoRA gramatical GLOBAL (único adaptador del sistema);
 # cada paso escribe su manifiesto (ver "Artefactos reproducibles").
-# IMPORTANTE: el dataset debe ser data/training_pairs_v2.csv (generales + concordancia,
-# 18 104 pares). Entrenar solo con training_pairs_clean.csv produce un adaptador que
-# NO aprende concordancia (9/12 en data/test_agreement.csv frente a 12/12); ocurrió el
-# 2026-09-12 y se corrigió el 2026-09-16 (global-lora-v2@5979a430).
-$env:CSV_PATH = 'data/training_pairs_v2.csv'
-python train_grammar_lora.py
+# IMPORTANTE: el dataset debe ser data/training_pairs_v3.csv (generales + concordancia +
+# subjuntivo, 24 648 pares; ver data/training_pairs_v3.README.md). Entrenar solo con
+# training_pairs_clean.csv produce un adaptador que NO aprende concordancia (9/12 en
+# data/test_agreement.csv) ni subjuntivo irregular (3/16 en data/test_subjunctive.csv);
+# ocurrió el 2026-09-12 y se corrigió el 2026-09-16 (v2 concordancia, v3 subjuntivo).
+# Para regenerar los pares dirigidos: scripts/generate_agreement_data.py y
+# scripts/generate_subjunctive_data.py (semillas fijas).
+$env:CSV_PATH = 'data/training_pairs_v3.csv'
+python train_grammar_lora.py           # después, poner "lora_tag": "global-lora-v3" en models/grammar_lora/training-manifest.json
 python scripts/merge_grammar_lora.py
-python evaluate.py --dataset data/test_agreement.csv --t5-dir models/t5_correction --development --out reports/agreement.json   # debe dar 12/12
+python evaluate.py --dataset data/test_agreement.csv   --t5-dir models/t5_correction --development --out reports/agreement.json    # debe dar 12/12
+python evaluate.py --dataset data/test_subjunctive.csv --t5-dir models/t5_correction --development --out reports/subjunctive.json  # debe dar >= 15/16
 
 # Manifiestos de artefactos ya entrenados (solo hashes; no entrena ni fusiona)
 python scripts/model_manifest.py --write-current
