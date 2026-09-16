@@ -176,9 +176,15 @@ python setup_model.py
 python train.py --epochs 3 --batch_size 2
 
 # Entrenar y fusionar el LoRA gramatical GLOBAL (único adaptador del sistema);
-# cada paso escribe su manifiesto (ver "Artefactos reproducibles")
+# cada paso escribe su manifiesto (ver "Artefactos reproducibles").
+# IMPORTANTE: el dataset debe ser data/training_pairs_v2.csv (generales + concordancia,
+# 18 104 pares). Entrenar solo con training_pairs_clean.csv produce un adaptador que
+# NO aprende concordancia (9/12 en data/test_agreement.csv frente a 12/12); ocurrió el
+# 2026-09-12 y se corrigió el 2026-09-16 (global-lora-v2@5979a430).
+$env:CSV_PATH = 'data/training_pairs_v2.csv'
 python train_grammar_lora.py
 python scripts/merge_grammar_lora.py
+python evaluate.py --dataset data/test_agreement.csv --t5-dir models/t5_correction --development --out reports/agreement.json   # debe dar 12/12
 
 # Manifiestos de artefactos ya entrenados (solo hashes; no entrena ni fusiona)
 python scripts/model_manifest.py --write-current
