@@ -130,7 +130,9 @@ _TU_VERBS = {
     "eres", "fuiste", "estuviste", "tuviste", "hiciste", "viste", "diste",
     "dijiste", "quisiste", "pudiste", "supiste", "comiste", "corriste",
     "viviste", "hablaste", "llegaste", "jugaste", "trabajaste", "pensaste",
-    "saliste", "ganaste", "leiste", "escribiste", "miraste",
+    "saliste", "ganaste", "leiste", "escribiste", "miraste", "viniste",
+    "volviste", "conociste", "seguiste", "entendiste", "trajiste", "dormiste",
+    "pediste", "empezaste", "terminaste", "ayudaste", "estudiaste", "pusiste",
 }
 _S_NOUN_STOP = {
     "crisis", "analisis", "tos", "virus", "atlas", "lunes", "martes",

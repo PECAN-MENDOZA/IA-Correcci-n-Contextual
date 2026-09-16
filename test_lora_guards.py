@@ -197,6 +197,23 @@ def main() -> int:
         and not is_lexically_plausible_refinement("hoy fui al mercado", ""),
     ))
 
+    results.append(check(
+        "léxica: perder la marca de 2.ª persona del pretérito se bloquea",
+        not is_lexically_plausible_refinement("tú viniste conmigo al parque", "tú vino conmigo al parque")
+        and not is_lexically_plausible_refinement("por qué no viniste ayer", "por qué no vino ayer")
+        and not is_lexically_plausible_refinement("ayer jugaste muy bien", "ayer jugó muy bien"),
+    ))
+    results.append(check(
+        "léxica: ganar la marca de 2.ª persona (concordancia) sigue pasando",
+        is_lexically_plausible_refinement("ayer tú comio mucho", "ayer tú comiste mucho")
+        and is_lexically_plausible_refinement("tú viniste conmigo", "tú viniste conmigo"),
+    ))
+    results.append(check(
+        "léxica: las palabras en -ste que no son pretérito de 2.ª persona no se bloquean",
+        is_lexically_plausible_refinement("los niños estan triste", "los niños están tristes")
+        and is_lexically_plausible_refinement("los problemas existe", "los problemas existen"),
+    ))
+
     total, passed = len(results), sum(results)
     print(f"\n{passed}/{total} tests pasaron.")
     return 0 if passed == total else 1

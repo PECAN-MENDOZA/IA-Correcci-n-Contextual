@@ -86,6 +86,31 @@ def _protected_family(word: str):
     return _PROTECTED_FAMILY.get(word, word)
 
 
+# Marca de 2.ª persona del singular en pretérito (-aste/-iste): "viniste",
+# "comiste", "jugaste". El T5 a veces la cambia de persona ("tú viniste
+# conmigo" -> "tú vino conmigo"): la similitud la deja pasar (viniste/vino
+# 0.55) pero cambia de quién habla la frase. Solo se bloquea PERDER la marca;
+# ganarla ("tú comio mucho" -> "comiste") es una corrección de concordancia
+# legítima.
+# Excepciones: palabras que acaban igual sin ser pretérito de 2.ª persona
+# (3.ª de presente en -siste, sustantivos y adjetivos, subjuntivos de -ar).
+_SECOND_PERSON_EXCEPTIONS = frozenset(
+    "existe insiste asiste consiste resiste persiste desiste subsiste embiste "
+    "reviste triste chiste baste gaste coste poste oeste viste contraste "
+    "desgaste".split()
+)
+
+
+def _drops_second_person(word_a: str, word_b: str) -> bool:
+    """True si el reemplazo borra la marca de 2.ª persona del pretérito."""
+    return (
+        len(word_a) >= 5
+        and word_a.endswith(("aste", "iste"))
+        and word_a not in _SECOND_PERSON_EXCEPTIONS
+        and not word_b.endswith("ste")
+    )
+
+
 def _protected_swap_is_allowed(word_a: str, word_b: str) -> bool:
     """
     Un reemplazo 1:1 que toca una palabra protegida solo se acepta si ambos
@@ -147,7 +172,9 @@ def is_lexically_plausible_refinement(base_text: str, candidate: str, min_simila
       similitud no basta: ambos deben ser la misma palabra protegida o su
       flexión de número/género (todos→todas, ningún→ninguna); "lo quiero ir"
       → "no quiero ir", "no quiero ir" → "yo quiero ir", "ni" → "mi" o
-      "nunca" → "jamás" se bloquean aunque sean "cercanos".
+      "nunca" → "jamás" se bloquean aunque sean "cercanos". Tampoco se puede
+      perder la marca de 2.ª persona del pretérito (viniste→vino, jugaste→jugó:
+      cambian de quién habla la frase); ganarla sí (comio→comiste).
     - Inserción, borrado y bloques 1:n / n:1 / n:m: cerrados salvo lista
       blanca explícita: puntuación suelta; artículos, preposiciones,
       conjunciones, clíticos y al/del (`ALLOWED_FUNCTION_WORDS`: "llego tarde
@@ -168,6 +195,8 @@ def is_lexically_plausible_refinement(base_text: str, candidate: str, min_simila
         if tag == "replace" and i2 - i1 == j2 - j1:
             for word_a, word_b in zip(base_words[i1:i2], cand_words[j1:j2]):
                 if not _protected_swap_is_allowed(word_a, word_b):
+                    return False
+                if _drops_second_person(word_a, word_b):
                     return False
                 if difflib.SequenceMatcher(None, word_a, word_b, autojunk=False).ratio() < min_similarity:
                     return False
