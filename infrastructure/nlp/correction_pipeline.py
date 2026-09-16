@@ -232,9 +232,10 @@ class CorrectionPipeline:
         {palabra: reemplazo} de sobrescritura léxica; el runtime del servicio
         pasa siempre {} (no hay datos por alumno en la inferencia).
 
-        Devuelve las sugerencias con la recomendada primero: normalmente una
-        (o refinado + base); hasta tres solo cuando la oración es ambigua
-        (ver infrastructure/nlp/alternatives.py).
+        Devuelve las sugerencias con la recomendada primero: normalmente una;
+        hasta tres solo cuando la oración es ambigua (contraste de modo o de
+        tilde en una sola palabra, o empate de BETO en un homófono; ver
+        infrastructure/nlp/alternatives.py).
         """
         user_vocab = user_vocab or {}
 

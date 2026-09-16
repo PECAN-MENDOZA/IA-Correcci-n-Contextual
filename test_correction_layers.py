@@ -192,6 +192,18 @@ class CorrectPipelineTests(unittest.TestCase):
         self.assertEqual(pipe.correct("a mi me gusta que ellos juega mucho", {}),
                          ["a mí me gusta que ellos juegan mucho"])
 
+    def test_alternative_with_an_extra_edit_or_a_noun_reading_is_not_offered(self):
+        # Cierre (N3): "jueguen muchos" cambia dos palabras respecto a la
+        # recomendada → fuera; "la case" no es un verbo (casa ≫ casar en el
+        # léxico de frecuencias) → fuera.
+        seq2seq = FakeSeq2Seq([("ellos juegan mucho", -1.0), ("ellos jueguen muchos", -1.1)])
+        pipe = self._pipeline(judge=FakeJudge({}), seq2seq=seq2seq, word_freqs={"jugar": 1000})
+        self.assertEqual(pipe.correct("ellos juega mucho", {}), ["ellos juegan mucho"])
+        seq2seq = FakeSeq2Seq([("la casa es bonita", -0.01), ("la case es bonita", -0.05)])
+        pipe = self._pipeline(judge=FakeJudge({}), seq2seq=seq2seq,
+                              word_freqs={"casa": 496977, "case": 4770, "casar": 10364})
+        self.assertEqual(pipe.correct("la casa es bonita", {}), ["la casa es bonita"])
+
     def test_manual_correction_does_not_lose_t5_agreement(self):
         # "xq→porque" (capa 1) y T5 corrige juega→juegan: la recomendada es el
         # beam; la base (juega) no es otra lectura (concordancia, forma original).
@@ -280,6 +292,21 @@ class CorrectPipelineTests(unittest.TestCase):
         pipe = self._pipeline(judge=FakeJudge({}), seq2seq=seq2seq)
         self.assertEqual(pipe.correct("llego tarde a clase", {})[0], "llegué tarde a la clase")
 
+    def test_first_beam_that_swaps_a_negation_one_to_one_recommends_base(self):
+        # Cierre: un beam 1 que sustituye 1:1 un negador por una palabra
+        # parecida (yo→no, no→lo) pasa la guarda de cantidad y la similitud
+        # (0.5 ≥ 0.3) pero invierte el sentido: se recomienda la base y el
+        # beam no se ofrece como alternativa.
+        for original, beam in [("yo quiero ir", "no quiero ir"), ("no quiero ir", "lo quiero ir"),
+                               ("lo quiero ir", "no quiero ir"), ("ni quiero ir", "mi quiero ir")]:
+            seq2seq = FakeSeq2Seq([(beam, -0.05), (original + ".", -0.1)])
+            pipe = self._pipeline(judge=FakeJudge({}), seq2seq=seq2seq)
+            self.assertEqual(pipe.correct(original, {}), [original], (original, beam))
+        # La flexión de la misma protegida sí se recomienda (todos→todas).
+        seq2seq = FakeSeq2Seq([("todas las niñas juegan", -0.05)])
+        pipe = self._pipeline(judge=FakeJudge({}), seq2seq=seq2seq)
+        self.assertEqual(pipe.correct("todos las niñas juegan", {})[0], "todas las niñas juegan")
+
     def test_lexical_guard_keeps_irregular_agreement_in_first_beam(self):
         # es→son (0.40), hizo→hicieron (0.50), viene→vengan (0.55) siguen
         # recomendándose; una flexión no es una sustitución léxica.
@@ -292,16 +319,16 @@ class CorrectPipelineTests(unittest.TestCase):
     def test_lexical_guard_does_not_apply_to_later_beams(self):
         # El beam 1 es plausible y se recomienda; el beam 2 (sustitución
         # léxica juega→comen) solo lo frena la regla (e) de las alternativas,
-        # y un beam 2 flexivo (jueguen) sí se ofrece. La base, igual al
-        # original, nunca se ofrece.
+        # y un beam 2 flexivo (jueguen; jugar en el léxico) sí se ofrece. La
+        # base, igual al original, nunca se ofrece.
         seq2seq = FakeSeq2Seq([("los niños juegan en el parque", -0.05),
                                ("los niños comen en el parque", -0.1)])
-        pipe = self._pipeline(judge=FakeJudge({}), seq2seq=seq2seq)
+        pipe = self._pipeline(judge=FakeJudge({}), seq2seq=seq2seq, word_freqs={"jugar": 1000})
         self.assertEqual(pipe.correct("los niño juega en el parque", {}),
                          ["los niños juegan en el parque"])
         seq2seq = FakeSeq2Seq([("los niños juegan en el parque", -0.05),
                                ("los niños jueguen en el parque", -0.1)])
-        pipe = self._pipeline(judge=FakeJudge({}), seq2seq=seq2seq)
+        pipe = self._pipeline(judge=FakeJudge({}), seq2seq=seq2seq, word_freqs={"jugar": 1000})
         self.assertEqual(pipe.correct("los niño juega en el parque", {}),
                          ["los niños juegan en el parque", "los niños jueguen en el parque"])
 

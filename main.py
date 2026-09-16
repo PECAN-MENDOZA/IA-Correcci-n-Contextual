@@ -13,12 +13,16 @@ Variables de entorno:
                   respuesta como `modelVersion`. Si no se define, se compone
                   desde `models/t5_correction/model-manifest.json` (formato
                   `<base-tag>@<hash8>+<lora-tag>@<hash8>`; ver
-                  infrastructure/versioning.py) y, si no existe,
-                  `global-lora-unversioned`. Esa versión compuesta solo se
-                  sirve con el T5 fusionado cargado: con ENABLE_T5=false o si
-                  la carga falla, el servidor se niega a arrancar salvo que
-                  MODEL_VERSION sea explícita (el backend congela esta cadena
-                  por ejecución y debe nombrar el pipeline que corrigió).
+                  infrastructure/versioning.py). Esa versión compuesta solo se
+                  sirve con el T5 fusionado cargado, y con el T5 cargado solo
+                  se sirve una versión compuesta válida: si el manifiesto
+                  fusionado falta o es inválido (ilegible, sin hashes), el
+                  servidor se niega a arrancar (nunca anuncia la versión
+                  parcial del LoRA ni `global-lora-unversioned` para pesos
+                  fusionados). Con ENABLE_T5=false o si la carga falla,
+                  también se niega a arrancar. En ambos casos la salida es
+                  MODEL_VERSION explícita (el backend congela esta cadena por
+                  ejecución y debe nombrar el pipeline que corrigió).
 
 Variables heredadas del lanzador (ROLE, ENABLE_USER_LORA, REDIS_URL) se
 ignoran: ya no existen roles, colas ni adaptadores por alumno.
@@ -86,9 +90,11 @@ def build_app():
     )
 
     # Compartido con evaluate.py y correct_text.py: MODEL_VERSION (env) >
-    # versión compuesta desde el manifiesto del modelo fusionado > default.
-    # La compuesta solo se sirve si el T5 fusionado está cargado; sin T5 y
-    # sin MODEL_VERSION explícita el servidor no arranca.
+    # versión compuesta desde el manifiesto del modelo fusionado. La compuesta
+    # solo se sirve si el T5 fusionado está cargado y, con T5, solo una
+    # compuesta válida; un manifiesto fusionado presente pero inválido lanza
+    # VersionResolutionError (ValueError) y, sin MODEL_VERSION explícita, el
+    # servidor no arranca (tampoco sin T5).
     try:
         model_version = served_model_version(
             t5_loaded=t5_model is not None,

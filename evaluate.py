@@ -422,7 +422,9 @@ def git_commit(repo_dir=REPO_DIR):
     """
     Commit HEAD del checkout (hex), con sufijo `-dirty` si hay cambios sin
     commitear en archivos versionados (el informe no debe atribuirse a un
-    commit limpio que no corrió); None si git no está disponible.
+    commit limpio que no corrió) y `-unknown` si `git status` falla (un
+    estado desconocido nunca se reporta como limpio); None si git no está
+    disponible.
     """
     try:
         head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(repo_dir), capture_output=True,
@@ -434,8 +436,9 @@ def git_commit(repo_dir=REPO_DIR):
     value = head.stdout.strip().lower() if head.returncode == 0 else ""
     if not re.fullmatch(r"[0-9a-f]{7,40}", value):
         return None
-    dirty = status.returncode == 0 and bool(status.stdout.strip())
-    return value + ("-dirty" if dirty else "")
+    if status.returncode != 0:
+        return value + "-unknown"
+    return value + ("-dirty" if status.stdout.strip() else "")
 
 
 def pipeline_info(commit=None) -> dict:
@@ -448,6 +451,24 @@ def pipeline_info(commit=None) -> dict:
     """
     from infrastructure.nlp.alternatives import THRESHOLDS
     return {"thresholds": dict(THRESHOLDS), "commit": commit if commit is not None else git_commit()}
+
+
+CLIENT_PIPELINE_NOTE = (
+    "metadata del checkout cliente que ejecutó evaluate.py (--source http): el servidor solo "
+    "devuelve modelVersion; sus reglas, umbrales y commit no se conocen y no se atribuyen aquí")
+
+
+def report_pipeline_blocks(source: str, info: dict) -> tuple:
+    """
+    `(pipeline, clientPipeline)` para `build_report` según el origen. En
+    proceso (`pipeline`), `info` describe el código que corrigió: va en
+    `pipeline`. Por HTTP el código que corrigió es el del servidor, del que
+    solo llega `modelVersion`: `pipeline` queda en None y `info` (umbrales y
+    commit del checkout que evalúa) se etiqueta como `clientPipeline` con nota.
+    """
+    if source == "http":
+        return None, {**dict(info), "note": CLIENT_PIPELINE_NOTE}
+    return dict(info), None
 
 
 def require_local_t5_dir(path) -> Path:
@@ -593,7 +614,8 @@ def _category_results(by_cat: "OrderedDict") -> list:
 
 
 def build_report(cases: list, *, model_version: str, dataset_path: str, dataset_hash: str,
-                 model_dir, development: bool, source: str, latencies_ms=None, pipeline=None) -> dict:
+                 model_dir, development: bool, source: str, latencies_ms=None, pipeline=None,
+                 client_pipeline=None) -> dict:
     """
     Informe JSON versionado. `cases` = [{cat, input, golds, pred[, error]}, ...]
     en el orden del dataset. Las claves del contrato (`modelVersion`,
@@ -602,7 +624,9 @@ def build_report(cases: list, *, model_version: str, dataset_path: str, dataset_
     el **nivel superior**, que es lo que valida el panel Vue y acepta el
     backend; `technicalEvaluation` las repite agrupadas, para leerlas de un
     vistazo. El resto son diagnósticos, incluido `pipeline` (`pipeline_info()`:
-    umbrales de la capa 5 y commit del código que corrió).
+    umbrales de la capa 5 y commit del código que corrió) y, solo en modo
+    HTTP, `clientPipeline` (la misma información pero del checkout que evalúa,
+    que no es el que corrigió; ver `report_pipeline_blocks`).
     """
     model_version = validate_model_version(model_version)
     scored = _score_cases(cases)
@@ -635,6 +659,8 @@ def build_report(cases: list, *, model_version: str, dataset_path: str, dataset_
         ("dataset", str(dataset_path)),
         ("pipeline", dict(pipeline) if pipeline else None),
     ])
+    if client_pipeline is not None:
+        report["clientPipeline"] = dict(client_pipeline)
     report.update(technical)
     report.update([
         ("technicalEvaluation", technical),
@@ -737,10 +763,13 @@ def main():
         model_version = resolve_report_version(versions[0] if versions else None)
         print(f"  modelVersion (servidor): {model_version}")
 
+    # En proceso, `pipeline` describe el código que corrigió; por HTTP solo se
+    # conoce el modelVersion del servidor y la metadata local va como cliente.
+    pipeline, client_pipeline = report_pipeline_blocks(args.source, pipeline_info())
     report = build_report(
         cases, model_version=model_version, dataset_path=args.dataset, dataset_hash=dataset_hash,
         model_dir=args.t5_dir, development=development, source=label, latencies_ms=latencies,
-        pipeline=pipeline_info(),
+        pipeline=pipeline, client_pipeline=client_pipeline,
     )
     _print_table(report)
     print(f"\n  F0.5 = {report['fZeroFive']:.4f}  (P = {report['precision']:.4f}, R = {report['recall']:.4f}; "

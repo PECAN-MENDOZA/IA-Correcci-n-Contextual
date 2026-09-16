@@ -52,6 +52,7 @@ from infrastructure.versioning import (  # noqa: E402
     HASH8,
     LORA_TAG,
     MODEL_MANIFEST_NAME,
+    VersionResolutionError,
     compose_model_version,
     model_manifest_path,
     resolve_model_version,
@@ -445,7 +446,11 @@ def main(argv=None) -> int:
         print(f"[OK] modelVersion = {result['modelVersion']}")
         return 0
     if args.show:
-        print(resolve_model_version(env={}, repo_dir=repo_dir))
+        try:
+            print(resolve_model_version(env={}, repo_dir=repo_dir))
+        except VersionResolutionError as exc:
+            print(f"[ERROR] {exc}")
+            return 1
         return 0
     if args.base_version:
         try:

@@ -428,5 +428,25 @@ class BaseVersionTests(unittest.TestCase):
             self.assertEqual(proc.stdout.strip(), f"t5-base@{expected}")
 
 
+class ShowVersionTests(unittest.TestCase):
+    """`--show` falla cerrado (código 1) si el manifiesto fusionado existe pero es inválido."""
+
+    def test_show_reports_an_invalid_merged_manifest_instead_of_a_partial_version(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            base_dir = repo / "models" / "t5_correction"
+            base_dir.mkdir(parents=True)
+            (base_dir / MODEL_MANIFEST_NAME).write_text(json.dumps({"model_sha256": "0" * 64}), encoding="utf-8")
+            lora_dir = repo / "models" / "grammar_lora"
+            lora_dir.mkdir(parents=True)
+            (lora_dir / TRAINING_MANIFEST_NAME).write_text(
+                json.dumps({"adapter_sha256": "b" * 64, "modelVersion": "global-lora-v1@bbbbbbbb"}), encoding="utf-8")
+            proc = subprocess.run([sys.executable, str(REPO_DIR / "scripts" / "model_manifest.py"),
+                                   "--repo-dir", str(repo), "--show"], cwd=str(REPO_DIR), capture_output=True, text=True)
+            self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+            self.assertIn("[ERROR]", proc.stdout)
+            self.assertNotIn("global-lora-v1@bbbbbbbb", proc.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

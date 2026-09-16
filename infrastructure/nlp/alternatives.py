@@ -3,9 +3,8 @@ infrastructure/nlp/alternatives.py
 
 Selección pura de las alternativas que se ofrecen al alumno: como mucho
 `max_options` (3) y SOLO cuando la oración admite lecturas distintas. En el
-caso común el resultado es una sola recomendación (o refinado + base, como
-siempre). Sin torch: solo difflib/re/unicodedata y la guarda
-`is_safe_refinement`.
+caso común el resultado es una sola recomendación. Sin torch: solo
+difflib/re/unicodedata y la guarda `is_safe_refinement`.
 
 La RECOMENDADA (posición 0) es el beam 1 de T5 si es seguro (como antes de la
 Task 5: `is_safe_refinement` respecto a la base y, desde el cierre, la guarda
@@ -36,17 +35,24 @@ y las segundas lecturas de BETO) se ofrecen únicamente si:
   (f) SEÑAL POSITIVA DE AMBIGÜEDAD (ola final): estar cerca del mejor beam no
       prueba que la frase admita dos lecturas. Un beam de T5 (o la base) solo
       es alternativa si
-        (i)  difiere de la RECOMENDADA únicamente por reemplazos 1:1 que son
-             flexiones del mismo lexema (prefijo común sin tildes ≥
-             INFLECTION_MIN_PREFIX del más corto y similitud ≥
-             MIN_SPAN_SIMILARITY) y al menos uno de ellos es un contraste de
-             MODO (indicativo ↔ subjuntivo: juegan/jueguen, llegan/lleguen,
+        (i)  difiere de la RECOMENDADA en UNA SOLA PALABRA (un reemplazo 1:1;
+             cualquier otra edición, p. ej. "mucho/muchos" además del verbo,
+             lo descalifica), esa palabra es una flexión del mismo lexema
+             (prefijo común sin tildes ≥ INFLECTION_MIN_PREFIX del más corto
+             y similitud ≥ MIN_SPAN_SIMILARITY) y el contraste es de MODO
+             (indicativo ↔ subjuntivo: juegan/jueguen, llegan/lleguen,
              gana/gane, comen/coman; `_mood_pair`) o SOLO DE TILDE
-             (callo/calló, papa/papá, como/cómo, esta/está) en el que la
-             alternativa no vuelve a la forma del original (el original nunca
-             es una corrección, tampoco por tramo). Corregir número o persona
-             (juega/juegan, fue/fueron, lleguen/llegue) lo fija el sujeto y
-             nunca es "otra lectura"; una inserción o borrado tampoco;
+             (callo/calló, papa/papá, como/cómo, esta/está), y la alternativa
+             no vuelve a la forma del original (el original nunca es una
+             corrección, tampoco por tramo). Un contraste de modo exige que
+             la raíz sea un verbo de `lexicon` con una sola conjugación
+             decidible (jug-ar, lleg-ar, com-er) y, si `lexicon` trae
+             frecuencias, que ninguna de las dos formas sea más frecuente que
+             su infinitivo (casa ≫ casar, esta ≫ estar: lectura nominal o
+             demostrativa, no verbo); sin léxico no hay contraste de modo.
+             Corregir número o persona (juega/juegan, fue/fueron,
+             lleguen/llegue) lo fija el sujeto y nunca es "otra lectura"; una
+             inserción o borrado tampoco;
         (ii) o es una segunda lectura de BETO (empate < betoTieMargin en un
              homófono, `variants=`), que trae su propia señal.
   (g) FILTRO DE MODO: si la recomendada contiene un disparador de subjuntivo
@@ -60,12 +66,13 @@ y las segundas lecturas de BETO) se ofrecen únicamente si:
       decidir, el par no se ofrece (fail-closed). No cambia la recomendada.
 
 La base va justo detrás de la recomendada (el tope no la elimina); el resto
-por score descendente. En la práctica la base ya no aparece como "refinado +
-base": solo volvería a la forma del original en el tramo que T5 corrigió.
+por score descendente. En la práctica la base no aparece como alternativa:
+solo volvería a la forma del original en el tramo que T5 corrigió.
 """
 import difflib
 import re
 import unicodedata
+from collections.abc import Mapping
 
 from infrastructure.ml.guards import is_safe_refinement
 
@@ -289,12 +296,13 @@ def _canonical_stem(stem: str, vowel: str) -> str:
     return stem
 
 
-def _mood_split(a: str, b: str):
+def _orthographic_mood_split(a: str, b: str):
     """
     `(vocal_a, vocal_b, raíz_ante_a, raíz_ante_e)` si `a` y `b` (sin tildes)
     son la misma persona del presente con vocal temática distinta (a ↔ e)
     sobre la misma raíz; None si no (número/persona distintos, raíz distinta o
-    demasiado corta, solo tildes).
+    demasiado corta, solo tildes). Puramente ortográfico: casa/case también
+    lo cumple; `_mood_split` añade la comprobación con el léxico.
     """
     pa, pb = _plain(a), _plain(b)
     if pa == pb:
@@ -310,12 +318,47 @@ def _mood_split(a: str, b: str):
     return None
 
 
-def _mood_pair(a: str, b: str):
+def _is_noun_reading(form: str, infinitive: str, lexicon) -> bool:
     """
-    `(vocal_a, vocal_b)` si `a` y `b` son un contraste de modo:
-    llegan/lleguen → ("a", "e"); jueguen/juegan → ("e", "a"); None si no.
+    Con un léxico de frecuencias (Mapping), una forma más frecuente que su
+    propio infinitivo se toma como lectura nominal/demostrativa (casa 496977
+    ≫ casar 10364; esta 897814 ≫ estar 338633; cosa ≫ coser) y no da
+    contraste de modo. llega 29024 < llegar 88969, juegan 3507 < jugar 52990,
+    estan 18914 < estar sí son verbos. Sin frecuencias (un set) no se aplica.
     """
-    split = _mood_split(a, b)
+    if not isinstance(lexicon, Mapping):
+        return False
+    return lexicon.get(form, 0) > lexicon.get(infinitive, 0)
+
+
+def _mood_split(a: str, b: str, lexicon):
+    """
+    `(vocal_a, vocal_b, raíz_ante_a, raíz_ante_e)` si `a` y `b` son dos formas
+    de modo (indicativo ↔ subjuntivo) del MISMO verbo: cumplen el contraste
+    ortográfico (`_orthographic_mood_split`), la raíz tiene un solo infinitivo
+    decidible en `lexicon` (`_infinitive`) y ninguna de las dos formas es una
+    lectura nominal más frecuente que ese infinitivo (`_is_noun_reading`).
+    None en cualquier otro caso, incluido `lexicon` vacío (fail-closed).
+    """
+    split = _orthographic_mood_split(a, b)
+    if split is None:
+        return None
+    _, _, stem_a, stem_e = split
+    infinitive = _infinitive(stem_a, stem_e, lexicon)
+    if infinitive is None:
+        return None
+    if _is_noun_reading(_plain(a), infinitive, lexicon) or _is_noun_reading(_plain(b), infinitive, lexicon):
+        return None
+    return split
+
+
+def _mood_pair(a: str, b: str, lexicon):
+    """
+    `(vocal_a, vocal_b)` si `a` y `b` son un contraste de modo del mismo
+    verbo según `lexicon`: llegan/lleguen → ("a", "e"); jueguen/juegan →
+    ("e", "a"); None si no (casa/case, número, raíz desconocida, sin léxico).
+    """
+    split = _mood_split(a, b, lexicon)
     return None if split is None else (split[0], split[1])
 
 
@@ -329,21 +372,35 @@ def _stem_variants(stem: str) -> list[str]:
     return variants
 
 
+def _infinitives(stem_a: str, stem_e: str, lexicon) -> tuple[list[str], list[str]]:
+    """Infinitivos en -ar (raíz ante a) y en -er/-ir (raíz ante e) presentes en `lexicon`."""
+    if not lexicon:
+        return [], []
+    ar = [v + "ar" for v in _stem_variants(stem_a) if v + "ar" in lexicon]
+    er = [v + suffix for v in _stem_variants(stem_e) for suffix in ("er", "ir") if v + suffix in lexicon]
+    return ar, er
+
+
+def _infinitive(stem_a: str, stem_e: str, lexicon):
+    """El único infinitivo decidible (-ar o -er/-ir) de la raíz, o None si ninguno o ambos."""
+    ar, er = _infinitives(stem_a, stem_e, lexicon)
+    if ar and not er:
+        return ar[0]
+    if er and not ar:
+        return er[0]
+    return None
+
+
 def _verb_class(stem_a: str, stem_e: str, lexicon):
     """
     "ar" si la raíz (tal como se escribe ante a) + "ar" está en `lexicon`,
     "er" si la raíz (ante e) + "er"/"ir" lo está; None si ninguna o ambas
     (no se puede saber cuál de las dos formas es el indicativo).
     """
-    if not lexicon:
+    infinitive = _infinitive(stem_a, stem_e, lexicon)
+    if infinitive is None:
         return None
-    is_ar = any(v + "ar" in lexicon for v in _stem_variants(stem_a))
-    is_er = any(v + suffix in lexicon for v in _stem_variants(stem_e) for suffix in ("er", "ir"))
-    if is_ar and not is_er:
-        return "ar"
-    if is_er and not is_ar:
-        return "er"
-    return None
+    return "ar" if infinitive.endswith("ar") else "er"
 
 
 def _candidate_is_indicative(rec_word: str, cand_word: str, lexicon):
@@ -352,7 +409,7 @@ def _candidate_is_indicative(rec_word: str, cand_word: str, lexicon):
     indicativo, False si es el subjuntivo, None si `lexicon` no decide la
     conjugación (-ar: indicativo en a; -er/-ir: indicativo en e).
     """
-    split = _mood_split(rec_word, cand_word)
+    split = _mood_split(rec_word, cand_word, lexicon)
     if split is None:
         return None
     _, cand_vowel, stem_a, stem_e = split
@@ -390,24 +447,23 @@ def _reading_contrasts(rec_words: list[str], cand_words: list[str]):
     return contrasts
 
 
-def _has_reading_signal(contrasts, aligned_original: dict) -> bool:
+def _has_reading_signal(contrasts, aligned_original: dict, lexicon=None) -> bool:
     """
-    (f)(i): todos los contrastes son flexiones del mismo lexema y al menos uno
-    es de modo o solo de tilde, con la forma candidata distinta de la del
-    original en esa posición (un tramo alineado desconocido no da señal).
+    (f)(i): el candidato difiere de la recomendada en UNA sola palabra (un
+    único reemplazo 1:1: cualquier edición extra lo descalifica), esa palabra
+    es una flexión del mismo lexema, el contraste es de modo (según `lexicon`)
+    o solo de tilde, y la forma candidata es distinta de la del original en
+    esa posición (un tramo alineado desconocido no da señal).
     """
-    if not contrasts:
+    if not contrasts or len(contrasts) != 1:
         return False
-    signal = False
-    for index, rec_word, cand_word in contrasts:
-        if not _is_inflection(rec_word, cand_word):
-            return False
-        original_word = aligned_original.get(index)
-        if original_word is None or cand_word == original_word:
-            continue
-        if _plain(rec_word) == _plain(cand_word) or _mood_pair(rec_word, cand_word) is not None:
-            signal = True
-    return signal
+    index, rec_word, cand_word = contrasts[0]
+    if not _is_inflection(rec_word, cand_word):
+        return False
+    original_word = aligned_original.get(index)
+    if original_word is None or cand_word == original_word:
+        return False
+    return _plain(rec_word) == _plain(cand_word) or _mood_pair(rec_word, cand_word, lexicon) is not None
 
 
 def _trigger_end(rec_words: list[str]):
@@ -429,7 +485,7 @@ def _indicative_after_trigger(contrasts, trigger_end, lexicon) -> bool:
     if trigger_end is None or not contrasts:
         return False
     for index, rec_word, cand_word in contrasts:
-        if index < trigger_end or _mood_pair(rec_word, cand_word) is None:
+        if index < trigger_end or _mood_pair(rec_word, cand_word, lexicon) is None:
             continue
         indicative = _candidate_is_indicative(rec_word, cand_word, lexicon)
         if indicative is None or indicative:
@@ -462,9 +518,10 @@ def select_alternatives(
     `recommended` explícito (beam 1 seguro y léxicamente plausible, o base).
     Si la recomendada explícita no es segura, se recomienda la base.
 
-    `lexicon` (cualquier contenedor con `in`, p. ej. `PhoneticEngine.word_freqs`)
-    decide la conjugación en el filtro de modo (g); sin él, tras un
-    disparador de subjuntivo obligatorio no se ofrece ningún par de modo.
+    `lexicon` (cualquier contenedor con `in`, p. ej. `PhoneticEngine.word_freqs`;
+    si es un Mapping palabra → frecuencia también descarta lecturas nominales)
+    decide qué pares son contrastes de modo, en la señal (f) y en el filtro
+    (g); sin él no hay contraste de modo (solo señal de tilde o de BETO).
     """
     base   = base_text.strip()
     scored = [(str(t).strip(), float(s)) for t, s in candidates if t and str(t).strip()]
@@ -526,7 +583,7 @@ def select_alternatives(
         if _span_similarity(base_words, cand_words) < MIN_SPAN_SIMILARITY: # (e)
             continue
         contrasts = _reading_contrasts(rec_norm_words, _norm_words(text))
-        if text not in variant_texts and not _has_reading_signal(contrasts, aligned_orig):   # (f)(i)
+        if text not in variant_texts and not _has_reading_signal(contrasts, aligned_orig, lexicon):   # (f)(i)
             continue
         if _indicative_after_trigger(contrasts, trigger_end, lexicon):     # (g)
             continue

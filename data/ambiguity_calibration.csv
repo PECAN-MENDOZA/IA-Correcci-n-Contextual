@@ -37,4 +37,4 @@ tal vez nosotros gana el partido,2,gana;gane,indicativo/subjuntivo: tal vez admi
 aunque ellos juega bien perdemos,2,juega;ganamos,indicativo/subjuntivo: aunque concesivo (juegan = hecho / jueguen = hipótesis)
 cuando ellos llega comemos,2,llega;él,indicativo/subjuntivo: cuando temporal (llegan = habitual / lleguen = futuro)
 mientras ellos come nosotros descansamos,2,come;descansan,indicativo/subjuntivo: mientras temporal (comen = simultáneo / coman = futuro)
-no creo que ellos viene hoy,2,viene,indicativo/subjuntivo: vengan (estándar) / vienen (indicativo asertivo coloquial tras no creo que); el filtro de modo trata "no creo que" como subjuntivo obligatorio y no ofrece vienen (FN conocido)
+no creo que ellos viene hoy,2,viene,indicativo/subjuntivo: vengan (estándar) / vienen (indicativo asertivo coloquial tras no creo que); FN conocido: la recomendada es vienen (beam 1 -0.009) y vengan (-0.625) cae por el margen de score (d) (0.616 > 0.3) y no por el filtro de modo (g) (que solo retira indicativos candidatos y no toca la recomendada)

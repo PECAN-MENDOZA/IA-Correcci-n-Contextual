@@ -73,12 +73,18 @@ class SelectAlternativesTests(unittest.TestCase):
 
     def test_drops_unsafe_and_identical_candidates(self):
         # El primer beam es la propia frase: la recomendada es la base (como
-        # antes de la Task 5) y no se duplica; el candidato inseguro se descarta;
-        # la lectura con tildes y signos se ofrece como alternativa.
+        # antes de la Task 5) y no se duplica; el candidato inseguro se descarta.
+        # "Hola, ¿cómo estás?" cambia DOS palabras (como/cómo y estas/estás):
+        # desde el cierre una alternativa solo puede diferir de la recomendada
+        # en una palabra, así que tampoco se ofrece; con una sola tilde sí.
         out = select_alternatives("hola como estas", "hola como estas",
                                   [("hola como estas", -0.1), ("Hola, ¿cómo estás?", -0.3),
                                    ("Adiós, hasta luego, nos vemos mañana temprano", -0.4)])
-        self.assertEqual(out, ["hola como estas", "Hola, ¿cómo estás?"])
+        self.assertEqual(out, ["hola como estas"])
+        out = select_alternatives("hola como estas", "hola como estas",
+                                  [("hola como estás", -0.1), ("hola cómo estás", -0.3),
+                                   ("Adiós, hasta luego, nos vemos mañana temprano", -0.4)])
+        self.assertEqual(out, ["hola como estás", "hola cómo estás"])
 
     # ---- recomendada estable (item 1 del fix brief) ------------------------
 
@@ -196,7 +202,8 @@ class SelectAlternativesTests(unittest.TestCase):
         # Con dos ediciones distintas de verdad (tilde y modo), (c) sigue
         # colapsando solo la puntuación.
         cands = [("Está bien.", -0.2), ("Esté bien.", -0.25), ("Está bien!", -0.3), ("Esté bien!", -0.35)]
-        out = select_alternatives("esta bien", "esta bien", cands, max_options=3, score_margin=0.3)
+        out = select_alternatives("esta bien", "esta bien", cands, max_options=3, score_margin=0.3,
+                                  lexicon={"estar"})
         self.assertEqual(out, ["Está bien.", "Esté bien."])
 
     # ---- señal positiva de ambigüedad (ola final, item C) --------------------
@@ -305,22 +312,76 @@ class SelectAlternativesTests(unittest.TestCase):
 
     def test_mood_pair_detection_handles_spelling_changes(self):
         pair = alternatives._mood_pair
-        self.assertEqual(pair("llegan", "lleguen"), ("a", "e"))
-        self.assertEqual(pair("jueguen", "juegan"), ("e", "a"))
-        self.assertEqual(pair("busca", "busque"), ("a", "e"))
-        self.assertEqual(pair("cruza", "cruce"), ("a", "e"))
-        self.assertEqual(pair("coge", "coja"), ("e", "a"))
-        self.assertEqual(pair("estan", "esten"), ("a", "e"))
-        self.assertIsNone(pair("juega", "juegan"))        # número
-        self.assertIsNone(pair("vienen", "vengan"))       # irregular: raíz distinta
-        self.assertIsNone(pair("va", "ve"))               # raíz demasiado corta
-        self.assertIsNone(pair("como", "cómo"))
+        verbs = {"llegar", "jugar", "buscar", "cruzar", "coger", "estar", "venir", "ir"}
+        self.assertEqual(pair("llegan", "lleguen", verbs), ("a", "e"))
+        self.assertEqual(pair("jueguen", "juegan", verbs), ("e", "a"))
+        self.assertEqual(pair("busca", "busque", verbs), ("a", "e"))
+        self.assertEqual(pair("cruza", "cruce", verbs), ("a", "e"))
+        self.assertEqual(pair("coge", "coja", verbs), ("e", "a"))
+        self.assertEqual(pair("estan", "esten", verbs), ("a", "e"))
+        self.assertIsNone(pair("juega", "juegan", verbs))        # número
+        self.assertIsNone(pair("vienen", "vengan", verbs))       # irregular: raíz distinta
+        self.assertIsNone(pair("va", "ve", verbs))               # raíz demasiado corta
+        self.assertIsNone(pair("como", "cómo", verbs))
         self.assertEqual(alternatives._verb_class("lleg", "llegu", {"llegar"}), "ar")
         self.assertEqual(alternatives._verb_class("jueg", "juegu", {"jugar"}), "ar")
         self.assertEqual(alternatives._verb_class("com", "com", {"comer"}), "er")
         self.assertEqual(alternatives._verb_class("sig", "sigu", {"seguir"}), "er")
         self.assertIsNone(alternatives._verb_class("com", "com", {"comar", "comer"}))
         self.assertIsNone(alternatives._verb_class("xyz", "xyz", {"llegar"}))
+
+    def test_mood_pair_requires_a_verb_in_the_lexicon_and_rejects_noun_readings(self):
+        # Cierre (N3): el detector de modo era solo ortográfico. Ahora la raíz
+        # debe ser un verbo del léxico (una sola conjugación decidible) y, con
+        # frecuencias, ninguna de las dos formas puede ser más frecuente que su
+        # infinitivo: casa (496977) ≫ casar (10364) es la lectura nominal;
+        # esta (897814) ≫ estar es el demostrativo; llega < llegar sí es verbo.
+        pair = alternatives._mood_pair
+        self.assertIsNone(pair("llegan", "lleguen", None))               # sin léxico: fail-closed
+        self.assertIsNone(pair("llegan", "lleguen", set()))
+        self.assertIsNone(pair("casa", "case", {"casa", "case"}))        # sin infinitivo
+        self.assertEqual(pair("casa", "case", {"casar"}), ("a", "e"))    # solo membresía: no hay frecuencias
+        freqs = {"casa": 496977, "case": 4770, "casar": 10364,
+                 "esta": 897814, "este": 720527, "estar": 338633, "estan": 18914, "esten": 1333,
+                 "llega": 29024, "llegue": 22142, "llegan": 8878, "lleguen": 5033, "llegar": 88969,
+                 "juegan": 3507, "jueguen": 988, "jugar": 52990,
+                 "toma": 86526, "tome": 22626, "tomar": 91152,
+                 "com": 1, "come": 20258, "coma": 9243, "comer": 72915, "comar": 5}
+        self.assertIsNone(pair("casa", "case", freqs))                   # lectura nominal
+        self.assertIsNone(pair("esta", "este", freqs))                   # demostrativo
+        self.assertEqual(pair("estan", "esten", freqs), ("a", "e"))
+        self.assertEqual(pair("llegan", "lleguen", freqs), ("a", "e"))
+        self.assertEqual(pair("llega", "llegue", freqs), ("a", "e"))
+        self.assertEqual(pair("juegan", "jueguen", freqs), ("a", "e"))
+        self.assertEqual(pair("toma", "tome", freqs), ("a", "e"))
+        self.assertIsNone(pair("come", "coma", freqs))                   # comar y comer: no decide
+        # Reproducción del re-review: "la casa es bonita" + beam "la case es bonita".
+        out = select_alternatives("la casa es bonita", "la casa es bonita",
+                                  [("la casa es bonita", -0.01), ("la case es bonita", -0.05)],
+                                  score_margin=0.3, lexicon=freqs)
+        self.assertEqual(out, ["la casa es bonita"])
+        # El filtro de modo (g) usa el mismo detector: sin verbo no hay par que filtrar ni ofrecer.
+        out = select_alternatives("espero que la casa sea bonita", "espero que la casa sea bonita",
+                                  [("espero que la casa sea bonita", -0.01), ("espero que la case sea bonita", -0.05)],
+                                  score_margin=0.3, lexicon=freqs)
+        self.assertEqual(out, ["espero que la casa sea bonita"])
+
+    def test_alternative_may_differ_from_the_recommendation_in_one_word_only(self):
+        # Cierre (N3): un contraste de modo válido no arrastra otra flexión sin
+        # señal ("muchos"); dos contrastes con señal tampoco son UNA lectura.
+        rec = "ellos juegan mucho"
+        out = select_alternatives("ellos juega mucho", "ellos juega mucho",
+                                  [(rec, -1.0), ("ellos jueguen muchos", -1.1), ("ellos jueguen mucho", -1.2)],
+                                  score_margin=0.3, lexicon={"jugar"})
+        self.assertEqual(out, [rec, "ellos jueguen mucho"])
+        out = select_alternatives("ellos juega mucho", "ellos juega mucho",
+                                  [(rec, -1.0), ("ellos jueguen muchos", -1.1)],
+                                  score_margin=0.3, lexicon={"jugar"})
+        self.assertEqual(out, [rec])
+        out = select_alternatives("el papa llego temprano", "el papa llegó temprano",
+                                  [("el papa llegó temprano", -0.08), ("el papá llegó tempranó", -0.2)],
+                                  score_margin=0.3)
+        self.assertEqual(out, ["el papa llegó temprano"])
 
     def test_paraphrase_with_tiny_gap_is_still_not_an_alternative(self):
         original = "mañana voy al parque con mis amigos"
@@ -330,7 +391,8 @@ class SelectAlternativesTests(unittest.TestCase):
         self.assertEqual(out, [original])
 
     def test_single_word_text_with_two_readings(self):
-        out = select_alternatives("juega", "juega", [("juegan", -0.05), ("jueguen", -0.2)], score_margin=0.3)
+        out = select_alternatives("juega", "juega", [("juegan", -0.05), ("jueguen", -0.2)], score_margin=0.3,
+                                  lexicon={"jugar"})
         self.assertEqual(out, ["juegan", "jueguen"])
 
     # ---- resto de reglas ----------------------------------------------------
@@ -356,13 +418,13 @@ class SelectAlternativesTests(unittest.TestCase):
                                   recommended="Está bien, nos vemos luego.")
         self.assertEqual(out, ["Está bien, nos vemos luego."])
 
-    def test_max_options_is_respected_with_five_valid_candidates(self):
+    def test_max_options_is_respected_with_several_valid_candidates(self):
         original = "el nino come pan y toma agua"
         cands = [
             ("el niño come pan y toma agua", -0.1),   # recomendada (ñ)
             ("el niño coma pan y toma agua", -0.2),   # modo en come
             ("el niño come pan y tome agua", -0.3),   # modo en toma
-            ("el niño coma pan y tome agua", -0.4),   # modo en ambas
+            ("el niño coma pan y tome agua", -0.4),   # modo en ambas: dos palabras, fuera
             ("el niño come pan y tomá agua", -0.5),   # tilde en toma
             ("el niño come pan y toma aguas", -0.6),  # número: sin señal
         ]
@@ -376,7 +438,9 @@ class SelectAlternativesTests(unittest.TestCase):
         self.assertEqual(len(out), 2)
         out = select_alternatives(original, original, cands, max_options=5, score_margin=1.0,
                                   lexicon={"comer", "tomar"})
-        self.assertEqual(len(out), 5)
+        self.assertEqual(out, ["el niño come pan y toma agua", "el niño coma pan y toma agua",
+                               "el niño come pan y tome agua", "el niño come pan y tomá agua"])
+        self.assertNotIn("el niño coma pan y tome agua", out)
 
     def test_base_is_kept_when_refined_differs_even_with_same_edits(self):
         # Refinado (T5) y base (reglas+BETO) corrigen la misma palabra con lecturas
@@ -384,7 +448,8 @@ class SelectAlternativesTests(unittest.TestCase):
         original = "ellos juega mucho"
         base     = "ellos juegan mucho"
         out = select_alternatives(original, base,
-                                  [("ellos jueguen mucho", -0.2), (base, -0.2)], score_margin=1.0)
+                                  [("ellos jueguen mucho", -0.2), (base, -0.2)], score_margin=1.0,
+                                  lexicon={"jugar"})
         self.assertEqual(out, ["ellos jueguen mucho", "ellos juegan mucho"])
 
     def test_base_identical_to_original_is_the_only_option(self):
@@ -412,7 +477,7 @@ class SelectAlternativesTests(unittest.TestCase):
         # una alternativa que solo cambia "juegan→jueguen" sobre la base pasa (e).
         out = select_alternatives("tb ellos juegan", "también ellos juegan",
                                   [("También ellos juegan.", -0.05), ("también ellos jueguen", -0.1)],
-                                  score_margin=0.3)
+                                  score_margin=0.3, lexicon={"jugar"})
         self.assertEqual(out, ["También ellos juegan.", "también ellos jueguen"])
 
     def test_thresholds_are_exposed_as_code_constants(self):
@@ -474,6 +539,25 @@ class CalibrationCheckTests(unittest.TestCase):
         case = self._case("quizás ellos llega tarde", "2", "quizas",
                           ["quizás ellos llega tarde", "Quizas ellos llega tarde"])
         self.assertEqual(case["forbidden_offered"], [("Quizas ellos llega tarde", "quizas")])
+
+    def test_recommended_with_a_forbidden_reading_is_reported_but_does_not_gate(self):
+        # Cierre (N4): la recomendada sigue la regla del beam 1 y no gatea, pero
+        # el resumen informa cuántas recomendadas contienen una lectura
+        # prohibida y cuáles (espero que… → vienen; me alegra que… → están).
+        case = self._case("espero que ellos viene mañana", "1", "viene;vienen;vendrán",
+                          ["espero que ellos vienen mañana"])
+        self.assertEqual(case["forbidden_recommended"], ["vienen"])
+        self.assertEqual(case["forbidden_offered"], [])
+        clean = self._case("es posible que ellos llega tarde", "1", "llega;llegan",
+                           ["es posible que ellos lleguen tarde"])
+        self.assertEqual(clean["forbidden_recommended"], [])
+        summary = self.calib.summarize([case, clean])
+        self.assertTrue(summary["check"]["passed"])
+        self.assertEqual(summary["forbiddenRecommended"],
+                         [{"text": "espero que ellos viene mañana", "recommended": "espero que ellos vienen mañana",
+                           "form": "vienen"}])
+        self.assertEqual(summary["check"]["reasons"], [])
+        self.assertEqual(self.calib.summarize([clean])["forbiddenRecommended"], [])
 
     def test_check_fails_on_more_than_two_clear_fp_or_any_forbidden_reading(self):
         clear = [self._case(f"clara {i}", "1", "", [f"clara {i}."]) for i in range(20)]

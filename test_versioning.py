@@ -22,7 +22,9 @@ from infrastructure.versioning import (
     LORA_TAG,
     MODEL_MANIFEST_NAME,
     REPO_DIR,
+    VersionResolutionError,
     compose_model_version,
+    is_composed_version,
     manifest_candidates,
     model_manifest_path,
     resolve_model_version,
@@ -122,15 +124,35 @@ class ComposedResolutionTests(unittest.TestCase):
 
     def test_model_manifest_without_adapter_hash_is_not_completed_with_the_training_manifest(self):
         # Sin adapter_sha256 propio no se compone (nunca se toma el del LoRA
-        # actual): aviso y se cae al modelVersion del manifiesto del LoRA.
+        # actual) y tampoco se degrada al modelVersion del manifiesto del LoRA:
+        # los pesos servidos son el fusionado anterior y esa cadena nombraría
+        # el adaptador nuevo (reproducción de Codex). Falla cerrado.
         with tempfile.TemporaryDirectory() as tmp:
             repo = _repo_with_model_manifest(tmp, {"model_sha256": BASE_HASH})
             _repo_with_manifest(tmp, "training-manifest.json",
-                                {"adapter_sha256": LORA_HASH, "modelVersion": f"{LORA_TAG}@fedcba98"})
+                                {"adapter_sha256": "b" * 64, "modelVersion": f"{LORA_TAG}@bbbbbbbb"})
+            with self.assertRaises(VersionResolutionError) as ctx:
+                resolve_model_version(env={}, repo_dir=repo)
+            self.assertIn(MODEL_MANIFEST_NAME, str(ctx.exception))
+            self.assertIn("adapter_sha256", str(ctx.exception))
+            self.assertTrue(issubclass(VersionResolutionError, ValueError))
+
+    def test_absent_model_manifest_falls_through_to_the_lora_manifest(self):
+        # "Ausente" (no existe el archivo) sí cae al manifiesto del LoRA.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = _repo_with_manifest(tmp, "training-manifest.json",
+                                       {"adapter_sha256": LORA_HASH, "modelVersion": f"{LORA_TAG}@fedcba98"})
+            self.assertFalse(model_manifest_path(repo).exists())
             with warnings.catch_warnings(record=True) as caught:
                 warnings.simplefilter("always")
                 self.assertEqual(resolve_model_version(env={}, repo_dir=repo), f"{LORA_TAG}@fedcba98")
-            self.assertTrue(any(MODEL_MANIFEST_NAME in str(w.message) for w in caught))
+            self.assertEqual(caught, [])
+
+    def test_explicit_and_env_versions_skip_an_invalid_model_manifest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = _repo_with_model_manifest(tmp, "{ roto")
+            self.assertEqual(resolve_model_version(env={"MODEL_VERSION": "env-v"}, repo_dir=repo), "env-v")
+            self.assertEqual(resolve_model_version("expl", env={}, repo_dir=repo), "expl")
 
     def test_only_lora_manifest_uses_its_model_version(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -145,23 +167,22 @@ class ComposedResolutionTests(unittest.TestCase):
             self.assertEqual(resolve_model_version(env={"MODEL_VERSION": "env-v"}, repo_dir=repo), "env-v")
             self.assertEqual(resolve_model_version("expl", env={"MODEL_VERSION": "env-v"}, repo_dir=repo), "expl")
 
-    def test_model_manifest_without_hash_warns_and_falls_back_to_lora_version(self):
+    def test_model_manifest_without_any_hash_fails_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = _repo_with_model_manifest(tmp, {"otro": 1})
             _repo_with_manifest(tmp, "training-manifest.json",
                                 {"adapter_sha256": LORA_HASH, "modelVersion": f"{LORA_TAG}@fedcba98"})
-            with warnings.catch_warnings(record=True) as caught:
-                warnings.simplefilter("always")
-                self.assertEqual(resolve_model_version(env={}, repo_dir=repo), f"{LORA_TAG}@fedcba98")
-            self.assertTrue(any(MODEL_MANIFEST_NAME in str(w.message) for w in caught))
+            with self.assertRaises(VersionResolutionError) as ctx:
+                resolve_model_version(env={}, repo_dir=repo)
+            self.assertIn(MODEL_MANIFEST_NAME, str(ctx.exception))
 
-    def test_unreadable_model_manifest_warns_and_falls_back(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = _repo_with_model_manifest(tmp, "{ roto")
-            with warnings.catch_warnings(record=True) as caught:
-                warnings.simplefilter("always")
-                self.assertEqual(resolve_model_version(env={}, repo_dir=repo), DEFAULT_MODEL_VERSION)
-            self.assertTrue(any(MODEL_MANIFEST_NAME in str(w.message) for w in caught))
+    def test_unreadable_or_non_object_model_manifest_fails_closed(self):
+        for payload in ("{ roto", "[1, 2]", "null"):
+            with tempfile.TemporaryDirectory() as tmp:
+                repo = _repo_with_model_manifest(tmp, payload)
+                with self.assertRaises(VersionResolutionError) as ctx:
+                    resolve_model_version(env={}, repo_dir=repo)
+                self.assertIn(MODEL_MANIFEST_NAME, str(ctx.exception))
 
     def test_model_manifest_path_lives_under_models_t5_correction(self):
         self.assertEqual(model_manifest_path(Path("repo")), Path("repo") / "models" / "t5_correction" / MODEL_MANIFEST_NAME)
@@ -228,6 +249,31 @@ class ServedModelVersionTests(unittest.TestCase):
     def test_explicit_version_is_served_with_or_without_t5(self):
         self.assertEqual(served_model_version(True, " v-explicita ", self.COMPOSED), "v-explicita")
         self.assertEqual(served_model_version(False, "rules-beto-only", self.COMPOSED), "rules-beto-only")
+
+    def test_t5_loaded_requires_a_valid_composed_version_unless_explicit(self):
+        # Con el T5 cargado solo se anuncia la versión compuesta válida
+        # (`<tag>@<hash8>+<tag>@<hash8>`): ni la parcial del LoRA ni el default
+        # describen los pesos fusionados que se sirven.
+        for composed in (f"{LORA_TAG}@fedcba98", DEFAULT_MODEL_VERSION, "", None, "beto@0123+lora"):
+            with self.assertRaises(ValueError) as ctx:
+                served_model_version(True, None, composed)
+            self.assertIn("MODEL_VERSION", str(ctx.exception))
+        self.assertEqual(served_model_version(True, "rules-beto-t5-manual", DEFAULT_MODEL_VERSION),
+                         "rules-beto-t5-manual")
+        self.assertTrue(is_composed_version(self.COMPOSED))
+        self.assertTrue(is_composed_version("t5-x@01234567+lora-y@fedcba98"))
+        for bad in (f"{LORA_TAG}@fedcba98", DEFAULT_MODEL_VERSION, "a@1234567+b@fedcba98", "a@01234567+b@FEDCBA98 "):
+            self.assertFalse(is_composed_version(bad), bad)
+
+    def test_invalid_model_manifest_never_reaches_the_server_as_a_partial_version(self):
+        # Reproducción de Codex: manifiesto fusionado con solo model_sha256 +
+        # training manifest nuevo. Antes: resolved = served = global-lora-v1@bbbbbbbb.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = _repo_with_model_manifest(tmp, {"model_sha256": BASE_HASH})
+            _repo_with_manifest(tmp, "training-manifest.json",
+                                {"adapter_sha256": "b" * 64, "modelVersion": f"{LORA_TAG}@bbbbbbbb"})
+            with self.assertRaises(VersionResolutionError):
+                served_model_version(True, None, resolve_model_version(env={}, repo_dir=repo))
 
     def test_refuses_to_serve_without_t5_and_without_explicit_version(self):
         # El pipeline servido sería reglas+BETO: la versión compuesta (o la del

@@ -16,7 +16,11 @@ si falla): falla si más de `MAX_CLEAR_FP` (2) de las 20 frases claras reciben
 recomendada sigue la regla del beam 1 y no se juzga aquí) contiene una
 palabra de la columna `forbidden_readings` de su fila (lecturas inválidas
 conocidas: `quizas`, `llegan` tras "es posible que", ...). El recall se
-informa, no se exige.
+informa, no se exige. Como el gate es ciego a la recomendada, el resumen
+informa aparte (sin gatear) cuántas RECOMENDADAS contienen una lectura
+prohibida y cuáles ("recomendada contiene lectura prohibida": p. ej. `espero
+que ellos viene mañana → vienen`), para que "0 lecturas prohibidas · PASA" no
+se lea como una validación del beam 1.
 
 Uso (desde la raíz del repo, con el modelo local y sin descargar nada):
     $env:HF_HOME = "models\\hf-cache"
@@ -92,10 +96,20 @@ def forbidden_offered(suggestions: list[str], forbidden: list[str]) -> list[tupl
     return found
 
 
+def forbidden_recommended(suggestions: list[str], forbidden: list[str]) -> list[str]:
+    """Formas prohibidas presentes en la RECOMENDADA (posición 0). Solo se informa: no gatea."""
+    if not suggestions:
+        return []
+    words = _tokens(suggestions[0])
+    return [form for form in forbidden if form.casefold() in words]
+
+
 def evaluate_case(case: dict, suggestions: list[str]) -> dict:
-    """Resultado de una frase: sugerencias, si ofreció ≥ 2 y las lecturas prohibidas ofrecidas."""
+    """Resultado de una frase: sugerencias, si ofreció ≥ 2, lecturas prohibidas ofrecidas y en la recomendada."""
+    forbidden = case.get("forbidden", [])
     return {**case, "suggestions": list(suggestions), "offered_ambiguous": len(suggestions) >= 2,
-            "forbidden_offered": forbidden_offered(suggestions, case.get("forbidden", []))}
+            "forbidden_offered": forbidden_offered(suggestions, forbidden),
+            "forbidden_recommended": forbidden_recommended(suggestions, forbidden)}
 
 
 def summarize(results: list[dict]) -> dict:
@@ -106,6 +120,10 @@ def summarize(results: list[dict]) -> dict:
     tn = len(results) - tp - fp - fn
     precision, recall, f1 = prf(tp, fp, fn)
     forbidden = [(r["text"], alternative, form) for r in results for alternative, form in r.get("forbidden_offered", [])]
+    # Informativo (no gatea): la recomendada sigue la regla del beam 1.
+    recommended_forbidden = [(r["text"], r["suggestions"][0], form)
+                             for r in results if r.get("suggestions")
+                             for form in r.get("forbidden_recommended", [])]
     reasons = []
     if fp > MAX_CLEAR_FP:
         reasons.append(f"FP en frases claras {fp} > {MAX_CLEAR_FP}")
@@ -123,6 +141,7 @@ def summarize(results: list[dict]) -> dict:
         "f1": round(f1, 4),
         "maxOptionsOffered": max((len(r["suggestions"]) for r in results), default=0),
         "forbiddenOffered": [{"text": t, "alternative": a, "form": f} for t, a, f in forbidden],
+        "forbiddenRecommended": [{"text": t, "recommended": r, "form": f} for t, r, f in recommended_forbidden],
         "check": {"maxClearFp": MAX_CLEAR_FP, "passed": not reasons, "reasons": reasons},
     }
 
@@ -241,6 +260,8 @@ def main():
         print(f"       → {suggestions}")
         for alternative, form in result["forbidden_offered"]:
             print(f"       !! lectura prohibida '{form}' en la alternativa '{alternative}'")
+        for form in result["forbidden_recommended"]:
+            print(f"       (i) la recomendada contiene la lectura prohibida '{form}' (no gatea: regla del beam 1)")
         if args.verbose:
             if internals.get("t5") is not None:
                 print(f"       T5:   {internals['t5']}")
@@ -260,6 +281,9 @@ def main():
     print(f"  precisión={summary['precision']:.3f}  recall={summary['recall']:.3f}  F1={summary['f1']:.3f}  "
           f"máx. opciones={summary['maxOptionsOffered']}")
     print(f"  lecturas prohibidas ofrecidas={len(summary['forbiddenOffered'])}")
+    print(f"  recomendada contiene lectura prohibida={len(summary['forbiddenRecommended'])} (informativo, no gatea)")
+    for item in summary["forbiddenRecommended"]:
+        print(f"    - '{item['text']}' → '{item['recommended']}' ({item['form']})")
     check = summary["check"]
     verdict = "PASA" if check["passed"] else "FALLA"
     print(f"  aceptación (FP claras ≤ {MAX_CLEAR_FP}/{summary['clearSentences']} y sin lecturas prohibidas): {verdict}")

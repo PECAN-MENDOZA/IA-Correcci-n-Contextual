@@ -100,6 +100,16 @@ y los informes se tracen al mismo identificador. Dos garantías:
   `MODEL_VERSION` sea explícita; el backend congela esa cadena por ejecución y
   no puede atribuir a `beto-t5-base@…+global-lora-v1@…` correcciones hechas
   solo con reglas + BETO.
+- **Un manifiesto fusionado inválido falla cerrado**: si
+  `models/t5_correction/model-manifest.json` no existe se cae a los escalones
+  siguientes, pero si existe y es ilegible, no es un objeto o le falta
+  `model_sha256`/`adapter_sha256`, `resolve_model_version` lanza
+  `VersionResolutionError` (nunca degrada a `global-lora-v1@…` ni al default,
+  que nombrarían un adaptador que quizá no es el fusionado). Con el T5
+  cargado, `served_model_version` solo acepta una versión compuesta válida
+  (`<tag>@<hash8>+<tag>@<hash8>`) o `MODEL_VERSION` explícita; en cualquier
+  otro caso el servidor no arranca (`scripts/model_manifest.py --show`
+  devuelve código 1 con el mismo error).
 
 ```
 POST /interno/corregir  {"originalText": "...", "studentId": "..."}
@@ -241,8 +251,8 @@ python evaluate.py --dataset C:\Users\Dovamul\Desktop\TESIS\documentos\datos-res
 desde `models/t5_correction/model-manifest.json`; el baseline se documenta con
 su hash real, no solo como `t5-base`.) Antes de comparar F0.5, `datasetSha256`
 debe ser idéntico en ambos informes y el bloque `pipeline.commit` debe ser el
-mismo commit limpio (sin sufijo `-dirty`); ninguno de los dos se ha generado
-todavía.
+mismo commit limpio (sin sufijo `-dirty` ni `-unknown`); ninguno de los dos
+se ha generado todavía.
 
 ## Pipeline de corrección (global, idéntico para todos los alumnos)
 
@@ -324,7 +334,12 @@ más de 50 es un error del dataset). Además, como diagnóstico: `development`
 informes no se registran en el backend), `timestamp`, `source`, `modelDir`
 (`--t5-dir`), `dataset`, `pipeline` (`thresholds` = `alternatives.THRESHOLDS`
 del código que corrió y `commit` de git, con sufijo `-dirty` si el árbol
-tenía cambios: `modelVersion` identifica pesos, no código), `global`,
+tenía cambios en archivos versionados y `-unknown` si `git status` falló:
+`modelVersion` identifica pesos, no código; en `--source http` el código que
+corrigió es el del servidor, del que solo llega `modelVersion`, así que
+`pipeline` queda en `null` y los umbrales y el commit del checkout que
+**evalúa** se escriben como `clientPipeline` con una `note` que lo aclara),
+`global`,
 `por_categoria`, `latency_ms_avg`, `casos` (cada caso con `tp/fp/fn`, la
 referencia elegida y, si el modelo lanzó una excepción, `error`), `errors`
 (conteo) y `errorList`. Un caso con error se puntúa como "sin cambios" (la
@@ -375,9 +390,14 @@ puntuación suelta; artículos, preposiciones, conjunciones, clíticos y
 duplicado adyacente (`muy muy bien → muy bien`); unión/división con las
 mismas letras (`ala → a la`, `por que → porque`). Insertar o borrar un
 negador o cuantificador (`no nunca jamás nadie nada ni ningún ninguna
-tampoco todos todas siempre`) se bloquea siempre (`no quiero ir → quiero ir`
-recomienda la base), igual que insertar o borrar palabras de contenido
-(`fui parque → fui al gran parque`, `voy a ir → iré`). La capa 5 nunca
+ninguno tampoco todos todas siempre`) se bloquea siempre (`no quiero ir →
+quiero ir` recomienda la base), igual que insertar o borrar palabras de
+contenido (`fui parque → fui al gran parque`, `voy a ir → iré`). Desde el
+cierre de la rama la protección cubre también los **reemplazos 1:1**: si
+alguno de los dos lados es una palabra protegida, la similitud no basta y
+ambos deben ser la misma palabra o su flexión de número/género (`todos →
+todas`, `ningún → ninguna` pasan; `lo quiero ir → no quiero ir`, `no quiero
+ir → yo quiero ir`, `ni → mi`, `nunca → jamás` recomiendan la base). La capa 5 nunca
 cambia la recomendada (`correctedText`, `evaluate.py` y TAS dependen de
 ella) y una segunda lectura de BETO jamás la ocupa (van aparte, como
 `variants=`, y ni siquiera sin `recommended` explícito pueden deducirse como
@@ -399,7 +419,7 @@ una segunda lectura de BETO) se ofrece únicamente si:
 | (c) otra lectura | su **resultado de edición** respecto al original —qué tramos cambian y por qué palabras, con tildes, sin la mayúscula inicial— es distinto del de las ya elegidas: `juegan` y `jueguen` son dos lecturas; `Está bien.` y `Está bien!` son la misma. Solo decide si dos candidatos son distintos; las paráfrasis las frenan (a)/(d)/(e)/(f) |
 | (d) empate     | su score está a menos de `scoreMargin = 0.3` del mejor candidato (beams reales: `juega→juegan` 0.09, `juega→jueguen` 0.14, `fue→fueron` 0.25 entran; `botar→tirar` 0.35, `voy→iré` 0.37, `luego→después` 0.40, `ayer→anoche` 0.48, `ellos→él` 0.91 quedan fuera). La base recibe el mejor score y nunca cae por (d) |
 | (e) léxica     | cada tramo que edita **respecto a la base** (lo que T5 tocó realmente, no el original que las reglas ya corrigieron) es una variante cercana (similitud sin tildes ≥ `minSpanSimilarity = 0.6`): `esta/está`, `tubo/tuvo`, `fue/fueron` sí; `luego/después`, `voy/iré` (paráfrasis) no |
-| (f) señal positiva | estar cerca del mejor beam no prueba ambigüedad. Un beam de T5 (o la base) solo es alternativa si **(i)** difiere de la **recomendada** únicamente por reemplazos 1:1 que son flexiones del mismo lexema (prefijo común sin tildes ≥ `inflectionMinPrefix = 0.6` del más corto y similitud ≥ 0.6) y al menos uno es un **contraste de modo** (indicativo ↔ subjuntivo: `juegan/jueguen`, `llegan/lleguen`, `gana/gane`, `comen/coman`, con los cambios ortográficos g/gu, c/qu, z/c, g/j) o **solo de tilde** (`callo/calló`, `papa/papá`, `como/cómo`) en el que la alternativa no vuelve a la forma del original; corregir número o persona (`juega/juegan`, `fue/fueron`, `lleguen/llegue`) lo fija el sujeto y nunca es "otra lectura", ni lo es una inserción o un borrado; o **(ii)** es una segunda lectura de BETO (empate en un homófono), que trae su propia señal |
+| (f) señal positiva | estar cerca del mejor beam no prueba ambigüedad. Un beam de T5 (o la base) solo es alternativa si **(i)** difiere de la **recomendada** en **una sola palabra** (un reemplazo 1:1; cualquier edición extra —`jueguen muchos` frente a `juegan mucho`, o dos tildes a la vez— lo descalifica), esa palabra es una flexión del mismo lexema (prefijo común sin tildes ≥ `inflectionMinPrefix = 0.6` del más corto y similitud ≥ 0.6) y el contraste es **de modo** (indicativo ↔ subjuntivo: `juegan/jueguen`, `llegan/lleguen`, `gana/gane`, `comen/coman`, con los cambios ortográficos g/gu, c/qu, z/c, g/j) o **solo de tilde** (`callo/calló`, `papa/papá`, `como/cómo`), y la alternativa no vuelve a la forma del original. Un contraste de modo exige además que la raíz sea un **verbo del léxico `es_50k`** con una sola conjugación decidible (`jug-ar`, `lleg-ar`, `com-er`) y que ninguna de las dos formas sea más frecuente que su infinitivo (`casa` 496977 ≫ `casar` 10364 y `esta` ≫ `estar` son lecturas nominal/demostrativa: `casa/case` y `esta/este` no son pares de modo; `llega` < `llegar`, `juegan` < `jugar` sí); corregir número o persona (`juega/juegan`, `fue/fueron`, `lleguen/llegue`) lo fija el sujeto y nunca es "otra lectura", ni lo es una inserción o un borrado; o **(ii)** es una segunda lectura de BETO (empate en un homófono), que trae su propia señal |
 | (g) filtro de modo | si la recomendada contiene un disparador de subjuntivo obligatorio (`ojalá`, `es posible que`, `es necesario que`, `espero que`, `quiero que`, `me alegra que`, `me gusta que`, `para que`, `antes de que`, `dudo que`, `no creo que`), la variante en **indicativo** del verbo que gobierna no se ofrece (solo cabe el subjuntivo, como recomendada o como alternativa). La conjugación (-ar: subjuntivo en -e; -er/-ir: en -a) se decide buscando el infinitivo en el léxico `es_50k`; si no decide (p. ej. `est-`: `estar` y `Ester`), el par no se ofrece (fail-closed). No cambia la recomendada (beam 1) |
 
 La base va justo detrás de la recomendada (el tope no la elimina) y el resto
@@ -445,7 +465,12 @@ precisión/recall de "ofrece ≥ 2 opciones" frente a la etiqueta. **`--check`
 es la prueba de aceptación** (código de salida 1 si falla): más de
 `MAX_CLEAR_FP = 2` de las 20 frases claras con ≥ 2 opciones, o cualquier
 alternativa (posiciones 1..n; la recomendada sigue la regla del beam 1) con
-una lectura prohibida. El recall se informa, no se exige. `--verbose --out`
+una lectura prohibida. El recall se informa, no se exige. Como el gate es
+ciego a la recomendada, el resumen añade la línea informativa (no gatea)
+`recomendada contiene lectura prohibida=N` con la lista de frases, para que
+"0 lecturas prohibidas · PASA" no se lea como una validación del beam 1 (ver
+abajo: tras `espero que` y `me alegra que` este modelo recomienda el
+indicativo). `--verbose --out`
 guarda la base, TODOS los beams crudos con el veredicto de las dos guardas
 del beam recomendado, los beams que llegan a la capa 5 y las variantes de
 BETO, para barrer umbrales y guardas offline con el selector puro:
@@ -457,20 +482,31 @@ $env:HF_HOME = "models\hf-cache"
 .venv\Scripts\python.exe test_lora_guards.py                                        # guardas del beam recomendado
 ```
 
-Última calibración (modelo fusionado, umbrales de arriba, ola final):
-39 frases, 19 ambiguas esperadas, 5 ofrecidas: **TP 4 · FP 1 · FN 15 ·
-TN 19 → precisión 0.80, recall 0.21, F1 0.33**, máximo 2 opciones, 0 lecturas
-prohibidas; `--check` **PASA** (FP 1/20 ≤ 2). Aciertos: `papa/papá llegó`,
-`termino/terminó` (empate BETO), `callo/calló` y `juegan/jueguen` (`a mí me
-gusta que…`). El único FP es `hola como estás` + `hola cómo estás` (contraste
-de tilde sobre una palabra que el beam 2 corrige; la etiqueta solo admite la
-lectura interrogativa, que es precisamente la alternativa). Los 15 FN son
-lecturas que ni T5 (no generadas, o fuera del margen: `lleguen`, `coman`,
-`taza`, `votar`, `ganamos` 0.45) ni BETO (sin empate) producen, más las que la
-señal (f) ya no admite por diseño: `quizás… llega/llegan` (número, no modo),
-`llego tarde a clase` (la segunda opción solo difería en `la`) y `no creo
-que… vienen` (el filtro de modo trata `no creo que` como subjuntivo
-obligatorio; la etiqueta lo considera ambiguo). Antes de la ola final (sin la
+Última calibración (modelo fusionado, umbrales de arriba, cierre de la
+rama; idéntica frase a frase a la de la ola final): 39 frases, 19 ambiguas
+esperadas, 5 ofrecidas: **TP 4 · FP 1 · FN 15 · TN 19 → precisión 0.80,
+recall 0.21, F1 0.33**, máximo 2 opciones, 0 lecturas prohibidas ofrecidas;
+`--check` **PASA** (FP 1/20 ≤ 2). Línea informativa: `recomendada contiene
+lectura prohibida=8` (no gatea): `espero que ellos viene mañana → vienen` y
+`me alegra que ustedes esta aqui → están` (el beam 1 recomienda el indicativo
+tras el disparador y `vengan`/`estén` no son alternativa: raíz irregular
+`veng-` ≠ `vien-`; `est-` no decide entre `estar` y `Ester`), más seis frases
+en las que el beam 1 dejó la forma del original sin corregir (`los niño
+juega`, `ellos fue`, `hola como`, `quizás… llega`, `tal vez… gana`). Aciertos:
+`papa/papá llegó`, `termino/terminó` (empate BETO), `callo/calló` y
+`juegan/jueguen` (`a mí me gusta que…`). El único FP es `hola como estás` +
+`hola cómo estás` (contraste de tilde sobre una palabra que el beam 2
+corrige; la etiqueta solo admite la lectura interrogativa, que es
+precisamente la alternativa). Los 15 FN son lecturas que ni T5 (no
+generadas, o fuera del margen: `lleguen`, `coman`, `taza`, `votar`, `ganamos`
+0.45) ni BETO (sin empate) producen, más las que la señal (f) ya no admite
+por diseño: `quizás… llega/llegan` (número, no modo) y `llego tarde a clase`
+(la segunda opción solo difería en `la`). `no creo que… vienen` es un FN
+conocido con otra causa: la recomendada **es** `vienen` (beam 1, −0.009) y
+`vengan` (−0.625) queda fuera por el margen (d) (0.616 > 0.3), no por el
+filtro de modo (g), que solo retira indicativos candidatos y nunca toca la
+recomendada; la etiqueta (ambigua) y el disparador `no creo que` se
+mantienen. Antes de la ola final (sin la
 señal positiva ni el filtro de modo) la misma calibración daba TP 6 · FP 8 ·
 FN 13 · TN 12 (precisión 0.43, recall 0.32) con lecturas inválidas ofrecidas
 (`llegan`/`llegue` tras `es posible que`, `gana` tras `ojalá`, `está/esta`

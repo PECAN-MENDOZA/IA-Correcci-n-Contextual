@@ -25,6 +25,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from evaluate import (
     DEVELOPMENT_DATASETS,
@@ -42,10 +43,12 @@ from evaluate import (
     evaluation_model_version,
     exit_status,
     extract_edits,
+    git_commit,
     is_development,
     load_dataset,
     pipeline_info,
     prf,
+    report_pipeline_blocks,
     require_local_t5_dir,
     resolve_model_version,
     score_sentence,
@@ -746,9 +749,51 @@ class BuildReportTests(unittest.TestCase):
         self.assertEqual(report["pipeline"]["commit"], "abc1234")
         self.assertEqual(panel_errors(report), [])
         info = pipeline_info()
-        self.assertTrue(info["commit"] is None or re.fullmatch(r"[0-9a-f]{7,40}(-dirty)?", info["commit"]),
+        self.assertTrue(info["commit"] is None or re.fullmatch(r"[0-9a-f]{7,40}(-dirty|-unknown)?", info["commit"]),
                         info["commit"])
         self.assertIsNone(self._report()["pipeline"])
+        self.assertNotIn("clientPipeline", self._report(pipeline=pipeline_info(commit="abc1234")))
+
+    def test_http_reports_label_thresholds_and_commit_as_client_metadata(self):
+        # En --source http el servidor solo devuelve modelVersion: los umbrales
+        # y el commit son los del checkout que EVALÚA, no los del servidor. Se
+        # escriben como `clientPipeline` con nota y `pipeline` queda en null.
+        from infrastructure.nlp.alternatives import THRESHOLDS
+        info = pipeline_info(commit="abc1234")
+        self.assertEqual(report_pipeline_blocks("pipeline", info), (info, None))
+        pipeline, client = report_pipeline_blocks("http", info)
+        self.assertIsNone(pipeline)
+        self.assertEqual(client["thresholds"], THRESHOLDS)
+        self.assertEqual(client["commit"], "abc1234")
+        self.assertIn("cliente", client["note"])
+        report = self._report(source="HTTP http://servidor", pipeline=pipeline, client_pipeline=client)
+        self.assertIsNone(report["pipeline"])
+        self.assertEqual(report["clientPipeline"], client)
+        self.assertEqual(panel_errors(report), [])
+        json.dumps(report, ensure_ascii=False)
+
+    def test_git_commit_marks_dirty_trees_and_failed_status_checks(self):
+        # `git status` que falla no puede reportarse como árbol limpio: sufijo
+        # `-unknown`; con cambios en archivos versionados, `-dirty`.
+        head = "8bfca498417b0a23582b66577b65ae098d7cf724"
+
+        def fake_run_factory(status_code, status_out):
+            def fake_run(cmd, **kwargs):
+                if cmd[:2] == ["git", "rev-parse"]:
+                    return subprocess.CompletedProcess(cmd, 0, stdout=head + "\n", stderr="")
+                if cmd[:2] == ["git", "status"]:
+                    return subprocess.CompletedProcess(cmd, status_code, stdout=status_out, stderr="")
+                raise AssertionError(cmd)
+            return fake_run
+
+        with patch("evaluate.subprocess.run", fake_run_factory(0, "")):
+            self.assertEqual(git_commit(), head)
+        with patch("evaluate.subprocess.run", fake_run_factory(0, " M evaluate.py\n")):
+            self.assertEqual(git_commit(), head + "-dirty")
+        with patch("evaluate.subprocess.run", fake_run_factory(128, "")):
+            self.assertEqual(git_commit(), head + "-unknown")
+        with patch("evaluate.subprocess.run", fake_run_factory(1, " M evaluate.py\n")):
+            self.assertEqual(git_commit(), head + "-unknown")
 
 
 class SetupModelGuardTests(unittest.TestCase):

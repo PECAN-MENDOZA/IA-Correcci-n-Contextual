@@ -61,12 +61,41 @@ ALLOWED_FUNCTION_WORDS = frozenset(
     "el la los las un una unos unas a de en con por para y e o u que se me te le lo al del".split()
 )
 
-# Negadores y cuantificadores: insertarlos o borrarlos invierte o cambia el
-# alcance del enunciado ("no quiero ir" → "quiero ir"); prohibidos siempre,
-# incluso dentro de un bloque que por lo demás sería permitido.
+# Negadores y cuantificadores: insertarlos, borrarlos o sustituirlos invierte
+# o cambia el alcance del enunciado ("no quiero ir" → "quiero ir", "lo quiero
+# ir" → "no quiero ir"); prohibidos siempre, incluso dentro de un bloque que
+# por lo demás sería permitido y aunque la sustitución 1:1 sea "cercana"
+# (lo/no, yo/no, ni/mi tienen similitud 0.5).
 FORBIDDEN_INDEL_WORDS = frozenset(
-    "no nunca jamas nadie nada ni ningun ninguna tampoco todos todas siempre".split()
+    "no nunca jamas nadie nada ni ningun ninguna ninguno tampoco todos todas siempre".split()
 )
+
+# Únicas equivalencias admitidas dentro del conjunto protegido: flexiones de
+# número/género de la MISMA palabra (todos/todas, ningún/ninguna/ninguno).
+# nunca/jamás, nada/nadie o no/ni son palabras distintas y no se intercambian.
+_PROTECTED_FAMILY = {
+    "todos": "todos", "todas": "todos",
+    "ningun": "ningun", "ninguna": "ningun", "ninguno": "ningun",
+}
+
+
+def _protected_family(word: str):
+    """Familia de una palabra protegida (clave léxica) o None si no está protegida."""
+    if word not in FORBIDDEN_INDEL_WORDS:
+        return None
+    return _PROTECTED_FAMILY.get(word, word)
+
+
+def _protected_swap_is_allowed(word_a: str, word_b: str) -> bool:
+    """
+    Un reemplazo 1:1 que toca una palabra protegida solo se acepta si ambos
+    lados son la misma palabra protegida (o su flexión de número/género):
+    todos→todas sí; lo→no, no→yo, ni→mi, nunca→jamás no.
+    """
+    family_a, family_b = _protected_family(word_a), _protected_family(word_b)
+    if family_a is None and family_b is None:
+        return True
+    return family_a is not None and family_a == family_b
 
 
 def _is_adjacent_duplicate_deletion(base_words: list, i1: int, i2: int) -> bool:
@@ -87,8 +116,10 @@ def _is_allowed_block(base_words: list, i1: int, i2: int, cand_words: list, j1: 
     """
     removed = [w for w in base_words[i1:i2] if w]
     added = [w for w in cand_words[j1:j2] if w]
-    # Un negador/cuantificador nunca se inserta ni se borra, ni dentro de un bloque permitido.
-    if [w for w in removed if w in FORBIDDEN_INDEL_WORDS] != [w for w in added if w in FORBIDDEN_INDEL_WORDS]:
+    # Un negador/cuantificador nunca se inserta ni se borra, ni dentro de un
+    # bloque permitido (se comparan por familia: todos/todas cuentan igual).
+    if [_protected_family(w) for w in removed if w in FORBIDDEN_INDEL_WORDS] != \
+            [_protected_family(w) for w in added if w in FORBIDDEN_INDEL_WORDS]:
         return False
     if not removed and not added:                      # solo puntuación
         return True
@@ -111,7 +142,12 @@ def is_lexically_plausible_refinement(base_text: str, candidate: str, min_simila
       0.3 se bloquean las sustituciones léxicas del T5 (pasto→maíz 0.22,
       pasto→carne 0.20, verde→rojo 0.22, voy→iré 0.0) y se conservan las
       flexiones, incluso irregulares (es→son 0.40, hizo→hicieron 0.50,
-      viene→vengan 0.55, fue→fueron 0.67; esta→está 1.0).
+      viene→vengan 0.55, fue→fueron 0.67; esta→está 1.0). Si alguno de los
+      dos lados es un negador o cuantificador (`FORBIDDEN_INDEL_WORDS`), la
+      similitud no basta: ambos deben ser la misma palabra protegida o su
+      flexión de número/género (todos→todas, ningún→ninguna); "lo quiero ir"
+      → "no quiero ir", "no quiero ir" → "yo quiero ir", "ni" → "mi" o
+      "nunca" → "jamás" se bloquean aunque sean "cercanos".
     - Inserción, borrado y bloques 1:n / n:1 / n:m: cerrados salvo lista
       blanca explícita: puntuación suelta; artículos, preposiciones,
       conjunciones, clíticos y al/del (`ALLOWED_FUNCTION_WORDS`: "llego tarde
@@ -131,6 +167,8 @@ def is_lexically_plausible_refinement(base_text: str, candidate: str, min_simila
             continue
         if tag == "replace" and i2 - i1 == j2 - j1:
             for word_a, word_b in zip(base_words[i1:i2], cand_words[j1:j2]):
+                if not _protected_swap_is_allowed(word_a, word_b):
+                    return False
                 if difflib.SequenceMatcher(None, word_a, word_b, autojunk=False).ratio() < min_similarity:
                     return False
             continue
