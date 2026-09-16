@@ -43,9 +43,21 @@ gramatica|habian muchos niños en el parque|había muchos niños en el parque
 gramatica|los perros que vi fue muy grandes|los perros que vi fueron muy grandes
 gramatica|a mi me gusta los dulces|a mí me gustan los dulces
 gramatica|ella tiene dos gato y un perro|ella tiene dos gatos y un perro
+# ── amalgama: palabras pegadas que se separan en la capa 0 ──
+amalgama|aver si vienes a la fiesta|a ver si vienes a la fiesta
+amalgama|haber si me ayudas con la tarea|a ver si me ayudas con la tarea
+amalgama|asique me fui temprano a casa|así que me fui temprano a casa
+amalgama|sino vienes me voy solo|si no vienes me voy solo
+# ── colectivo: sustantivo colectivo singular con verbo plural ──
+colectivo|la gente son muy amables|la gente es muy amable
+colectivo|mi familia vienen el domingo|mi familia viene el domingo
+colectivo|el equipo ganaron el partido|el equipo ganó el partido
 # ── correcto: sin errores (control anti-sobrecorrección) ──
 correcto|la casa es grande y bonita|la casa es grande y bonita
 correcto|mañana vamos a jugar al parque|mañana vamos a jugar al parque
 correcto|mi perro come su comida todos los días|mi perro come su comida todos los días
 correcto|ella tuvo un buen examen ayer|ella tuvo un buen examen ayer
 correcto|el tubo de agua se rompió anoche|el tubo de agua se rompió anoche
+correcto|no vine porque estaba enfermo|no vine porque estaba enfermo
+correcto|no quiero este sino aquel|no quiero este sino aquel
+correcto|la mayoría llegaron tarde a clase|la mayoría llegaron tarde a clase

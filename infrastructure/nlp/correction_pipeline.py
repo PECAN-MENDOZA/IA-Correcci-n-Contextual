@@ -9,6 +9,7 @@ from symspellpy import SymSpell, Verbosity
 
 from infrastructure.nlp.phonetic_engine import PhoneticEngine, match_case, to_phonetic, DICT_PATH
 from infrastructure.nlp.context_judge import ContextJudge
+from infrastructure.nlp.amalgams import expand_amalgams
 from infrastructure.nlp.grammar_rules import correct_grammar
 from infrastructure.nlp.alternatives import THRESHOLDS, select_alternatives
 from infrastructure.ml.t5_model import T5CorrectionModel, T5SpanishTokenizer
@@ -239,8 +240,13 @@ class CorrectionPipeline:
         """
         user_vocab = user_vocab or {}
 
+        # --- CAPA 0: Amalgamas (cambian la tokenización, van antes de todo) ---
+        # "aver si vienes" -> "a ver si vienes": SymSpell no puede arreglarlo
+        # porque la corrección son dos palabras (elegiría "ver").
+        text_expanded = expand_amalgams(text)
+
         # --- CAPAS 1-2: Corrección Ortográfica y Fonética ---
-        words = text.split()
+        words = text_expanded.split()
         pre_words    = []
         punctuations = []
 

@@ -7,6 +7,7 @@ reentrena). Cubre errores frecuentes del español expresables sin parsing:
   2. Concordancia de gustar/encantar con objeto plural:
                         "me gusta los dulces"     -> "me gustan los dulces"
   3. Número tras cuantificador: "dos gato"         -> "dos gatos"
+  9. Colectivo singular:  "la gente son amables"   -> "la gente es amable"
 
 Cada regla es conservadora: solo dispara cuando el patrón es inequívoco, para
 no introducir regresiones (verificado con evaluate.py sobre el set gold).
@@ -137,6 +138,59 @@ _S_NOUN_STOP = {
     "sintesis", "dosis", "iris", "bilis",
 }
 
+# 9. Colectivos singulares + verbo plural inmediato: "la gente son amables" ->
+#    "la gente es amable". La norma exige el singular con estos sustantivos;
+#    se excluyen a propósito los cuantificadores partitivos ("la mayoría",
+#    "parte de", "un montón de"), donde la concordancia ad sensum ("la mayoría
+#    llegaron") está aceptada y corregirla sería un falso positivo.
+_COLLECTIVE_NOUNS = {"gente", "familia", "grupo", "equipo", "publico", "gentio"}
+_PLURAL_TO_SG_VERB = {
+    "son": "es", "estan": "está", "eran": "era", "estaban": "estaba",
+    "fueron": "fue", "seran": "será", "estaran": "estará",
+    "tienen": "tiene", "tenian": "tenía", "tuvieron": "tuvo",
+    "van": "va", "iban": "iba", "fueran": "fuera",
+    "vienen": "viene", "venian": "venía", "vinieron": "vino",
+    "hacen": "hace", "hacian": "hacía", "hicieron": "hizo",
+    "dicen": "dice", "decian": "decía", "dijeron": "dijo",
+    "quieren": "quiere", "querian": "quería", "quisieron": "quiso",
+    "pueden": "puede", "podian": "podía", "pudieron": "pudo",
+    "deben": "debe", "debian": "debía", "saben": "sabe", "sabian": "sabía",
+    "llegan": "llega", "llegaron": "llegó", "salen": "sale", "salieron": "salió",
+    "ganan": "gana", "ganaron": "ganó", "juegan": "juega", "jugaron": "jugó",
+    "comen": "come", "comieron": "comió", "viven": "vive", "vivian": "vivía",
+    "hablan": "habla", "hablaban": "hablaba", "piensan": "piensa",
+    "parecen": "parece", "parecian": "parecía", "necesitan": "necesita",
+    "trabajan": "trabaja", "esperan": "espera", "entran": "entra",
+    "salieran": "saliera", "gritan": "grita", "aplauden": "aplaude",
+}
+# Intensificadores que pueden separar el verbo del predicado.
+_INTENSIFIERS = {"muy", "tan", "bastante", "demasiado", "poco", "algo", "super"}
+# Lista blanca de adjetivos que se singularizan detrás del verbo corregido. Es
+# una lista cerrada a propósito: singularizar cualquier palabra en -s rompería
+# sintagmas nominales ("la gente son mis vecinos").
+_COLLECTIVE_ADJECTIVES = {
+    "amables", "buenos", "buenas", "malos", "malas", "felices", "tranquilos",
+    "tranquilas", "ruidosos", "ruidosas", "simpaticos", "simpaticas",
+    "groseros", "groseras", "educados", "educadas", "generosos", "generosas",
+    "grandes", "pequenos", "pequenas", "jovenes", "viejos", "viejas",
+    "pobres", "ricos", "ricas", "cansados", "cansadas", "contentos",
+    "contentas", "listos", "listas", "altos", "altas", "bajos", "bajas",
+    "alegres", "serios", "serias", "curiosos", "curiosas", "puntuales",
+    "responsables", "unidos", "unidas", "fuertes", "nerviosos", "nerviosas",
+}
+
+
+def _singularize(word: str) -> str:
+    """Singularización morfológica básica (inversa de `_pluralize`)."""
+    w = word
+    if re.search(r"ces$", w, re.IGNORECASE):
+        return w[:-3] + "z"                       # felices -> feliz
+    if re.search(r"[aeiouáéíóú]s$", w, re.IGNORECASE):
+        return w[:-1]                             # amables -> amable
+    if re.search(r"es$", w, re.IGNORECASE):
+        return w[:-2]                             # papeles -> papel
+    return w
+
 
 def correct_grammar(text: str) -> str:
     """Aplica las reglas gramaticales sobre `text` y devuelve la frase corregida."""
@@ -168,6 +222,17 @@ def correct_grammar(text: str) -> str:
             nxt_norm = _norm(nxt)
             if nxt_norm and nxt_norm not in _QUANT_STOP and not re.search(r"[sx]$", nxt_norm):
                 tokens[i + 1] = _reword(nxt, _pluralize(_clean(nxt)))
+
+        # 9. Colectivo singular + verbo plural inmediato -> verbo (y predicado
+        #    de la lista blanca) en singular: "la gente son muy amables".
+        if low in _COLLECTIVE_NOUNS and _norm(next_content(i)) in _PLURAL_TO_SG_VERB:
+            verb_tok = tokens[i + 1]
+            tokens[i + 1] = _reword(verb_tok, _PLURAL_TO_SG_VERB[_norm(verb_tok)])
+            j = i + 2
+            if j < len(tokens) and _norm(tokens[j]) in _INTENSIFIERS:
+                j += 1
+            if j < len(tokens) and _norm(tokens[j]) in _COLLECTIVE_ADJECTIVES:
+                tokens[j] = _reword(tokens[j], _singularize(_clean(tokens[j])))
 
         prev = _norm(tokens[i - 1]) if i > 0 else ""
         nxt  = _norm(next_content(i))
