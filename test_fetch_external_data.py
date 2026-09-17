@@ -18,15 +18,17 @@ from scripts.fetch_external_data import (
     EDIT_RATIO_THRESHOLD,
     HOLDOUT_FRACTION,
     SPLIT_SEED,
+    _assert_partition_covers_pairs,
     align_essay,
     build_manifest,
     build_pairs_by_essay,
     download_file,
+    ensure_holdout_writable,
     format_row,
     parse_cowsl2h_csv,
     sha256_bytes,
     sha256_file,
-    split_by_essay,
+    split_by_author,
     split_sentences,
     usable_essays,
     verify_raw_files,
@@ -77,6 +79,58 @@ class SplitSentencesTests(unittest.TestCase):
     def test_strips_whitespace_and_ignores_blank_fragments(self):
         text = "Uno.   Dos.  "
         self.assertEqual(split_sentences(text), ["Uno.", "Dos."])
+
+
+class SplitSentencesAbbreviationTests(unittest.TestCase):
+    """Regresión: abreviatura seguida de palabra con mayúscula (nombre propio
+    tras un título) no debe cortar, a diferencia del caso ya cubierto de
+    abreviatura seguida de minúscula."""
+
+    def test_does_not_split_after_titulo_sr_before_capitalized_name(self):
+        text = "Fui a ver al Sr. García por la tarde."
+        self.assertEqual(split_sentences(text), [text])
+
+    def test_does_not_split_after_titulo_dra_before_capitalized_name(self):
+        text = "Me atendió la Dra. Pérez ese día."
+        self.assertEqual(split_sentences(text), [text])
+
+    def test_splits_correctly_around_an_abbreviation_in_the_middle(self):
+        text = "Fui con la Dra. Pérez al hospital. Ella me revisó."
+        self.assertEqual(
+            split_sentences(text),
+            ["Fui con la Dra. Pérez al hospital.", "Ella me revisó."],
+        )
+
+    def test_does_not_split_inside_two_word_abbreviation_ee_uu(self):
+        text = "Vivo en EE. UU. desde niño."
+        self.assertEqual(split_sentences(text), [text])
+
+    def test_does_not_split_after_etc_before_capitalized_word(self):
+        text = "Compró frutas, verduras, etc. Luego se fue a casa."
+        self.assertEqual(split_sentences(text), [text])
+
+    def test_does_not_split_after_num_abbreviation(self):
+        text = "Vive en el núm. Quinto piso del edificio."
+        self.assertEqual(split_sentences(text), [text])
+
+
+class SplitSentencesQuoteTests(unittest.TestCase):
+    """No se corta dentro de comillas de diálogo; cortar justo después de la
+    comilla de cierre sí está permitido."""
+
+    def test_does_not_split_inside_double_quotes_but_splits_right_after(self):
+        text = 'Dijo: "Hola. ¿Cómo estás?" Después se fue.'
+        self.assertEqual(
+            split_sentences(text),
+            ['Dijo: "Hola. ¿Cómo estás?"', "Después se fue."],
+        )
+
+    def test_does_not_split_inside_angled_quotes_but_splits_right_after(self):
+        text = "El profesor dijo: «Estudien bien. No se distraigan.» Luego se fue."
+        self.assertEqual(
+            split_sentences(text),
+            ["El profesor dijo: «Estudien bien. No se distraigan.»", "Luego se fue."],
+        )
 
 
 class WordEditRatioTests(unittest.TestCase):
@@ -187,15 +241,32 @@ class CsvParsingTests(unittest.TestCase):
 
     def test_usable_essays_skips_empty_corrected1(self):
         rows = parse_cowsl2h_csv(self.SAMPLE_CSV)
-        essays = usable_essays(rows)
-        ids = [e["id"] for e in essays]
+        essays = usable_essays(rows, filename="sample.csv")
+        ids = [e["autor_id"] for e in essays]
         self.assertEqual(ids, ["100", "102"])
 
     def test_usable_essays_keeps_corrected2(self):
         rows = parse_cowsl2h_csv(self.SAMPLE_CSV)
-        essays = usable_essays(rows)
-        essay_102 = next(e for e in essays if e["id"] == "102")
+        essays = usable_essays(rows, filename="sample.csv")
+        essay_102 = next(e for e in essays if e["autor_id"] == "102")
         self.assertEqual(essay_102["corrected2"], "Otro ensayo con dato revisado.")
+
+    def test_usable_essays_builds_unique_essay_key_from_filename_and_row_index(self):
+        rows = parse_cowsl2h_csv(self.SAMPLE_CSV)
+        essays = usable_essays(rows, filename="sample.csv")
+        # fila 0 -> id 100 (fila 1 del CSV, "101" se descarta por corrected1 vacío)
+        self.assertEqual(essays[0]["essay_key"], "sample.csv#0")
+        # fila 2 del CSV original (índice 2 en `rows`, id 102)
+        self.assertEqual(essays[1]["essay_key"], "sample.csv#2")
+
+    def test_usable_essays_keeps_prompt_and_quarter_metadata(self):
+        rows = [{"id": "5", "prompt": "beautiful", "quarter": "F20",
+                 "essay": "Texto.", "corrected1": "Texto corregido.", "corrected2": ""}]
+        essays = usable_essays(rows, filename="beautiful.F20.csv")
+        self.assertEqual(essays[0]["prompt"], "beautiful")
+        self.assertEqual(essays[0]["quarter"], "F20")
+        self.assertEqual(essays[0]["autor_id"], "5")
+        self.assertEqual(essays[0]["essay_key"], "beautiful.F20.csv#0")
 
     def test_usable_essays_collapses_embedded_newlines(self):
         # Regresión: varios ensayos reales de COWS-L2H traen '\n' dentro del
@@ -208,48 +279,166 @@ class CsvParsingTests(unittest.TestCase):
             "corrected1": "Primera parte.\r\nSegunda parte del mismo ensayo.",
             "corrected2": "",
         }]
-        essays = usable_essays(rows)
+        essays = usable_essays(rows, filename="f.csv")
         self.assertNotIn("\n", essays[0]["essay"])
         self.assertNotIn("\r", essays[0]["corrected1"])
         self.assertEqual(essays[0]["essay"], "Primera parte. Segunda parte del mismo ensayo.")
+
+    def test_usable_essays_gives_distinct_keys_for_repeated_id_same_file(self):
+        # El mismo estudiante (id) puede aparecer dos veces en el mismo
+        # archivo; cada fila es un ensayo distinto y debe conservar su propia
+        # clave, ninguna se debe sobrescribir.
+        rows = [
+            {"id": "77", "essay": "Hoy voy al parque. Mi hermano juega futbol.",
+             "corrected1": "Hoy voy al parque. Mi hermano juega fútbol.", "corrected2": ""},
+            {"id": "77", "essay": "El perro corrio rapido. Ayer fue lindo.",
+             "corrected1": "El perro corrió rápido. Ayer fue lindo.", "corrected2": ""},
+        ]
+        essays = usable_essays(rows, filename="mismo.csv")
+        keys = [e["essay_key"] for e in essays]
+        self.assertEqual(len(set(keys)), 2)
+        self.assertTrue(all(e["autor_id"] == "77" for e in essays))
 
 
 class BuildPairsByEssayTests(unittest.TestCase):
     def test_aggregates_counts_across_essays(self):
         essays = [
-            {"id": "1", "essay": "Hoy voy al parque. Mi hermano juega futbol.",
+            {"essay_key": "a.csv#0", "autor_id": "1", "prompt": "", "quarter": "",
+             "essay": "Hoy voy al parque. Mi hermano juega futbol.",
              "corrected1": "Hoy voy al parque. Mi hermano juega fútbol.", "corrected2": ""},
-            {"id": "2", "essay": "Una oracion. Otra oracion.",
+            {"essay_key": "a.csv#1", "autor_id": "2", "prompt": "", "quarter": "",
+             "essay": "Una oracion. Otra oracion.",
              "corrected1": "Una oracion distinta y mucho mas larga que la original entera.",
              "corrected2": ""},
         ]
-        pairs_by_essay, stats = build_pairs_by_essay(essays)
+        pairs_by_essay, essay_authors, stats = build_pairs_by_essay(essays)
         self.assertEqual(stats["essays_con_corrected1"], 2)
         self.assertEqual(stats["essays_alineados"], 1)
         self.assertEqual(stats["pares_identidad"], 1)
         self.assertEqual(stats["pares_alineados"], 1)
-        self.assertIn("1", pairs_by_essay)
-        self.assertNotIn("2", pairs_by_essay)
+        self.assertIn("a.csv#0", pairs_by_essay)
+        self.assertNotIn("a.csv#1", pairs_by_essay)
+        self.assertEqual(essay_authors["a.csv#0"], "1")
+
+    def test_essays_with_same_autor_id_both_survive_with_distinct_keys(self):
+        # El bug corregido: antes se agrupaba por `id` (autor) y el segundo
+        # ensayo sobrescribía al primero. Ahora ambos deben sobrevivir.
+        essays = [
+            {"essay_key": "fileA.csv#0", "autor_id": "500", "prompt": "p1", "quarter": "q1",
+             "essay": "Hoy voy al parque. Mi hermano juega futbol.",
+             "corrected1": "Hoy voy al parque. Mi hermano juega fútbol.", "corrected2": ""},
+            {"essay_key": "fileB.csv#3", "autor_id": "500", "prompt": "p2", "quarter": "q2",
+             "essay": "El perro corrio rapido. Ayer fue lindo el dia.",
+             "corrected1": "El perro corrió rápido. Ayer fue lindo el día.", "corrected2": ""},
+        ]
+        pairs_by_essay, essay_authors, stats = build_pairs_by_essay(essays)
+        self.assertIn("fileA.csv#0", pairs_by_essay)
+        self.assertIn("fileB.csv#3", pairs_by_essay)
+        self.assertEqual(essay_authors["fileA.csv#0"], "500")
+        self.assertEqual(essay_authors["fileB.csv#3"], "500")
 
 
-class SplitByEssayTests(unittest.TestCase):
+class SplitByAuthorTests(unittest.TestCase):
     def test_is_deterministic_for_a_fixed_seed(self):
         ids = [str(i) for i in range(100)]
-        dev1, holdout1 = split_by_essay(ids, seed=SPLIT_SEED, holdout_fraction=HOLDOUT_FRACTION)
-        dev2, holdout2 = split_by_essay(ids, seed=SPLIT_SEED, holdout_fraction=HOLDOUT_FRACTION)
+        dev1, holdout1 = split_by_author(ids, seed=SPLIT_SEED, holdout_fraction=HOLDOUT_FRACTION)
+        dev2, holdout2 = split_by_author(ids, seed=SPLIT_SEED, holdout_fraction=HOLDOUT_FRACTION)
         self.assertEqual(dev1, dev2)
         self.assertEqual(holdout1, holdout2)
 
     def test_partition_is_exhaustive_and_disjoint(self):
         ids = [str(i) for i in range(57)]
-        dev, holdout = split_by_essay(ids, seed=SPLIT_SEED, holdout_fraction=HOLDOUT_FRACTION)
+        dev, holdout = split_by_author(ids, seed=SPLIT_SEED, holdout_fraction=HOLDOUT_FRACTION)
         self.assertEqual(dev | holdout, set(ids))
         self.assertEqual(dev & holdout, set())
 
     def test_holdout_is_about_30_percent(self):
         ids = [str(i) for i in range(1000)]
-        _, holdout = split_by_essay(ids, seed=SPLIT_SEED, holdout_fraction=HOLDOUT_FRACTION)
+        _, holdout = split_by_author(ids, seed=SPLIT_SEED, holdout_fraction=HOLDOUT_FRACTION)
         self.assertEqual(len(holdout), 300)
+
+
+class EssaysFromSameAuthorLandOnSameSideTests(unittest.TestCase):
+    """Prueba de extremo a extremo del hallazgo crítico: dos ensayos con el
+    mismo `id` (autor), venidos de archivos distintos (y del mismo archivo),
+    deben sobrevivir ambos y terminar en el MISMO lado de la partición."""
+
+    def test_same_id_essays_from_different_files_survive_and_share_partition_side(self):
+        essays = [
+            {"essay_key": "fileA.csv#0", "autor_id": "500", "prompt": "p1", "quarter": "q1",
+             "essay": "Hoy voy al parque. Mi hermano juega futbol.",
+             "corrected1": "Hoy voy al parque. Mi hermano juega fútbol.", "corrected2": ""},
+            {"essay_key": "fileB.csv#3", "autor_id": "500", "prompt": "p2", "quarter": "q2",
+             "essay": "El perro corrio rapido. Ayer fue lindo el dia.",
+             "corrected1": "El perro corrió rápido. Ayer fue lindo el día.", "corrected2": ""},
+        ]
+        pairs_by_essay, essay_authors, _ = build_pairs_by_essay(essays)
+        dev, holdout = split_by_author(essay_authors.values(), seed=SPLIT_SEED,
+                                        holdout_fraction=HOLDOUT_FRACTION)
+        side = {k: ("dev" if a in dev else "holdout") for k, a in essay_authors.items()}
+        self.assertEqual(side["fileA.csv#0"], side["fileB.csv#3"])
+
+    def test_same_id_essays_from_same_file_survive_and_share_partition_side(self):
+        rows = [
+            {"id": "77", "essay": "Hoy voy al parque. Mi hermano juega futbol.",
+             "corrected1": "Hoy voy al parque. Mi hermano juega fútbol.", "corrected2": ""},
+            {"id": "77", "essay": "El perro corrio rapido. Ayer fue lindo el dia.",
+             "corrected1": "El perro corrió rápido. Ayer fue lindo el día.", "corrected2": ""},
+        ]
+        essays = usable_essays(rows, filename="mismo.csv")
+        pairs_by_essay, essay_authors, _ = build_pairs_by_essay(essays)
+        self.assertEqual(len(pairs_by_essay), 2)  # ambos sobreviven
+        dev, holdout = split_by_author(essay_authors.values(), seed=SPLIT_SEED,
+                                        holdout_fraction=HOLDOUT_FRACTION)
+        sides = {("dev" if a in dev else "holdout") for a in essay_authors.values()}
+        self.assertEqual(len(sides), 1)  # ambos ensayos, un único lado
+
+
+class AssertPartitionCoversPairsTests(unittest.TestCase):
+    def test_passes_when_partition_is_exhaustive_disjoint_and_rows_add_up(self):
+        pairs_by_essay = {"a#0": [("x", "y", None)], "b#0": [("x", "y", None), ("m", "n", None)]}
+        _assert_partition_covers_pairs(pairs_by_essay, {"a#0"}, {"b#0"}, dev_rows=1, holdout_rows=2,
+                                        pares_alineados=3)  # no debe lanzar
+
+    def test_raises_when_an_essay_is_missing_from_both_sides(self):
+        pairs_by_essay = {"a#0": [("x", "y", None)], "b#0": [("x", "y", None)]}
+        with self.assertRaises(AssertionError):
+            _assert_partition_covers_pairs(pairs_by_essay, {"a#0"}, set(), dev_rows=1, holdout_rows=0,
+                                            pares_alineados=2)
+
+    def test_raises_when_an_essay_is_in_both_sides(self):
+        pairs_by_essay = {"a#0": [("x", "y", None)]}
+        with self.assertRaises(AssertionError):
+            _assert_partition_covers_pairs(pairs_by_essay, {"a#0"}, {"a#0"}, dev_rows=1, holdout_rows=1,
+                                            pares_alineados=1)
+
+    def test_raises_when_row_counts_do_not_match_pares_alineados(self):
+        pairs_by_essay = {"a#0": [("x", "y", None)]}
+        with self.assertRaises(AssertionError):
+            _assert_partition_covers_pairs(pairs_by_essay, {"a#0"}, set(), dev_rows=1, holdout_rows=0,
+                                            pares_alineados=5)
+
+
+class EnsureHoldoutWritableTests(unittest.TestCase):
+    def test_raises_when_holdout_exists_and_not_forced(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "holdout-cowsl2h.csv"
+            path.write_text("contenido previo\n", encoding="utf-8")
+            with self.assertRaises(FileExistsError):
+                ensure_holdout_writable(path, force=False)
+            # el guard no debe tocar el archivo
+            self.assertEqual(path.read_text(encoding="utf-8"), "contenido previo\n")
+
+    def test_allows_overwrite_when_forced(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "holdout-cowsl2h.csv"
+            path.write_text("contenido previo\n", encoding="utf-8")
+            ensure_holdout_writable(path, force=True)  # no debe lanzar
+
+    def test_allows_when_holdout_does_not_exist_yet(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "holdout-cowsl2h.csv"
+            ensure_holdout_writable(path, force=False)  # no debe lanzar
 
 
 class WritePairsCsvTests(unittest.TestCase):
@@ -264,6 +453,14 @@ class WritePairsCsvTests(unittest.TestCase):
             format_row("sin_anotar", "a", "b", "c"),
             "sin_anotar|a|b|c",
         )
+
+    def test_header_line_documents_optional_second_reference(self):
+        pairs_by_essay = {"1": [("el nino corrio", "el niño corrió", None)]}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "pairs-dev.csv"
+            write_pairs_csv(path, pairs_by_essay, ["1"])
+            first_line = path.read_text(encoding="utf-8").splitlines()[0]
+            self.assertEqual(first_line, "categoria|entrada|esperado_1|esperado_2")
 
     def test_write_pairs_csv_is_readable_by_evaluate_load_dataset(self):
         pairs_by_essay = {
@@ -361,8 +558,10 @@ class BuildManifestTests(unittest.TestCase):
             source_commit="ebb11724f258f3ed377a27ed34f08897a8e5639c",
             file_hashes={"a.csv": "x" * 64},
             stats=stats,
-            dev_essay_ids={"1", "2"},
-            holdout_essay_ids={"3"},
+            dev_author_ids={"1", "2"},
+            holdout_author_ids={"3"},
+            dev_essay_keys={"a.csv#0", "a.csv#1"},
+            holdout_essay_keys={"b.csv#0"},
             dev_rows=30,
             holdout_rows=10,
             seed=42,
@@ -372,10 +571,15 @@ class BuildManifestTests(unittest.TestCase):
         )
         self.assertEqual(manifest["commit"], "ebb11724f258f3ed377a27ed34f08897a8e5639c")
         self.assertEqual(manifest["particion"]["semilla"], 42)
+        self.assertEqual(manifest["particion"]["dev_autores"], 2)
+        self.assertEqual(manifest["particion"]["holdout_autores"], 1)
         self.assertEqual(manifest["particion"]["dev_essays"], 2)
         self.assertEqual(manifest["particion"]["holdout_essays"], 1)
         self.assertEqual(manifest["particion"]["dev_filas"], 30)
         self.assertEqual(manifest["particion"]["holdout_filas"], 10)
+        self.assertAlmostEqual(manifest["particion"]["holdout_pct_autores"], 100 / 3, places=2)
+        self.assertAlmostEqual(manifest["particion"]["holdout_pct_essays"], 100 / 3, places=2)
+        self.assertEqual(manifest["particion"]["holdout_pct_filas"], 25.0)
         self.assertEqual(manifest["holdout"]["sha256"], "y" * 64)
         self.assertEqual(manifest["pares_identidad_no_incluidos"], 6)
         # serializable sin sorpresas

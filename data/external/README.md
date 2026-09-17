@@ -16,17 +16,23 @@ propios, generadas y verificadas por `scripts/fetch_external_data.py`.
   universitarios de español como lengua extranjera, con corrección holística de
   un profesor (columna `corrected1`, y `corrected2` como segunda referencia en
   algunos ensayos).
-- **Tamaño real tras procesar** (ver `data/external/cowsl2h-manifest.json`):
+- **Tamaño real tras procesar** (revisión 1, tras corregir la clave de ensayo,
+  la partición por autor y el separador de oraciones; ver
+  `data/external/cowsl2h-manifest.json`):
   - 2 881 ensayos con `corrected1` no vacío (de 5 382 filas totales en los 28 CSV).
   - 565 ensayos con `corrected2` también presente.
-  - 2 089 ensayos alinean 1:1 oración a oración entre `essay` y `corrected1`.
-  - 23 165 pares de oraciones sobreviven el filtro (cambiadas, no idénticas, no
-    reescrituras); 5 334 se descartan por reescritura (> 40 % de palabras
-    distintas), 13 777 son pares de identidad (oración sin cambios: se cuentan
+  - 2 106 ensayos alinean 1:1 oración a oración entre `essay` y `corrected1`.
+  - 23 355 pares de oraciones sobreviven el filtro (cambiadas, no idénticas, no
+    reescrituras); 5 393 se descartan por reescritura (> 40 % de palabras
+    distintas), 13 772 son pares de identidad (oración sin cambios: se cuentan
     pero no se escriben en ningún CSV, ver "Decisión: pares de identidad" más
     abajo) y 0 se descartan por contener el delimitador `|`.
-  - Partición por ensayo (semilla 42, 30 % holdout): 586 ensayos / 6 449 filas
-    en `pairs-dev.csv`; 251 ensayos / 2 820 filas en el holdout bloqueado.
+  - Partición por **autor** (semilla 42, 30 % de los autores -> holdout, ver
+    "Decisión: partición por autor, no por ensayo" abajo): 583 autores / 1 495
+    ensayos / 16 691 filas en `pairs-dev.csv`; 250 autores / 602 ensayos /
+    6 664 filas en el holdout bloqueado (28.53 % de las filas, 28.71 % de los
+    ensayos — el 30 % exacto es sobre autores, no sobre filas ni ensayos, ver
+    la nota del manifiesto).
 - **`categoria = sin_anotar` en todas las filas.** El brief de la Task 0 pedía
   que `categoria` la asignara "el anotador de la Task 1", que todavía no
   existe (es circular con este mismo paso). Se resuelve emitiendo
@@ -42,6 +48,21 @@ propios, generadas y verificadas por `scripts/fetch_external_data.py`.
   (igual que `evaluate.load_dataset`). Las oraciones que contienen `|` en el
   propio texto se descartan enteras en vez de reescribirlas, para no alterar
   el corpus (en la práctica, 0 casos en los 28 CSV del commit fijado).
+- **Decisión: partición por autor, no por ensayo (corrección de un bug real,
+  revisión 1).** En COWS-L2H la columna `id` identifica al **estudiante**, no
+  al ensayo: el corpus es longitudinal (el mismo estudiante escribe en varios
+  prompts/quarters, hasta 28 archivos). De las 5 382 filas crudas solo hay
+  1 935 `id` distintos; entre las 2 881 filas con `corrected1`, solo 969 `id`
+  distintos. La implementación original usaba `id` como clave de ensayo, así
+  que los ensayos posteriores del mismo estudiante sobrescribían a los
+  anteriores y ~60 % de los ensayos alineados se perdían en silencio (2 089
+  ensayos alineados, pero solo 837 sobrevivían a la partición). La corrección:
+  cada ensayo se identifica con la clave única `f"{archivo}#{fila}"` (nunca
+  con `id`), y `id` se conserva como `autor_id` para particionar. El plan
+  original pedía partición "por ensayo... para que no haya fugas de estilo";
+  particionar por **autor** es la lectura más estricta que de verdad cumple
+  esa intención, porque dejar varios ensayos del mismo autor repartidos entre
+  dev y holdout sería precisamente la fuga de estilo que se busca evitar.
 - **Descarga y verificación:** `scripts/fetch_external_data.py --cowsl2h`
   descarga los 28 CSV desde `raw.githubusercontent.com` en el commit fijado,
   verifica cada uno contra un SHA-256 hardcodeado en el script
@@ -49,25 +70,52 @@ propios, generadas y verificadas por `scripts/fetch_external_data.py`.
   idempotente: si el archivo local ya coincide con el hash esperado, no
   vuelve a descargar. `--verify-only` revisa los archivos ya descargados sin
   red.
+- **Guarda de congelamiento del holdout (revisión 1).** Si el holdout ya
+  existe en disco, el script se niega a sobrescribirlo (ni el CSV ni
+  `HOLDOUT-SHA256.txt`) salvo que se pase `--force-holdout` explícitamente.
+  Que el archivo exista puede significar que ya se usó para evaluar (Task 6);
+  antes de esta revisión, `--cowsl2h` lo regeneraba en cada ejecución sin
+  avisar.
+- **Separador de oraciones consciente de abreviaturas y comillas (revisión
+  1).** El separador original solo miraba `.`/`!`/`?` seguido de mayúscula, y
+  fallaba con abreviaturas seguidas de nombre propio (`Sr. García` se cortaba
+  en dos) y con diálogo entre comillas (`"Hola. ¿Cómo estás?"` se cortaba
+  dentro de la cita). Ahora hay una lista de abreviaturas frecuentes (Sr.,
+  Sra., Srta., Dr., Dra., Ud., Uds., etc., p. ej., EE. UU., núm., pág., Av.)
+  tras las que no se corta, y no se corta dentro de comillas (`"…"` / `«…»`;
+  cortar justo después de la comilla de cierre sí está permitido). Medido
+  sobre el corpus real: 164 de los 2 881 ensayos usables cambian con el
+  fix (61 cambian su estado de alineación —2 089 → 2 106 ensayos alineados—
+  y 103 siguen alineados pero cambian los pares que producen); el total de
+  pares sube de 23 165 a 23 355.
 
 ### `pairs-dev.csv` vs. holdout bloqueado
 
-- `data/external/cowsl2h/pairs-dev.csv` (70 % de los ensayos): dentro del
+- `data/external/cowsl2h/pairs-dev.csv` (autores de dev, ~70 %): dentro del
   repo, pero en una carpeta gitignored (`data/external/cowsl2h/`); se
   regenera con el script, no se versiona.
-- El holdout (30 % de los ensayos) se escribe **fuera del repositorio**, en
+- El holdout (autores de holdout, ~30 %) se escribe **fuera del
+  repositorio**, en
   `C:\Users\Dovamul\Desktop\TESIS\documentos\datos-reservados\holdout-cowsl2h.csv`,
   con su hash en `HOLDOUT-SHA256.txt` (SHA-256, nombre de archivo y número de
   filas). El script nunca vuelve a leer ni imprimir el contenido del holdout
   después de escribirlo, salvo para recalcular el hash. **Nadie abre el
   holdout hasta la Task 6.**
-- La partición es por **ensayo** (id de columna `id`), no por oración, para
-  que no haya fuga de estilo de un mismo autor entre dev y holdout. Semilla
-  fija 42 (`scripts/fetch_external_data.split_by_essay`).
+- La partición es por **autor** (`autor_id`, columna `id` del CSV =
+  estudiante), no por ensayo ni por oración, para que no haya fuga de estilo
+  de un mismo autor entre dev y holdout (ver "Decisión: partición por autor,
+  no por ensayo" arriba). Semilla fija 42
+  (`scripts/fetch_external_data.split_by_author`). Cada ensayo tiene su
+  propia clave única `f"{archivo}#{fila}"` (`essay_key`); `id` nunca se usa
+  como clave de ensayo.
+- Si el holdout ya existe en disco, `--cowsl2h` se niega a sobrescribirlo
+  salvo que se pase `--force-holdout` (ver "Guarda de congelamiento del
+  holdout" arriba).
 - `data/external/cowsl2h-manifest.json` (sí versionado) trae la procedencia
   completa: commit, hash de cada CSV, conteos de cada paso del filtro,
-  tamaños de la partición y el hash del holdout, para que la Task 1 y la
-  Task 6 puedan auditar el dataset sin volver a tocar el holdout.
+  autores/ensayos/filas de cada lado de la partición (con su porcentaje real)
+  y el hash del holdout, para que la Task 1 y la Task 6 puedan auditar el
+  dataset sin volver a tocar el holdout.
 
 ## 2. Perfil de errores disléxicos (DysList)
 

@@ -95,20 +95,26 @@
     "fuente": "Sección 5.3.1 'Vowels', Tabla 12"
   },
   "motivacion_fonetica_consonantes": {
-    "descripcion": "Sustituciones entre consonantes, como proporción de las sustituciones de consonantes.",
+    "descripcion": "Sustituciones entre consonantes: cuántos de los 3 rasgos fonéticos (sonoridad/voicing, modo de articulación/manner, punto de articulación/place) comparten el fonema erróneo y el objetivo.",
     "consonantes_simples_pct": 46.37,
     "clusters_consonanticos_pct": 0.60,
     "comparten_las_tres_dimensiones_pct": 48.43,
-    "comparten_un_rasgo_pct": 19.52,
     "comparten_dos_rasgos_pct": 26.15,
+    "comparten_un_rasgo_pct": 19.52,
     "no_comparten_ningun_rasgo_pct": 5.52,
-    "afectan_voicing_manner_place_a_la_vez_pct": 50.0,
-    "afectan_manner_y_place_pct": 16.99,
-    "afectan_voicing_y_place_pct": 9.77,
-    "solo_place_pct": 9.96,
-    "solo_voicing_pct": 9.57,
+    "desglose_dos_rasgos": {
+      "descripcion": "Del párrafo en prosa que sigue (no de una tabla): el artículo desglosa el 'dos rasgos' en manner+place y voicing+place; no menciona explícitamente voicing+manner (probablemente marginal). La suma (16.99+9.77=26.76) no coincide exactamente con comparten_dos_rasgos_pct (26.15) por redondeo del propio artículo.",
+      "manner_y_place_pct": 16.99,
+      "voicing_y_place_pct": 9.77
+    },
+    "desglose_un_rasgo": {
+      "descripcion": "solo_place_pct + solo_voicing_pct = 19.53, coincide (redondeo) con comparten_un_rasgo_pct (19.52); el artículo no reporta un 'solo manner' distinto de cero en este desglose.",
+      "solo_place_pct": 9.96,
+      "solo_voicing_pct": 9.57
+    },
+    "nota_correccion": "Revisión 1 (Task 0): la ficha anterior mezclaba 50.0 ('half', aproximación en prosa) en vez de 48.43 (cifra exacta dada antes, en el mismo artículo, para la misma categoría) y omitía la categoría 'no comparten ningún rasgo' (5.52%); con eso el bloque sumaba 96.29% en vez de sumar ~100% (48.43+26.15+19.52+5.52=99.62, la pequeña diferencia con 100 es redondeo del propio artículo, igual que en la tabla de vocales). Ningún valor se inventó: 48.43/26.15/19.52/5.52 y el desglose 16.99/9.77/9.96/9.57 están todos tomados literalmente del mismo párrafo del PDF (ver 'fuente').",
     "verificado": true,
-    "fuente": "Sección 5.3.2 (consonantes), Tabla 13, y texto posterior a la tabla"
+    "fuente": "Sección 5.3.2 (consonantes), texto posterior a la Tabla 13: primer párrafo ('share their three/one/two phonetic features', 48.43/19.52/26.15/5.52) y segundo párrafo ('half of the consonant substitutions... affect simultaneously voicing, manner and place', desglose 16.99/9.77/9.96/9.57)"
   },
   "comparacion_espanol_ingles": {
     "descripcion": "Comparación con el corpus en inglés de Pedler (2007), errores DISTINTOS (no total con repetición).",

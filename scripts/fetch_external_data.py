@@ -7,24 +7,39 @@ Qué hace `--cowsl2h`:
      `data/external/cowsl2h/raw/` y verifica cada uno contra `FILE_HASHES_SHA256`
      (vacío hasta la primera descarga real; luego se fija en este archivo).
   2. Toma `essay` (entrada) y `corrected1` (esperado_1, y `corrected2` como
-     esperado_2 cuando también exista), separa cada texto en oraciones con una
-     regex simple (sin NLTK/spaCy) y alinea 1:1 solo cuando ambos coinciden en
-     número de oraciones.
+     esperado_2 cuando también exista), separa cada texto en oraciones con un
+     separador consciente de abreviaturas y comillas (sin NLTK/spaCy) y alinea
+     1:1 solo cuando ambos coinciden en número de oraciones.
   3. Descarta pares con distancia de edición por palabra > 40 % (reescrituras,
      no correcciones puntuales) y separa los pares de identidad (oración sin
      cambios): se cuentan pero no se entrenan con ellos.
-  4. Reparte los ensayos 70/30 (semilla 42) en `pairs-dev.csv` (dentro del
-     repo, en la carpeta gitignored) y un holdout bloqueado fuera del repo,
-     con su SHA-256 registrado en `HOLDOUT-SHA256.txt`.
+  4. Reparte los **autores** (columna `id` = estudiante, no ensayo) 70/30
+     (semilla 42) en `pairs-dev.csv` (dentro del repo, en la carpeta
+     gitignored) y un holdout bloqueado fuera del repo, con su SHA-256
+     registrado en `HOLDOUT-SHA256.txt`. El holdout ya escrito se protege: si
+     el archivo existe, hace falta `--force-holdout` para sobrescribirlo.
   5. Escribe `data/external/cowsl2h-manifest.json` (sí versionado) con la
      procedencia y los conteos, para que la Task 1 y la Task 6 puedan auditar
      el dataset sin volver a tocar el holdout.
+
+**Por qué la partición es por AUTOR y no por ensayo** (corrección de un bug
+real encontrado en revisión): en el CSV de COWS-L2H la columna `id` identifica
+al ESTUDIANTE, no al ensayo — el corpus es longitudinal, el mismo estudiante
+escribe en varios prompts/quarters (28 archivos). De los 5 382 filas crudas
+solo hay 1 935 `id` distintos. El plan original pedía partición "por ensayo...
+para que no haya fugas de estilo"; la lectura que de verdad cumple esa
+intención es particionar por autor, porque dejar ensayos del mismo autor en
+dev y en holdout sería la fuga de estilo que el plan quiere evitar. Cada
+ensayo se identifica de forma única con la clave `archivo#fila` (nunca se
+usa `id` como clave de ensayo); `id` se conserva como `autor_id` para la
+partición, junto con `prompt` y `quarter` como metadatos.
 
 `--verify-only` solo revisa los CSV ya descargados contra los hashes fijados,
 sin red ni reprocesar nada.
 
 Uso:
     python scripts/fetch_external_data.py --cowsl2h
+    python scripts/fetch_external_data.py --cowsl2h --force-holdout
     python scripts/fetch_external_data.py --verify-only
 """
 import argparse
@@ -98,32 +113,111 @@ MANIFEST_PATH = REPO_DIR / "data" / "external" / "cowsl2h-manifest.json"
 # ───────────────────────────── parámetros ─────────────────────────────
 
 EDIT_RATIO_THRESHOLD = 0.4     # por encima: reescritura, se descarta
-HOLDOUT_FRACTION = 0.3         # 30 % de los ENSAYOS (no de las oraciones)
+HOLDOUT_FRACTION = 0.3         # 30 % de los AUTORES (no de ensayos ni oraciones)
 SPLIT_SEED = 42
 CATEGORIA_SIN_ANOTAR = "sin_anotar"   # la asigna el anotador de la Task 1
-
-_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+(?=[A-ZÁÉÍÓÚÑÜ¿¡])")
 
 _PAIRS_HEADER_COMMENT = (
     "# Pares generados desde COWS-L2H (https://github.com/ucdaviscl/cowsl2h,\n"
     f"# commit {COWSL2H_COMMIT}, licencia Apache-2.0) por scripts/fetch_external_data.py.\n"
     "# categoria='sin_anotar': la asigna el anotador de la Task 1 (ver README).\n"
-    "# Formato: categoria|entrada|esperado_1[|esperado_2], igual que evaluate.load_dataset.\n"
+    "# Formato: categoria|entrada|esperado_1|esperado_2 (esperado_2 opcional),\n"
+    "# igual que evaluate.load_dataset.\n"
 )
 
 
 # ───────────────────────────── oraciones ─────────────────────────────
 
+# Abreviaturas frecuentes en español (en minúsculas, sin el punto) tras las
+# que NO se corta aunque siga una mayúscula. "EE. UU." y "p. ej." son
+# abreviaturas de dos palabras: basta con incluir cada palabra suelta
+# ("ee", "uu", "p", "ej") porque la palabra que sigue a "p." ya es minúscula
+# (no dispara el corte por esa razón) y "EE."/"UU." quedan cubiertas cada una
+# por su propia entrada.
+_ABREVIATURAS = {
+    "sr", "sra", "srta", "dr", "dra", "ud", "uds",
+    "etc", "p", "ej", "ee", "uu", "núm", "pág", "av",
+}
+
+_WORD_CHARS_RE = re.compile(r"[A-Za-zÁÉÍÓÚÑÜáéíóúñü]+$")
+_BOUNDARY_LOOKAHEAD_RE = re.compile(r"\s+(?=[A-ZÁÉÍÓÚÑÜ¿¡])")
+
+# Comillas que protegen su contenido de un corte de oración: comilla de cierre
+# esperada para cada comilla de apertura.
+_CLOSING_QUOTE_FOR_OPENING = {'"': '"', "«": "»"}
+
+
+def _preceding_word(text: str, punct_index: int) -> str:
+    """Última palabra (en minúsculas) inmediatamente antes de
+    `text[punct_index]`, para decidir si es una abreviatura conocida."""
+    m = _WORD_CHARS_RE.search(text[:punct_index])
+    return m.group(0).lower() if m else ""
+
+
 def split_sentences(text: str) -> list:
-    """Divide `text` en oraciones con una regex simple: corta tras '.', '!' o
-    '?' cuando sigue un espacio y una mayúscula (o '¿'/'¡' de apertura). No usa
-    NLTK/spaCy; es una heurística suficiente para alinear ensayo/corrección
-    oración a oración (no para lingüística fina)."""
+    """Divide `text` en oraciones: corta tras una racha de '.', '!' o '?'
+    cuando sigue un espacio y una mayúscula (o '¿'/'¡' de apertura), salvo que
+    la palabra justo antes de la puntuación sea una abreviatura conocida
+    (`_ABREVIATURAS`) o que el corte caiga dentro de una comilla abierta
+    (`"..."` o `«...»`: no se corta dentro, cortar justo después de la
+    comilla de cierre sí está permitido). No usa NLTK/spaCy; es una
+    heurística suficiente para alinear ensayo/corrección oración a oración
+    (no para lingüística fina)."""
     text = (text or "").strip()
     if not text:
         return []
-    parts = _SENTENCE_SPLIT_RE.split(text)
-    return [p.strip() for p in parts if p.strip()]
+
+    quote_stack = []   # comillas abiertas, en orden ('"' o '«')
+    sentences = []
+    start = 0
+    i = 0
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if ch == '"':
+            if quote_stack and quote_stack[-1] == '"':
+                quote_stack.pop()
+            else:
+                quote_stack.append('"')
+            i += 1
+            continue
+        if ch == "«":
+            quote_stack.append("«")
+            i += 1
+            continue
+        if ch == "»":
+            if quote_stack and quote_stack[-1] == "«":
+                quote_stack.pop()
+            i += 1
+            continue
+        if ch in ".!?":
+            j = i
+            while j < n and text[j] in ".!?":
+                j += 1
+            k = j
+            closes_open_quote = (
+                k < n and quote_stack and text[k] in _CLOSING_QUOTE_FOR_OPENING.values()
+                and _CLOSING_QUOTE_FOR_OPENING.get(quote_stack[-1]) == text[k]
+            )
+            if closes_open_quote:
+                k += 1
+            m = _BOUNDARY_LOOKAHEAD_RE.match(text, k)
+            still_inside_quote = quote_stack[:-1] if closes_open_quote else quote_stack
+            if m and not still_inside_quote and _preceding_word(text, i) not in _ABREVIATURAS:
+                if closes_open_quote:
+                    quote_stack.pop()
+                sentences.append(text[start:k].strip())
+                start = m.end()
+                i = start
+                continue
+            i = j
+            continue
+        i += 1
+
+    tail = text[start:].strip()
+    if tail:
+        sentences.append(tail)
+    return [s for s in sentences if s]
 
 
 def word_edit_ratio(entrada: str, esperado: str) -> float:
@@ -217,19 +311,35 @@ def _normalize_whitespace(text: str) -> str:
     return re.sub(r"\s+", " ", text or "").strip()
 
 
-def usable_essays(rows: list) -> list:
+def usable_essays(rows: list, filename: str = "") -> list:
     """Filtra filas con `essay` y `corrected1` no vacíos (muchas filas del
     corpus tienen `corrected1` vacío: el profesor no las corrigió; se
     descartan aquí, antes de alinear). Normaliza espacios en blanco (ver
-    `_normalize_whitespace`)."""
+    `_normalize_whitespace`).
+
+    Cada fila resultante trae:
+      - `essay_key`: clave ÚNICA de ensayo, `f"{filename}#{indice_de_fila}"`.
+        NUNCA se usa la columna `id` como clave de ensayo: `id` es el
+        estudiante, no el ensayo, y el mismo estudiante aparece en varias
+        filas (mismo archivo o archivos distintos, ver docstring del módulo).
+      - `autor_id`: la columna `id` cruda (estudiante), para particionar
+        dev/holdout por autor.
+      - `prompt`, `quarter`: metadatos del ensayo (columnas del CSV), no se
+        usan para particionar, solo quedan disponibles para análisis futuro.
+    """
     out = []
-    for row in rows:
+    for row_index, row in enumerate(rows):
         essay = _normalize_whitespace(row.get("essay"))
         c1 = _normalize_whitespace(row.get("corrected1"))
         if not essay or not c1:
             continue
+        essay_key = f"{filename}#{row_index}"
+        autor_id = (row.get("id") or "").strip() or f"_sin_id_{essay_key}"
         out.append({
-            "id": (row.get("id") or "").strip(),
+            "essay_key": essay_key,
+            "autor_id": autor_id,
+            "prompt": (row.get("prompt") or "").strip(),
+            "quarter": (row.get("quarter") or "").strip(),
             "essay": essay,
             "corrected1": c1,
             "corrected2": _normalize_whitespace(row.get("corrected2")),
@@ -238,10 +348,12 @@ def usable_essays(rows: list) -> list:
 
 
 def build_pairs_by_essay(essays: list) -> tuple:
-    """Alinea todos los `essays` y agrupa las filas resultantes por id de
-    ensayo. Devuelve `(pares_por_id, stats)`; `stats` trae los conteos
-    globales que va a llevar el manifiesto."""
+    """Alinea todos los `essays` y agrupa las filas resultantes por
+    `essay_key` (nunca por `autor_id`: un autor puede tener varios ensayos).
+    Devuelve `(pares_por_essay_key, essay_key_a_autor_id, stats)`; `stats`
+    trae los conteos globales que va a llevar el manifiesto."""
     pairs_by_essay = {}
+    essay_authors = {}
     stats = {
         "essays_con_corrected1": len(essays),
         "essays_con_corrected2": sum(1 for e in essays if e["corrected2"]),
@@ -259,23 +371,56 @@ def build_pairs_by_essay(essays: list) -> tuple:
         if r["aligned"]:
             stats["essays_alineados"] += 1
         if r["pairs"]:
-            pairs_by_essay[essay["id"]] = r["pairs"]
+            pairs_by_essay[essay["essay_key"]] = r["pairs"]
+            essay_authors[essay["essay_key"]] = essay["autor_id"]
             stats["pares_alineados"] += len(r["pairs"])
-    return pairs_by_essay, stats
+    return pairs_by_essay, essay_authors, stats
 
 
 # ───────────────────────────── partición ─────────────────────────────
 
-def split_by_essay(essay_ids, seed: int = SPLIT_SEED, holdout_fraction: float = HOLDOUT_FRACTION) -> tuple:
-    """Partición determinista por id de ENSAYO (no por oración, para que no
-    haya fuga de estilo entre dev y holdout). Semilla 42, 30 % -> holdout."""
-    ids = sorted({str(i) for i in essay_ids})
+def split_by_author(author_ids, seed: int = SPLIT_SEED, holdout_fraction: float = HOLDOUT_FRACTION) -> tuple:
+    """Partición determinista por AUTOR (`autor_id`, columna `id` =
+    estudiante), no por ensayo ni por oración. COWS-L2H es longitudinal (un
+    mismo estudiante escribe en varios prompts/quarters); particionar por
+    ensayo dejaría textos del mismo autor en dev y en holdout, que es
+    justamente la fuga de estilo que se quiere evitar. Semilla 42, 30 % de
+    los autores -> holdout."""
+    ids = sorted({str(a) for a in author_ids})
     rng = random.Random(seed)
     rng.shuffle(ids)
     n_holdout = round(len(ids) * holdout_fraction)
     holdout = set(ids[:n_holdout])
     dev = set(ids[n_holdout:])
     return dev, holdout
+
+
+def _assert_partition_covers_pairs(pairs_by_essay: dict, dev_essay_keys, holdout_essay_keys,
+                                    dev_rows: int, holdout_rows: int, pares_alineados: int) -> None:
+    """Invariante que el manifiesto promete: todo ensayo con pares queda en
+    exactamente un lado de la partición, y las filas escritas en dev+holdout
+    suman exactamente `pares_alineados`. Falla ruidosamente si no (mejor un
+    `AssertionError` claro aquí que un dataset silenciosamente incompleto)."""
+    dev_essay_keys = set(dev_essay_keys)
+    holdout_essay_keys = set(holdout_essay_keys)
+    todos = set(pairs_by_essay.keys())
+    if dev_essay_keys & holdout_essay_keys:
+        raise AssertionError(
+            "Invariante rota: hay ensayos en dev Y en holdout a la vez: "
+            f"{sorted(dev_essay_keys & holdout_essay_keys)[:5]}..."
+        )
+    if (dev_essay_keys | holdout_essay_keys) != todos:
+        faltan = todos - (dev_essay_keys | holdout_essay_keys)
+        sobran = (dev_essay_keys | holdout_essay_keys) - todos
+        raise AssertionError(
+            "Invariante rota: la partición no cubre exactamente los ensayos con "
+            f"pares (faltan {len(faltan)}, sobran {len(sobran)})."
+        )
+    if dev_rows + holdout_rows != pares_alineados:
+        raise AssertionError(
+            f"Invariante rota: dev_filas ({dev_rows}) + holdout_filas ({holdout_rows}) "
+            f"= {dev_rows + holdout_rows} != pares_alineados ({pares_alineados})."
+        )
 
 
 # ───────────────────────────── salida ─────────────────────────────
@@ -291,8 +436,8 @@ def format_row(categoria: str, entrada: str, esperado1: str, esperado2: str = No
 
 def write_pairs_csv(path, pairs_by_essay: dict, essay_ids, header_comment: str = "") -> int:
     """Escribe las filas de los ensayos en `essay_ids` (subconjunto de las
-    claves de `pairs_by_essay`) al archivo `path`, en el formato de
-    `evaluate.py`. Devuelve el número de filas escritas."""
+    claves de `pairs_by_essay`, es decir `essay_key`s) al archivo `path`, en
+    el formato de `evaluate.py`. Devuelve el número de filas escritas."""
     path = Path(path)
     rows = []
     for essay_id in sorted(str(i) for i in essay_ids):
@@ -302,7 +447,7 @@ def write_pairs_csv(path, pairs_by_essay: dict, essay_ids, header_comment: str =
     with open(path, "w", encoding="utf-8", newline="\n") as fh:
         if header_comment:
             fh.write(header_comment)
-        fh.write("categoria|entrada|esperado\n")
+        fh.write("categoria|entrada|esperado_1|esperado_2\n")
         for row in rows:
             fh.write(row + "\n")
     return len(rows)
@@ -356,14 +501,36 @@ def verify_raw_files(raw_dir, hashes: dict) -> dict:
     return out
 
 
+def ensure_holdout_writable(holdout_path, force: bool) -> None:
+    """Guarda de congelamiento del holdout: si `holdout_path` ya existe, se
+    niega a sobrescribirlo salvo que `force=True` (`--force-holdout`). Que el
+    archivo exista puede significar que ya se usó para evaluar (Task 6); una
+    reejecución silenciosa del script rompería esa garantía. No toca el
+    archivo (no lo lee ni lo borra), solo decide si continuar."""
+    holdout_path = Path(holdout_path)
+    if holdout_path.exists() and not force:
+        raise FileExistsError(
+            f"El holdout ya existe en {holdout_path} y está bloqueado: no se "
+            "sobrescribe salvo que pases --force-holdout explícitamente (solo "
+            "si nadie lo ha leído/evaluado todavía)."
+        )
+
+
 # ───────────────────────────── manifiesto ─────────────────────────────
 
-def build_manifest(*, source_commit, file_hashes, stats, dev_essay_ids, holdout_essay_ids,
-                    dev_rows, holdout_rows, seed, holdout_fraction, holdout_sha256,
-                    holdout_file_name) -> dict:
+def build_manifest(*, source_commit, file_hashes, stats,
+                    dev_author_ids, holdout_author_ids,
+                    dev_essay_keys, holdout_essay_keys,
+                    dev_rows, holdout_rows, seed, holdout_fraction,
+                    holdout_sha256, holdout_file_name) -> dict:
     """Construye el manifiesto que se versiona en
     `data/external/cowsl2h-manifest.json` (el holdout en sí queda fuera del
-    repo; aquí solo va su ruta y su hash)."""
+    repo; aquí solo va su ruta y su hash). Reporta autores, ensayos y filas
+    por lado, porque la partición es por autor pero lo que de verdad importa
+    para entrenar/evaluar es cuántas filas (pares) caen en cada lado."""
+    total_autores = len(dev_author_ids) + len(holdout_author_ids)
+    total_essays = len(dev_essay_keys) + len(holdout_essay_keys)
+    total_filas_particion = dev_rows + holdout_rows
     return {
         "fuente": "https://github.com/ucdaviscl/cowsl2h",
         "commit": source_commit,
@@ -378,12 +545,27 @@ def build_manifest(*, source_commit, file_hashes, stats, dev_essay_ids, holdout_
         "pares_descartados_delimitador_pipe": stats["pares_descartados_pipe"],
         "pares_identidad_no_incluidos": stats["pares_identidad"],
         "particion": {
+            "unidad": "autor (columna `id` del CSV = estudiante, no ensayo)",
+            "nota": (
+                "El 30% es sobre AUTORES, no sobre ensayos ni oraciones: COWS-L2H "
+                "es longitudinal (el mismo estudiante escribe en varios "
+                "prompts/quarters, hasta 28 archivos). Particionar por ensayo "
+                "dejaría ensayos del mismo autor en dev y en holdout, la fuga de "
+                "estilo que la partición busca evitar. Por eso dev_essays/"
+                "holdout_essays y dev_filas/holdout_filas no son exactamente "
+                "70/30: el número de ensayos por autor no es uniforme."
+            ),
             "semilla": seed,
-            "fraccion_holdout": holdout_fraction,
-            "dev_essays": len(dev_essay_ids),
-            "holdout_essays": len(holdout_essay_ids),
+            "fraccion_holdout_autores": holdout_fraction,
+            "dev_autores": len(dev_author_ids),
+            "holdout_autores": len(holdout_author_ids),
+            "dev_essays": len(dev_essay_keys),
+            "holdout_essays": len(holdout_essay_keys),
             "dev_filas": dev_rows,
             "holdout_filas": holdout_rows,
+            "holdout_pct_autores": round(100 * len(holdout_author_ids) / total_autores, 2) if total_autores else None,
+            "holdout_pct_essays": round(100 * len(holdout_essay_keys) / total_essays, 2) if total_essays else None,
+            "holdout_pct_filas": round(100 * holdout_rows / total_filas_particion, 2) if total_filas_particion else None,
         },
         "holdout": {
             "ruta": str(holdout_file_name),
@@ -418,10 +600,13 @@ def run_verify_only(out_dir) -> bool:
     return ok
 
 
-def run_cowsl2h(out_dir, holdout_path) -> dict:
+def run_cowsl2h(out_dir, holdout_path, force_holdout: bool = False) -> dict:
     out_dir = Path(out_dir)
     holdout_path = Path(holdout_path)
     raw_dir = out_dir / "raw"
+
+    # Falla rápido, antes de descargar nada, si el holdout ya está congelado.
+    ensure_holdout_writable(holdout_path, force_holdout)
 
     print(f"Descargando COWS-L2H (commit {COWSL2H_COMMIT}) en {raw_dir} ...")
     hashes = _download_all(raw_dir)
@@ -437,18 +622,25 @@ def run_cowsl2h(out_dir, holdout_path) -> dict:
         text = (raw_dir / name).read_text(encoding="utf-8")
         rows = parse_cowsl2h_csv(text)
         total_filas += len(rows)
-        all_essays.extend(usable_essays(rows))
+        all_essays.extend(usable_essays(rows, filename=name))
 
-    pairs_by_essay, stats = build_pairs_by_essay(all_essays)
+    pairs_by_essay, essay_authors, stats = build_pairs_by_essay(all_essays)
     stats["total_filas_csv"] = total_filas
 
-    dev_ids, holdout_ids = split_by_essay(pairs_by_essay.keys(), seed=SPLIT_SEED,
-                                           holdout_fraction=HOLDOUT_FRACTION)
+    dev_authors, holdout_authors = split_by_author(
+        essay_authors.values(), seed=SPLIT_SEED, holdout_fraction=HOLDOUT_FRACTION)
+    dev_essay_keys = {k for k, a in essay_authors.items() if a in dev_authors}
+    holdout_essay_keys = {k for k, a in essay_authors.items() if a in holdout_authors}
 
     dev_path = out_dir / "pairs-dev.csv"
-    dev_rows = write_pairs_csv(dev_path, pairs_by_essay, dev_ids, header_comment=_PAIRS_HEADER_COMMENT)
-    holdout_rows = write_pairs_csv(holdout_path, pairs_by_essay, holdout_ids,
+    dev_rows = write_pairs_csv(dev_path, pairs_by_essay, dev_essay_keys, header_comment=_PAIRS_HEADER_COMMENT)
+    holdout_rows = write_pairs_csv(holdout_path, pairs_by_essay, holdout_essay_keys,
                                     header_comment=_PAIRS_HEADER_COMMENT)
+
+    # La garantía que el manifiesto promete: ni un ensayo con pares se pierde
+    # ni se duplica entre dev y holdout. Falla ruidosamente si no se cumple.
+    _assert_partition_covers_pairs(pairs_by_essay, dev_essay_keys, holdout_essay_keys,
+                                    dev_rows, holdout_rows, stats["pares_alineados"])
 
     holdout_sha = sha256_file(holdout_path)   # única relectura permitida: para el hash
     hash_txt_path = holdout_path.parent / "HOLDOUT-SHA256.txt"
@@ -459,15 +651,16 @@ def run_cowsl2h(out_dir, holdout_path) -> dict:
 
     manifest = build_manifest(
         source_commit=COWSL2H_COMMIT, file_hashes=hashes, stats=stats,
-        dev_essay_ids=dev_ids, holdout_essay_ids=holdout_ids,
+        dev_author_ids=dev_authors, holdout_author_ids=holdout_authors,
+        dev_essay_keys=dev_essay_keys, holdout_essay_keys=holdout_essay_keys,
         dev_rows=dev_rows, holdout_rows=holdout_rows,
         seed=SPLIT_SEED, holdout_fraction=HOLDOUT_FRACTION,
         holdout_sha256=holdout_sha, holdout_file_name=holdout_path,
     )
     MANIFEST_PATH.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
-    print(f"pairs-dev.csv: {dev_rows} filas ({len(dev_ids)} ensayos) -> {dev_path}")
-    print(f"holdout: {holdout_rows} filas ({len(holdout_ids)} ensayos) -> {holdout_path}")
+    print(f"pairs-dev.csv: {dev_rows} filas ({len(dev_authors)} autores, {len(dev_essay_keys)} ensayos) -> {dev_path}")
+    print(f"holdout: {holdout_rows} filas ({len(holdout_authors)} autores, {len(holdout_essay_keys)} ensayos) -> {holdout_path}")
     print(f"HOLDOUT-SHA256.txt -> {hash_txt_path}")
     print(f"manifiesto -> {MANIFEST_PATH}")
     return manifest
@@ -482,12 +675,18 @@ def main() -> None:
                          help="carpeta de salida (por defecto data/external/cowsl2h)")
     parser.add_argument("--holdout-path", default=str(DEFAULT_HOLDOUT_PATH),
                          help="ruta del holdout bloqueado, fuera del repo")
+    parser.add_argument("--force-holdout", action="store_true",
+                         help="permite sobrescribir el holdout si ya existe (solo si nadie lo leyó/evaluó)")
     args = parser.parse_args()
 
     if args.verify_only:
         sys.exit(0 if run_verify_only(args.out_dir) else 1)
     if args.cowsl2h:
-        run_cowsl2h(args.out_dir, args.holdout_path)
+        try:
+            run_cowsl2h(args.out_dir, args.holdout_path, force_holdout=args.force_holdout)
+        except FileExistsError as exc:
+            print(f"ERROR: {exc}")
+            sys.exit(1)
         return
     parser.print_help()
 

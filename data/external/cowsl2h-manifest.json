@@ -35,22 +35,29 @@
   "total_filas_csv": 5382,
   "total_essays_con_corrected1": 2881,
   "total_essays_con_corrected2": 565,
-  "essays_alineados": 2089,
-  "pares_alineados": 23165,
-  "pares_descartados_filtro_40pct": 5334,
+  "essays_alineados": 2106,
+  "pares_alineados": 23355,
+  "pares_descartados_filtro_40pct": 5393,
   "pares_descartados_delimitador_pipe": 0,
-  "pares_identidad_no_incluidos": 13777,
+  "pares_identidad_no_incluidos": 13772,
   "particion": {
+    "unidad": "autor (columna `id` del CSV = estudiante, no ensayo)",
+    "nota": "El 30% es sobre AUTORES, no sobre ensayos ni oraciones: COWS-L2H es longitudinal (el mismo estudiante escribe en varios prompts/quarters, hasta 28 archivos). Particionar por ensayo dejaría ensayos del mismo autor en dev y en holdout, la fuga de estilo que la partición busca evitar. Por eso dev_essays/holdout_essays y dev_filas/holdout_filas no son exactamente 70/30: el número de ensayos por autor no es uniforme.",
     "semilla": 42,
-    "fraccion_holdout": 0.3,
-    "dev_essays": 586,
-    "holdout_essays": 251,
-    "dev_filas": 6449,
-    "holdout_filas": 2820
+    "fraccion_holdout_autores": 0.3,
+    "dev_autores": 583,
+    "holdout_autores": 250,
+    "dev_essays": 1495,
+    "holdout_essays": 602,
+    "dev_filas": 16691,
+    "holdout_filas": 6664,
+    "holdout_pct_autores": 30.01,
+    "holdout_pct_essays": 28.71,
+    "holdout_pct_filas": 28.53
   },
   "holdout": {
     "ruta": "C:\\Users\\Dovamul\\Desktop\\TESIS\\documentos\\datos-reservados\\holdout-cowsl2h.csv",
-    "sha256": "15761a2a5089a97874239c3f426166a59fe9bb81295c0c3c3d1c60eed8707b84",
+    "sha256": "89e5cd7c5efe8efbcb54041b9d4a46261dc66e6e02e876e01636a1706e20d3f3",
     "nota": "fuera del repositorio; nunca releído salvo para recalcular el hash"
   }
 }
