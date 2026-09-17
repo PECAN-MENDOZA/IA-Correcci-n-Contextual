@@ -1,0 +1,130 @@
+{
+  "_nota": "Task 0, Step 3 del plan 2026-09-16-mejora-modelo-ia. Proporciones transcritas directamente del artículo (no del brief) tras acceder al PDF de acceso abierto listado en 'cita.acceso_abierto'. Cada cifra trae su propio campo 'fuente' con sección y tabla; el artículo (Author's personal copy de Springer) no conserva numeración de página imprimible en la extracción de texto (ver 'cita.nota_paginacion'), así que la referencia se da por sección/tabla, verificable contra las páginas 379-408 del artículo.",
+  "cita": {
+    "autores": "Rello, L., Baeza-Yates, R., Llisterri, J.",
+    "anio": 2016,
+    "titulo": "A resource of errors written in Spanish by people with dyslexia and its linguistic, phonetic and visual analysis",
+    "revista": "Language Resources and Evaluation",
+    "volumen_numero": "51(2)",
+    "paginas": "379-408",
+    "doi": "10.1007/s10579-015-9329-0",
+    "acceso_abierto": "https://www.changedyslexia.org/publications/pdfs/2016-LRE-A%20Resource%20of%20Errors%20Written.pdf",
+    "nota_paginacion": "El PDF de acceso abierto (reimpresión 'Author's personal copy' de Springer) no conserva la numeración de página imprimible al extraer el texto (pdftotext); las citas de esta ficha usan sección y número de tabla del artículo, verificables contra las páginas 379-408."
+  },
+  "recurso_dysList": {
+    "descripcion": "Lista anotada de errores únicos (target/misspelled) extraídos de textos escritos por personas con dislexia en español; no es el corpus de textos en sí, sino los pares de error ya clasificados.",
+    "url_csv_gz": "http://grupoweb.upf.es/WRG/resources/DysWebxia/DysList_resource.csv.gz",
+    "estado_descarga": "no descargado: el servidor de la UPF (grupoweb.upf.es) no responde (ver brief Task 0, Step 3). Se solicitó por correo a la autora de contacto (ver data/external/dyslist-solicitud-correo.md); mientras no llegue, este perfil se usa solo como especificación de proporciones para datos sintéticos (Task 3), no como conjunto de contraste.",
+    "fuente": "Sección 1 (Introducción), nota al pie 4"
+  },
+  "corpus_fuente": {
+    "descripcion": "Textos manuscritos, transcritos a mano, de niños y adolescentes de 6 a 15 años con dislexia diagnosticada; en su mayoría de Cataluña (español en contacto con catalán). Esta es la población objetivo real de la tesis (niños con dislexia), a diferencia de COWS-L2H (adultos universitarios L2).",
+    "total_textos": 83,
+    "textos_escolares_de_profesores": 54,
+    "textos_provistos_por_padres": 29,
+    "rango_edad": "6-15 años",
+    "pares_correcto_incorrecto_distintos": 894,
+    "total_errores": 1171,
+    "verificado": true,
+    "fuente": "Sección 3.1 'Extracting errors from dyslexic texts'"
+  },
+  "tipo_de_edicion": {
+    "descripcion": "Tabla 5 (izquierda): porcentaje de cada tipo de edición dentro de los errores simples (un solo tipo de edición).",
+    "sustitucion_pct": 58.84,
+    "insercion_pct": 13.40,
+    "eliminacion_pct": 26.30,
+    "transposicion_pct": 1.45,
+    "verificado": true,
+    "fuente": "Sección 5.1 'Type of error', Tabla 5 (izquierda); también resumido en los highlights del artículo (Sección 1)"
+  },
+  "clases_de_letras": {
+    "descripcion": "Agrupación de los errores más frecuentes en tres clases, sobre el total de errores simples con digrafía fonética (229 casos analizados).",
+    "insertar_o_eliminar_consonante_pct": 37.9,
+    "insertar_o_eliminar_vocal_pct": 37.5,
+    "sustituir_letras_mismo_sonido_o_eliminar_h_pct": 15.4,
+    "nota": "Estas tres clases cubren más del 90% de los 229 errores fonéticos analizados; no son categorías mutuamente excluyentes con 'tipo_de_edicion' (son un recorte adicional sobre los mismos datos).",
+    "verificado": true,
+    "fuente": "Sección 5.1, texto tras la Tabla 5 (derecha) y highlights (Sección 1)"
+  },
+  "errores_palabra_real": {
+    "descripcion": "Dos cifras distintas en el artículo, con alcance distinto: (a) sobre el total de errores con repetición, (b) sobre los errores distintos comparados con el corpus en inglés (Tabla 15).",
+    "sobre_total_errores_pct": 8.97,
+    "sobre_errores_distintos_pct": 20.8,
+    "sobre_errores_distintos_n": 30,
+    "sobre_errores_distintos_total_n": 144,
+    "nota": "El brief del plan cita '~20% errores de palabra real'; el valor comparable es el (b), errores DISTINTOS de la Tabla 15 (30/144 = 20.8%), no el (a) que es sobre el total con repetición.",
+    "verificado": true,
+    "fuente": "(a) Sección 5.1, último párrafo; (b) Tabla 15 'Distribution of errors in English and Spanish corpora'"
+  },
+  "errores_de_frontera_palabra": {
+    "descripcion": "Uniones (run-on, se omite un espacio) y separaciones (split, se inserta un espacio) de palabras.",
+    "definicion_union": "run-on: se omite un espacio, p.ej. *talvez (tal vez)",
+    "definicion_separacion": "split: se inserta un espacio dentro de una palabra, p.ej. *a drede (adrede)",
+    "sobre_errores_distintos_pct": 10.4,
+    "sobre_errores_distintos_n": 15,
+    "sobre_errores_distintos_total_n": 144,
+    "verificado": true,
+    "fuente": "Sección 3.2(a) 'Word boundary errors' (definiciones); Tabla 15 (proporción, columna Spanish)"
+  },
+  "distancia_damerau_levenshtein": {
+    "descripcion": "Distancia entre la palabra mal escrita y la palabra objetivo.",
+    "distancia_1_pct": 73.3,
+    "distancia_2_pct": 21.6,
+    "distancia_3_o_mas_pct": 5.1,
+    "verificado": true,
+    "fuente": "Sección 5.1 'Damerau-Levenshtein distance'"
+  },
+  "motivacion_visual": {
+    "descripcion": "Porcentaje de letras erróneas (en manuscrito) que comparten cada rasgo visual con la letra correcta.",
+    "letras_borrosas_fuzzy_pct": 67.11,
+    "letras_espejo_mirror_pct": 46.91,
+    "letras_rotacion_pct": 38.23,
+    "verificado": true,
+    "fuente": "Highlights (Sección 1) y Sección 6 'Conclusions' (cifras de manuscrito/handwriting)"
+  },
+  "motivacion_fonetica_vocales": {
+    "descripcion": "Sustituciones entre vocales, como proporción de las sustituciones de vocales (no del total de errores).",
+    "vocales_sobre_total_errores_pct": 5.38,
+    "vocales_sobre_total_errores_n": 63,
+    "comparten_rasgo_rounding_pct": 43.40,
+    "comparten_rounding_y_place_pct": 24.53,
+    "comparten_las_tres_dimensiones_pct": 15.09,
+    "no_comparten_ningun_rasgo_pct": 15.87,
+    "diptongos_sobre_total_errores_pct": 0.94,
+    "verificado": true,
+    "fuente": "Sección 5.3.1 'Vowels', Tabla 12"
+  },
+  "motivacion_fonetica_consonantes": {
+    "descripcion": "Sustituciones entre consonantes, como proporción de las sustituciones de consonantes.",
+    "consonantes_simples_pct": 46.37,
+    "clusters_consonanticos_pct": 0.60,
+    "comparten_las_tres_dimensiones_pct": 48.43,
+    "comparten_un_rasgo_pct": 19.52,
+    "comparten_dos_rasgos_pct": 26.15,
+    "no_comparten_ningun_rasgo_pct": 5.52,
+    "afectan_voicing_manner_place_a_la_vez_pct": 50.0,
+    "afectan_manner_y_place_pct": 16.99,
+    "afectan_voicing_y_place_pct": 9.77,
+    "solo_place_pct": 9.96,
+    "solo_voicing_pct": 9.57,
+    "verificado": true,
+    "fuente": "Sección 5.3.2 (consonantes), Tabla 13, y texto posterior a la tabla"
+  },
+  "comparacion_espanol_ingles": {
+    "descripcion": "Comparación con el corpus en inglés de Pedler (2007), errores DISTINTOS (no total con repetición).",
+    "espanol_total_errores_distintos": 144,
+    "ingles_total_errores_distintos": 577,
+    "espanol_error_simple_pct": 66.7,
+    "ingles_error_simple_pct": 53.2,
+    "espanol_multi_error_pct": 22.9,
+    "ingles_multi_error_pct": 39.3,
+    "espanol_error_frontera_pct": 10.4,
+    "ingles_error_frontera_pct": 8.1,
+    "espanol_primera_letra_pct": 11.1,
+    "ingles_primera_letra_pct": 5.2,
+    "espanol_error_ratio": 0.15,
+    "ingles_error_ratio": 0.20,
+    "verificado": true,
+    "fuente": "Sección final (comparación con Pedler 2007), Tablas 14 y 15. Los porcentajes con un decimal (66.7, 22.9, 10.4, 11.1, 39.3, 8.1, 5.2) se recalcularon a partir de los conteos N y el total de la Tabla 15 (p.ej. 96/144), porque la extracción de texto de la Tabla 15 solo conserva los porcentajes redondeados a entero (67, 23, 10, 11 / 53, 39, 8, 5)."
+  }
+}
