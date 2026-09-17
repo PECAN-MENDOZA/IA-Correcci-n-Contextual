@@ -1,0 +1,139 @@
+{
+  "testId": "0f6c1d6e-5b1d-4a4f-9e8e-000000000001",
+  "code": "PRUEBA-01",
+  "title": "Prueba piloto",
+  "status": "ACTIVE",
+  "computedAt": "2026-09-20T10:00:00Z",
+  "sample": {
+    "assigned": 5,
+    "completed": 4,
+    "excluded": 1,
+    "cancelled": 1,
+    "inProgress": 2,
+    "unannotatedFree": 1
+  },
+  "incomplete": true,
+  "sampleInsufficient": true,
+  "minSample": 8,
+  "designManual": true,
+  "conditions": {
+    "ASSISTED": {
+      "participants": 3,
+      "errorsPer100Words": {
+        "n": 3,
+        "mean": 31.746031746031747,
+        "lower": 0.0,
+        "upper": 66.66666666666667
+      },
+      "wordsPerMinute": {
+        "n": 3,
+        "mean": 54.949494949494955,
+        "lower": 38.18181818181819,
+        "upper": 80.0
+      },
+      "acceptanceRate": {
+        "accepted": 6,
+        "offered": 9,
+        "ratePct": 66.66666666666667,
+        "wilsonLower": 35.42021335250586,
+        "wilsonUpper": 87.94161825659263
+      }
+    },
+    "UNASSISTED": {
+      "participants": 3,
+      "errorsPer100Words": {
+        "n": 3,
+        "mean": 22.222222222222225,
+        "lower": 16.666666666666668,
+        "upper": 25.0
+      },
+      "wordsPerMinute": {
+        "n": 3,
+        "mean": 63.333333333333336,
+        "lower": 30.0,
+        "upper": 120.0
+      },
+      "acceptanceRate": null
+    }
+  },
+  "paired": {
+    "errorsPer100Words": {
+      "n": 3,
+      "meanAssisted": 31.746031746031747,
+      "meanUnassisted": 22.222222222222225,
+      "meanDelta": 9.523809523809524,
+      "bootstrapLower": -25.0,
+      "bootstrapUpper": 50.0,
+      "tLower": -84.50738639622267,
+      "tUpper": 103.55500544384171,
+      "t": 0.43578776856227464,
+      "p": 0.7055159304670762,
+      "dz": 0.2516021854889756
+    },
+    "wordsPerMinute": {
+      "n": 3,
+      "meanAssisted": 54.949494949494955,
+      "meanUnassisted": 63.333333333333336,
+      "meanDelta": -8.38383838383838,
+      "bootstrapLower": -40.0,
+      "bootstrapUpper": 8.181818181818187,
+      "tLower": -76.42655047113313,
+      "tUpper": 59.658873703456365,
+      "t": -0.5301485493658935,
+      "p": 0.6489819393784566,
+      "dz": -0.30608140768688824
+    }
+  },
+  "sentences": [
+    {
+      "position": 1,
+      "kind": "DICTATED",
+      "assistance": "ASSISTED",
+      "n": 3,
+      "meanErrors": 1.0,
+      "meanDurationFirstKeyMs": 3666.6666666666665,
+      "skippedCount": 0
+    },
+    {
+      "position": 2,
+      "kind": "DICTATED",
+      "assistance": "UNASSISTED",
+      "n": 3,
+      "meanErrors": 1.0,
+      "meanDurationFirstKeyMs": 4666.666666666667,
+      "skippedCount": 0
+    },
+    {
+      "position": 3,
+      "kind": "FREE",
+      "assistance": "ASSISTED",
+      "n": 3,
+      "meanErrors": 0.5,
+      "meanDurationFirstKeyMs": 4000.0,
+      "skippedCount": 0
+    },
+    {
+      "position": 4,
+      "kind": "FREE",
+      "assistance": "UNASSISTED",
+      "n": 3,
+      "meanErrors": 0.5,
+      "meanDurationFirstKeyMs": 6000.0,
+      "skippedCount": 1
+    }
+  ],
+  "provenance": {
+    "modelVersions": [
+      "beto-v3",
+      "beto-v4"
+    ],
+    "appVersions": [
+      "app-1",
+      "app-2"
+    ],
+    "backendVersions": [
+      "backend-1"
+    ]
+  },
+  "datasetSha256": "c3e954e4ca3599114601bff4bac4cb643b3e0e517803538f6f33a80a9253c981"
+}

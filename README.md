@@ -50,19 +50,19 @@ teclado_adaptativo/
 ├── scripts/merge_grammar_lora.py   # Fusiona el LoRA global (base + revisión del manifiesto) y propaga el manifiesto
 ├── scripts/model_manifest.py       # Manifiestos reproducibles (training-manifest.json / model-manifest.json) y --write-current
 ├── scripts/calibrate_alternatives.py  # Calibración / prueba de aceptación (--check) de la capa 5 con el modelo real
-├── scripts/analyze_user_experiment.py # Reproducción offline de PEO/PPM/TAS desde analysis.csv (solo stdlib)
+├── scripts/analyze_sentence_tests.py  # Reproducción offline de los resultados de una prueba de oraciones (solo stdlib)
 ├── evaluate.py                     # Evaluación offline: P/R/F0.5 por edición (exact_token_edits_v1) + WER/CER
 ├── setup_model.py                  # Descarga el T5 base a models/t5_base (nunca pisa models/t5_correction)
 ├── data/eval_gold.csv              # Dataset de desarrollo (38 casos); el holdout final vive fuera del repo
 ├── data/ambiguity_calibration.csv  # 39 frases etiquetadas (expected_options, forbidden_readings) para la capa 5
-├── tests/fixtures/                 # CSV/JSON del estudio (sintético + PILOTO-02 real) para el análisis offline
+├── test_fixtures/sentence_tests/   # CSV de exportación sintético + JSON de resultados para el análisis offline
 ├── test_global_runtime.py          # Tests del runtime global (fakes, sin torch)
 ├── test_alternatives.py            # Tests del selector de alternativas, la ambigüedad BETO y el --check (sin torch)
 ├── test_correction_layers.py       # Tests de CorrectionPipeline.correct() de punta a punta con fakes (sin torch)
 ├── test_evaluate_metrics.py        # Tests del scorer, del informe (réplica del validador del panel) y de setup_model (sin torch)
 ├── test_versioning.py              # Tests de infrastructure/versioning.py, incl. la versión compuesta y servida (sin torch)
 ├── test_model_manifest.py          # Tests de scripts/model_manifest.py y de la estructura de train/merge (sin torch)
-├── test_user_experiment_analysis.py # Tests del análisis offline del estudio (sin torch)
+├── test_analyze_sentence_tests.py  # Tests del análisis offline de pruebas de oraciones (sin torch)
 ├── test_lora_guards.py             # Tests de las guardas anti-alucinación y léxica
 ├── test_modelo.py                  # Script MANUAL de humo por HTTP contra un servidor arrancado (no es unittest)
 └── requirements.txt
@@ -157,7 +157,7 @@ python -m pip install -r requirements.txt
 python main.py
 
 # Tests sin GPU ni modelo
-python -m unittest -v test_global_runtime test_alternatives test_correction_layers test_evaluate_metrics test_versioning test_model_manifest test_user_experiment_analysis
+python -m unittest -v test_global_runtime test_alternatives test_correction_layers test_evaluate_metrics test_versioning test_model_manifest test_analyze_sentence_tests
 python test_lora_guards.py
 
 # Prueba de aceptación de la capa 5 con el modelo real (offline; código 1 si falla)
@@ -551,75 +551,77 @@ quizás ellos llega tarde             → ["quizás ellos llega tarde"]         
 El contrato HTTP no cambia (`suggestions: list[str]`); el teclado muestra como
 mucho tres globos y nunca uno idéntico al texto original.
 
-## Análisis offline del estudio con usuarios (`scripts/analyze_user_experiment.py`)
+## Análisis offline de pruebas de oraciones (`scripts/analyze_sentence_tests.py`)
 
-Reproduce PEO, PPM, TAS y TAS aceptada a partir del CSV de análisis del
-backend (`GET /api/v1/research/studies/{id}/analysis.csv`, 19 columnas, una
-fila por ejecución completada × sugerencia evaluada) con **las mismas fórmulas
-y reglas de muestra que `StudyMetricsService`**, de modo que el análisis
-independiente valide los números de `GET …/results`:
+Reproduce los resultados de una prueba de oraciones
+(`GET /api/v1/research/tests/{id}/results`, `TestResultsResponse`) a partir
+del CSV de exportación del backend (`GET …/tests/{id}/export.csv`, 21
+columnas, una fila por respuesta de cada intento `COMPLETED`, los excluidos
+con `excluded=true`) con **las mismas fórmulas y el mismo bootstrap
+determinista que `TestResultsService`**, de modo que el análisis
+independiente valide número a número el JSON del backend
+(`backend/docs/research-api.md`, §6):
 
-- PEO = errores ortográficos adjudicados / palabras del texto final × 100 por
-  ejecución; media por participante-condición; Δ = asistida − sin
-  asistencia; IC 95 % t de Student, prueba t emparejada bilateral y d_z.
-  Palabras: manda la columna `word_count` del backend (siempre que venga); la
-  regex `[^\W_]+(?:['’\-][^\W_]+)*` (la de `WordTokenizer`) solo sirve de
-  comprobación (aviso si no coincide) y de respaldo. Es una aproximación de
-  `\w` de Java con `UNICODE_CHARACTER_CLASS`: el texto se normaliza a NFC
-  antes de contar (marcas combinantes) y quedan diferencias en numerales
-  Nl/No y conectores Pc, irrelevantes mientras el CSV traiga `word_count`.
-- PPM = palabras / (duración_ms / 60000); una ejecución sin palabras contables
-  vale 0.
-- TAS = sugerencias adjudicadas con puntaje 0 / evaluadas × 100 agrupada, con
-  intervalo de Wilson (z = 1.959964, acotado a [0, 100]); media ± sd por
-  participante con IC t acotado (descriptivo). TAS aceptada: solo
-  `accepted = true` (aceptación congelada en el lote semántico).
-- Muestra: par completo = al menos una ejecución COMPLETED no excluida por
-  condición; PEO solo participantes con palabras contables en ambas
-  condiciones; PPM toda la cohorte incluida; TAS ejecuciones ASSISTED con al
-  menos una sugerencia evaluada. Varias ejecuciones de un participante y
-  condición se promedian antes de la inferencia. Se informan
-  `participantsTotal/Included/WithIncompletePair/WithoutEligibleRun` y
-  `runsCompleted/Included/Excluded/InIncompletePairs/WithoutCountableWords`
-  como el backend, más las listas de excluidos.
-- Validación determinista: columnas exactas, `condition` conocida,
-  `duration_ms > 0`, `orthography_errors` entero ≥ 0 y ≤ palabras,
-  `semantic_score` ∈ {0, 1, 2}, `included/excluded/accepted` booleanos, sin
-  filas duplicadas por ejecución × sugerencia, datos de ejecución coherentes
-  entre sus filas y bandera `included` consistente con la regla del par
-  completo. Sin adjudicación completa la métrica es `null` con un estado
-  (`ADJUDICATED`, `INCOMPLETE_COVERAGE`, `NO_BATCH`, `NOT_APPLICABLE`,
-  `NO_SAMPLE`), nunca un número parcial.
-- Con n < 2 o varianza nula los campos inferenciales son `null` (nunca NaN).
-- Sin `scipy` (no está instalado en `.venv`): la t de Student (cuantil y
-  función de distribución) se implementa con la beta incompleta regularizada
-  (`math.lgamma` + fracción continua), verificada frente a tablas a 1e-10.
+- Por alumno y condición (`ASSISTED` / `UNASSISTED`):
+  `errorsPer100Words = 100 · Σerrores / Σpalabras` (solo respuestas con
+  `word_count > 0` y `error_count` conocido) y
+  `wordsPerMinute = Σpalabras / (Σduration_first_key_ms / 60000)` (solo con
+  `duration_first_key_ms > 0`). Sumas enteras, sin reordenar.
+- `MetricInterval`: media aritmética simple de los valores por alumno
+  (ordenados por `student_username`) con IC 95 % bootstrap percentil
+  **determinista**: PRNG SplitMix64 (misma aritmética de 64 bits que la clase
+  Java), semilla 42, 2000 remuestreos, `nextIndex(n) = nextLong() mod n` con
+  resto sin signo, cuantil R-7 sobre las medias ordenadas en 0.025 y 0.975.
+  Con `n < 2` los límites son `null`. Los valores dorados de la Task 6
+  (`SplitMix64(42)` → `-4767286540954276203, 2949826092126892291,
+  5139283748462763858`; `bootstrap([1,2,3,4,5])` → `[1.8, 4.2]`) están
+  afirmados en los tests a 1e-9.
+- `paired` (con − sin, alumnos con ambas condiciones): el mismo bootstrap
+  sobre las diferencias (`bootstrapLower/Upper`) más el resumen t pareado
+  clásico (`tLower/tUpper`, `t`, `p` bilateral, `dz`; `null` con `n < 2` o
+  varianza nula). La t de Student se implementa con la beta incompleta
+  regularizada (`math.lgamma` + fracción continua), sin `scipy`.
+- `acceptanceRate` (solo con ayuda): `Σaccepted / Σoffered × 100` con
+  intervalo de Wilson (`Z_95 = 1.959964`, acotado a `[0, 100]`).
+- `sentences[]` por posición: `n` (respuestas terminadas, omitidas incluidas),
+  `meanErrors` (solo conteos conocidos), `meanDurationFirstKeyMs` (solo con
+  duración) y `skippedCount`.
+- Reglas de muestra: una respuesta `skipped=true` no aporta a ninguna métrica
+  (ni a `participants` ni a los contadores de sugerencias); los intentos
+  `excluded=true` solo cuentan en `sample.completed` / `sample.excluded`;
+  `unannotatedFree` cuenta libres sin anotar (`error_source=PENDING`) no
+  omitidas de intentos analizados e `incomplete = unannotatedFree > 0`.
+- Validación determinista: cabecera **exactamente** igual a las 21 columnas y
+  en ese orden, tipos (`position ≥ 1`, enteros ≥ 0, booleanos `true/false`),
+  `kind`, `assistance` y `error_source ∈ {AUTO, ANNOTATED, PENDING}`
+  conocidos, coherencia `kind`/`error_source`/`error_count`, un solo
+  `test_code`, sin duplicados `attempt_id × position`.
+- Campos que el CSV no puede conocer (`testId`, `title`, `status`,
+  `sample.assigned/cancelled/inProgress`, `provenance.backendVersions`) van a
+  `null` y no se comparan; `minSample` es `--min-sample` (por defecto 8, el
+  del backend).
 
 ```powershell
-.venv\Scripts\python.exe scripts/analyze_user_experiment.py analysis.csv `
-    --ppm-margin 2.0 --tas-limit 10 --json reports/user-study.json --markdown reports/user-study.md
-# Reconciliación con el backend (falla con código 1 si PEO/PPM/TAS difieren > 1e-6):
-.venv\Scripts\python.exe scripts/analyze_user_experiment.py tests/fixtures/analysis-piloto02-real.csv `
-    --compare-results tests/fixtures/results-piloto02-real.json
+.venv\Scripts\python.exe scripts/analyze_sentence_tests.py test-PRUEBA-01-responses.csv --out reports/prueba-01.json
+# Reconciliación con el backend (código 1 si algún campo difiere; flotantes con tolerancia 1e-6):
+.venv\Scripts\python.exe scripts/analyze_sentence_tests.py test_fixtures/sentence_tests/responses-sample.csv `
+    --compare-results test_fixtures/sentence_tests/results-sample.json
 ```
 
-Ambos informes llevan `formulaVersion: "user_study_v1"` y `inputSha256` del
-CSV (el hash de los bytes tal como están en disco; los fixtures llevan
-`-text` en `.gitattributes`, así que el checkout no les cambia los finales
-de línea, y la reconciliación compara números, no hashes). `--compare-results`
-compara partición de la muestra, PEO, PPM, TAS, TAS aceptada, estados de
-anotación y filas por participante con `GET …/results` (tolerancia
-`--tolerance`, ≥ 0, default 1e-6; un archivo de resultados ilegible termina
-con código 2). Diferencias admitidas (anotadas, no fallo): `participantsTotal`
-/ `participantsWithoutEligibleRun`, porque el CSV solo exporta participantes
-con alguna ejecución completada, y el estado `NOT_ADJUDICATED` del backend
-(lote más reciente sin adjudicación vigente), que el CSV no puede distinguir
-de `NO_BATCH` / `INCOMPLETE_COVERAGE`: se compara la clase de adjudicación
-(`ADJUDICATED` debe coincidir; `NO_SAMPLE` y `NOT_APPLICABLE` son literales).
-`--ppm-margin` y `--tas-limit` deben coincidir con `app.research.*` del
-backend para que `nonInferior`/`upperCiBelowLimit` concuerden. Una fila con
-más campos que la cabecera es un error. Fixtures:
-`tests/fixtures/experiment-analysis.csv` (sintético, 5 participantes) y
-`tests/fixtures/analysis-piloto02-real.csv` + `results-piloto02-real.json`
-(estudio PILOTO-02 real, 1 par completo). Tests:
-`.venv\Scripts\python.exe -m unittest -v test_user_experiment_analysis`.
+`--compare-results` compara `sample.{completed,excluded,unannotatedFree}`,
+`incomplete`, por condición `participants`, `errorsPer100Words` y
+`wordsPerMinute` (`n, mean, lower, upper`), `acceptanceRate`
+(`accepted, offered, ratePct, wilsonLower, wilsonUpper`), `paired.*` (los 11
+campos de `PairedDelta`), `sentences[]` y `datasetSha256` frente al SHA-256
+de los bytes del CSV de entrada (el fixture lleva `-text` en
+`.gitattributes` para que el checkout no cambie los finales de línea);
+enteros, booleanos y cadenas exactos, flotantes con `--tolerance` (≥ 0,
+default 1e-6), `null` ⇔ `None`. Códigos de salida: 0 sin diferencias, 1 con
+diferencias, 2 si el CSV o el JSON no se pueden leer o validar. Fixtures:
+`test_fixtures/sentence_tests/responses-sample.csv` (réplica byte a byte de la
+cohorte sintética de `TestResultsServiceTests` del backend: 3 alumnos × 4
+oraciones más un cuarto alumno excluido) y `results-sample.json` (generado
+por este mismo script sobre la fixture, con la forma de
+`TestResultsResponse`; la reconciliación contra una exportación real del
+backend se hace en la Task 16). Tests:
+`.venv\Scripts\python.exe -m unittest -v test_analyze_sentence_tests`.
