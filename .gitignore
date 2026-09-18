@@ -23,6 +23,12 @@ reports/
 data/users/
 data/*_history.csv
 
+# Datos externos descargados (Task 0): se regeneran con
+# scripts/fetch_external_data.py --cowsl2h; la procedencia y los hashes
+# quedan en data/external/README.md y data/external/cowsl2h-manifest.json
+# (esos dos sí se versionan).
+data/external/cowsl2h/
+
 # Carpeta de trabajo / notas temporales (no versionar)
 TEMPORALES/
 
