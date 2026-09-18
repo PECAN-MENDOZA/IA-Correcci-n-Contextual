@@ -1,0 +1,17 @@
+﻿test_code,student_username,attempt_id,position,kind,assistance,reference_text,final_text,skipped,word_count,error_count,error_source,duration_first_key_ms,duration_start_ms,suggestions_offered,suggestions_accepted,suggestions_rejected,suggestions_undone,model_version,app_version,excluded
+PRUEBA-01,alumno-a,11111111-1111-1111-1111-111111111111,1,DICTATED,ASSISTED,El perro corre.,El pero corre.,false,3,1,AUTO,3000,3100,2,1,0,0,beto-v3,app-1,false
+PRUEBA-01,alumno-a,11111111-1111-1111-1111-111111111111,2,DICTATED,UNASSISTED,La casa es azul.,La kasa es asul.,false,4,2,AUTO,4000,4000,0,0,0,0,beto-v3,app-1,false
+PRUEBA-01,alumno-a,11111111-1111-1111-1111-111111111111,3,FREE,ASSISTED,Escribe sobre tu mascota,Mi gato duerme mucho,false,4,1,ANNOTATED,6000,6500,3,2,0,0,beto-v3,app-1,false
+PRUEBA-01,alumno-a,11111111-1111-1111-1111-111111111111,4,FREE,UNASSISTED,Escribe sobre tu comida,Me gusta el pan,false,4,0,ANNOTATED,8000,8000,0,0,0,0,beto-v3,app-1,false
+PRUEBA-01,alumno-b,22222222-2222-2222-2222-222222222222,1,DICTATED,ASSISTED,El perro corre.,El perro corre.,false,3,0,AUTO,2000,2000,1,0,0,0,beto-v3,app-1,false
+PRUEBA-01,alumno-b,22222222-2222-2222-2222-222222222222,2,DICTATED,UNASSISTED,La casa es azul.,La casa es azúl.,false,4,1,AUTO,2000,2000,0,0,0,0,beto-v3,app-1,false
+PRUEBA-01,alumno-b,22222222-2222-2222-2222-222222222222,3,FREE,ASSISTED,Escribe sobre tu mascota,Hola,false,1,0,ANNOTATED,1000,1000,0,0,0,0,beto-v3,app-1,false
+PRUEBA-01,alumno-b,22222222-2222-2222-2222-222222222222,4,FREE,UNASSISTED,Escribe sobre tu comida,,true,0,,PENDING,,500,0,0,0,0,beto-v3,app-1,false
+PRUEBA-01,alumno-c,33333333-3333-3333-3333-333333333333,1,DICTATED,ASSISTED,El perro corre.,El pero core.,false,3,2,AUTO,6000,6000,2,2,0,0,beto-v4,app-2,false
+PRUEBA-01,alumno-c,33333333-3333-3333-3333-333333333333,2,DICTATED,UNASSISTED,La casa es azul.,La casa es azul.,false,4,0,AUTO,8000,8000,0,0,0,0,beto-v4,app-2,false
+PRUEBA-01,alumno-c,33333333-3333-3333-3333-333333333333,3,FREE,ASSISTED,Escribe sobre tu mascota,"Un texto, con ""comillas""",false,4,,PENDING,5000,5000,1,1,0,0,beto-v4,app-2,false
+PRUEBA-01,alumno-c,33333333-3333-3333-3333-333333333333,4,FREE,UNASSISTED,Escribe sobre tu comida,Me gusta,false,2,1,ANNOTATED,4000,4000,0,0,0,0,beto-v4,app-2,false
+PRUEBA-01,alumno-d,44444444-4444-4444-4444-444444444444,1,DICTATED,ASSISTED,El perro corre.,El perro corre.,false,3,0,AUTO,1000,1000,0,0,0,0,,app-1,true
+PRUEBA-01,alumno-d,44444444-4444-4444-4444-444444444444,2,DICTATED,UNASSISTED,La casa es azul.,La casa es azul.,false,4,0,AUTO,1000,1000,0,0,0,0,,app-1,true
+PRUEBA-01,alumno-d,44444444-4444-4444-4444-444444444444,3,FREE,ASSISTED,Escribe sobre tu mascota,Tengo un perro,false,3,0,ANNOTATED,1000,1000,0,0,0,0,,app-1,true
+PRUEBA-01,alumno-d,44444444-4444-4444-4444-444444444444,4,FREE,UNASSISTED,Escribe sobre tu comida,Me gusta la sopa,false,4,0,ANNOTATED,1000,1000,0,0,0,0,,app-1,true
