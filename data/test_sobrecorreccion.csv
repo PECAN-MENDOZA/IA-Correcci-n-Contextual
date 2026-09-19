@@ -1,0 +1,23 @@
+# Sonda de SOBRECORRECCIÓN y contexto (categoria|entrada|esperado). Escrita el 2026-09-19
+# al evaluar la LoRA v4: frases correctas con subordinantes/subjuntivo prospectivo/predicado
+# plural que un modelo entrenado con controles de indicativo puede "arreglar" de más.
+# Pasar junto a eval_gold, test_agreement, test_subjunctive y test_tiempos antes de promover.
+categoria|entrada|esperado
+correcto|cuando llegue a casa, te llamo|cuando llegue a casa, te llamo
+correcto|si no vienes, me voy solo|si no vienes, me voy solo
+correcto|aunque tenga sueño, terminaré la tarea|aunque tenga sueño, terminaré la tarea
+correcto|los perros que vi ayer estaban muy sucios|los perros que vi ayer estaban muy sucios
+correcto|el perro que vi ayer estaba muy sucio|el perro que vi ayer estaba muy sucio
+correcto|él te quiere mucho|él te quiere mucho
+correcto|el té está frío|el té está frío
+correcto|quiero que vengas conmigo|quiero que vengas conmigo
+correcto|mientras llueve, leemos un libro|mientras llueve, leemos un libro
+correcto|la gente es muy amable en mi barrio|la gente es muy amable en mi barrio
+subjuntivo|espero que tu vienes mañana|espero que tú vengas mañana
+subjuntivo|cuando llegas, avísame|cuando llegues, avísame
+tilde_ctx|el te quiere mucho|él te quiere mucho
+tilde_ctx|no se si el te esta listo|no sé si el té está listo
+gramatica|las casas que vimos era muy bonita|las casas que vimos eran muy bonitas
+gramatica|los niños del barrio esta cansado|los niños del barrio están cansados
+correcto|mañana iré al médico y después a la escuela|mañana iré al médico y después a la escuela
+correcto|ayer no pude ir porque estaba enfermo|ayer no pude ir porque estaba enfermo

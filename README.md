@@ -177,18 +177,27 @@ python train.py --epochs 3 --batch_size 2
 
 # Entrenar y fusionar el LoRA gramatical GLOBAL (único adaptador del sistema);
 # cada paso escribe su manifiesto (ver "Artefactos reproducibles").
-# IMPORTANTE: el dataset debe ser data/training_pairs_v3.csv (generales + concordancia +
-# subjuntivo, 24 648 pares; ver data/training_pairs_v3.README.md). Entrenar solo con
-# training_pairs_clean.csv produce un adaptador que NO aprende concordancia (9/12 en
+# IMPORTANTE: el dataset debe ser data/training_pairs_v4.csv (generales + concordancia +
+# subjuntivo + controles de indicativo/prospectivo + predicado + té/él, 30 896 pares; ver
+# data/training_pairs_v4.README.md, que también registra los intentos v4a-v4c). Entrenar
+# solo con training_pairs_clean.csv produce un adaptador que NO aprende concordancia (9/12 en
 # data/test_agreement.csv) ni subjuntivo irregular (3/16 en data/test_subjunctive.csv);
-# ocurrió el 2026-09-12 y se corrigió el 2026-09-16 (v2 concordancia, v3 subjuntivo).
-# Para regenerar los pares dirigidos: scripts/generate_agreement_data.py y
-# scripts/generate_subjunctive_data.py (semillas fijas).
-$env:CSV_PATH = 'data/training_pairs_v3.csv'
-python train_grammar_lora.py           # después, poner "lora_tag": "global-lora-v3" en models/grammar_lora/training-manifest.json
+# ocurrió el 2026-09-12 y se corrigió el 2026-09-16 (v2 concordancia, v3 subjuntivo) y el
+# 2026-09-19 (v4: sobrecorrección al subjuntivo tras "aunque", predicado plural, té/él).
+# Para regenerar los pares dirigidos: scripts/generate_agreement_data.py,
+# scripts/generate_subjunctive_data.py y scripts/generate_v4_data.py (semillas fijas).
+$env:CSV_PATH = 'data/training_pairs_v4.csv'
+python train_grammar_lora.py           # después, poner "lora_tag": "global-lora-v4" en models/grammar_lora/training-manifest.json
 python scripts/merge_grammar_lora.py
-python evaluate.py --dataset data/test_agreement.csv   --t5-dir models/t5_correction --development --out reports/agreement.json    # debe dar 12/12
-python evaluate.py --dataset data/test_subjunctive.csv --t5-dir models/t5_correction --development --out reports/subjunctive.json  # debe dar >= 15/16
+# Las CINCO regresiones, todas antes de promover (valores de v4, 2026-09-19):
+python evaluate.py --dataset data/eval_gold.csv            --t5-dir models/t5_correction --development --out reports/gold.json             # 47/48 (dónde)
+python evaluate.py --dataset data/test_agreement.csv       --t5-dir models/t5_correction --development --out reports/agreement.json        # 15/15
+python evaluate.py --dataset data/test_subjunctive.csv     --t5-dir models/t5_correction --development --out reports/subjunctive.json      # 19/20 (Navidad)
+python evaluate.py --dataset data/test_tiempos.csv         --t5-dir models/t5_correction --development --out reports/tiempos.json          # 58/60 (2 de SymSpell)
+python evaluate.py --dataset data/test_sobrecorreccion.csv --t5-dir models/t5_correction --development --out reports/sobrecorreccion.json  # 17/18 (el te/él te)
+# Una corrida con la misma semilla NO es determinista en GPU: v4c (mismos datos que v4b salvo
+# 3 pares) perdió `mis amigos no vino` en test_agreement. Guardar el adaptador de cada intento
+# (models/grammar_lora_v4a..c) y elegir por las cinco regresiones, no por val_loss.
 
 # Manifiestos de artefactos ya entrenados (solo hashes; no entrena ni fusiona)
 python scripts/model_manifest.py --write-current
@@ -228,7 +237,7 @@ los hiperparámetros de `adapter_config.json` y de `TRAINING_DEFAULTS`
 registra su hash y la partición. Nunca reentrena, fusiona ni descarga; se niega
 a componer una versión si el `training-manifest.json` existente describe otro
 adaptador (`--force` lo reconstruye). Versión actual:
-`beto-t5-base@04c598db+global-lora-v1@19ec2e4c`.
+`beto-t5-base@9f643870+global-lora-v4@cda68b25` (2026-09-19; anteriores en `models/*_v3`, `*_v2`, `*_v1_sep12`).
 
 ### Evaluación final sobre el holdout bloqueado (pendiente del autor)
 
