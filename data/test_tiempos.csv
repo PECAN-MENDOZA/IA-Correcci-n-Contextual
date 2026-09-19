@@ -1,0 +1,135 @@
+# Set de regresión por TIEMPO VERBAL y COMPLEJIDAD (categoria|entrada|esperado).
+# 10 categorías del gold x {presente, pasado, futuro} x {simple, compleja (subordinada)}.
+# Escrito el 2026-09-18 para comparar LoRA v1/v2/v3; el tiempo y la complejidad van en
+# el comentario de cada bloque. 'correcto' = ya correcto, no debe cambiar.
+categoria|entrada|esperado
+# ── tilde ──
+# presente / simple
+tilde|el medico trabaja en el hospital|el médico trabaja en el hospital
+# presente / compleja
+tilde|cuando llego a casa, mi mama prepara el cafe|cuando llego a casa, mi mamá prepara el café
+# pasado / simple
+tilde|el arbol perdio sus hojas|el árbol perdió sus hojas
+# pasado / compleja
+tilde|ayer visitamos el museo porque el sabado no abrio|ayer visitamos el museo porque el sábado no abrió
+# futuro / simple
+tilde|mañana ire al medico|mañana iré al médico
+# futuro / compleja
+tilde|el proximo lunes jugaremos futbol si no llueve|el próximo lunes jugaremos fútbol si no llueve
+# ── tilde_ctx ──
+# presente / simple
+tilde_ctx|el libro esta sobre la mesa|el libro está sobre la mesa
+# presente / compleja
+tilde_ctx|no se si el te esta caliente|no sé si el té está caliente
+# pasado / simple
+tilde_ctx|ayer compre pan|ayer compré pan
+# pasado / compleja
+tilde_ctx|cuando llegue a casa, mi papa ya habia cenado|cuando llegué a casa, mi papá ya había cenado
+# futuro / simple
+tilde_ctx|mañana el tren llegara tarde|mañana el tren llegará tarde
+# futuro / compleja
+tilde_ctx|si estudio mucho, sacare buena nota y mi mama estara feliz|si estudio mucho, sacaré buena nota y mi mamá estará feliz
+# ── homofono ──
+# presente / simple
+homofono|ay un gato en el techo|hay un gato en el techo
+# presente / compleja
+homofono|mi hermano dice que ay que estudiar para el examen|mi hermano dice que hay que estudiar para el examen
+# pasado / simple
+homofono|ayer tube mucha tarea|ayer tuve mucha tarea
+# pasado / compleja
+homofono|cuando llegamos, la baca ya avia comido|cuando llegamos, la vaca ya había comido
+# futuro / simple
+homofono|mañana abra clases|mañana habrá clases
+# futuro / compleja
+homofono|si yueve, no bamos a poder ir a la playa|si llueve, no vamos a poder ir a la playa
+# ── fonetica ──
+# presente / simple
+fonetica|el niño kome mucha fruta|el niño come mucha fruta
+# presente / compleja
+fonetica|aunque llueba, yo boy a la eskuela|aunque llueva, yo voy a la escuela
+# pasado / simple
+fonetica|ayer komimos pescado|ayer comimos pescado
+# pasado / compleja
+fonetica|cuando termine la tarea, ise mi cama y sali a jugar|cuando terminé la tarea, hice mi cama y salí a jugar
+# futuro / simple
+fonetica|mañana are la tarea|mañana haré la tarea
+# futuro / compleja
+fonetica|si terminamos temprano, iremos a la pisina y nadaremos|si terminamos temprano, iremos a la piscina y nadaremos
+# ── disgrafia ──
+# presente / simple
+disgrafia|los ninos jugan en el parke|los niños juegan en el parque
+# presente / compleja
+disgrafia|mi ermano dise ke no kiere comer berduras|mi hermano dice que no quiere comer verduras
+# pasado / simple
+disgrafia|ayer bisitamos a mi abuela|ayer visitamos a mi abuela
+# pasado / compleja
+disgrafia|cuando fuimos al sirco, bimos un elefante muy grande|cuando fuimos al circo, vimos un elefante muy grande
+# futuro / simple
+disgrafia|mañana bamos a la biblioteca|mañana vamos a la biblioteca
+# futuro / compleja
+disgrafia|el sabado iremos al sine si mi papa nos yeba|el sábado iremos al cine si mi papá nos lleva
+# ── separacion ──
+# presente / simple
+separacion|voy ala escuela todos los dias|voy a la escuela todos los días
+# presente / compleja
+separacion|mi mama dice que delos juguetes debo escoger uno|mi mamá dice que de los juguetes debo escoger uno
+# pasado / simple
+separacion|ayer fui ala playa|ayer fui a la playa
+# pasado / compleja
+separacion|cuando salimos delas clases, fuimos ala tienda|cuando salimos de las clases, fuimos a la tienda
+# futuro / simple
+separacion|mañana iremos ala feria|mañana iremos a la feria
+# futuro / compleja
+separacion|si termino la tarea, ire ala casa demi amigo|si termino la tarea, iré a la casa de mi amigo
+# ── gramatica ──
+# presente / simple
+gramatica|los niños juega en el patio|los niños juegan en el patio
+# presente / compleja
+gramatica|a mi me gusta los libros que tiene dibujos|a mí me gustan los libros que tienen dibujos
+# pasado / simple
+gramatica|habian muchas personas en la fiesta|había muchas personas en la fiesta
+# pasado / compleja
+gramatica|los perros que vi ayer estaba muy sucio|los perros que vi ayer estaban muy sucios
+# futuro / simple
+gramatica|mañana habran muchas nubes|mañana habrá muchas nubes
+# futuro / compleja
+gramatica|si mis amigos viene, jugaremos hasta tarde|si mis amigos vienen, jugaremos hasta tarde
+# ── amalgama ──
+# presente / simple
+amalgama|aver si vienes hoy|a ver si vienes hoy
+# presente / compleja
+amalgama|sino terminas la tarea, no puedes jugar|si no terminas la tarea, no puedes jugar
+# pasado / simple
+amalgama|asique me fui a casa|así que me fui a casa
+# pasado / compleja
+amalgama|ayer llovio mucho, asique nos quedamos en casa|ayer llovió mucho, así que nos quedamos en casa
+# futuro / simple
+amalgama|aver si mañana vienes|a ver si mañana vienes
+# futuro / compleja
+amalgama|sino llueve mañana, iremos al parque|si no llueve mañana, iremos al parque
+# ── colectivo ──
+# presente / simple
+colectivo|el grupo cantan muy bien|el grupo canta muy bien
+# presente / compleja
+colectivo|mi familia piensan que debo estudiar mas|mi familia piensa que debo estudiar más
+# pasado / simple
+colectivo|el equipo perdieron el partido|el equipo perdió el partido
+# pasado / compleja
+colectivo|la gente aplaudieron cuando termino la obra|la gente aplaudió cuando terminó la obra
+# futuro / simple
+colectivo|mi familia vendran el domingo|mi familia vendrá el domingo
+# futuro / compleja
+colectivo|el equipo ganaran si el entrenador los ayuda|el equipo ganará si el entrenador los ayuda
+# ── correcto ──
+# presente / simple
+correcto|mi hermana estudia en la universidad|mi hermana estudia en la universidad
+# presente / compleja
+correcto|aunque llueve mucho, los niños juegan en el patio|aunque llueve mucho, los niños juegan en el patio
+# pasado / simple
+correcto|ayer comimos pescado con arroz|ayer comimos pescado con arroz
+# pasado / compleja
+correcto|cuando llegué a casa, mi mamá ya había preparado la cena|cuando llegué a casa, mi mamá ya había preparado la cena
+# futuro / simple
+correcto|mañana iremos al cine|mañana iremos al cine
+# futuro / compleja
+correcto|si termino la tarea temprano, jugaré con mis amigos|si termino la tarea temprano, jugaré con mis amigos

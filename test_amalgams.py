@@ -59,6 +59,17 @@ class TestAmalgams(unittest.TestCase):
         self.assertEqual(expand_amalgams("sino te apuras llegamos tarde"),
                          "si no te apuras llegamos tarde")
 
+    def test_sino_abriendo_oracion_es_si_no(self):
+        # La adversativa nunca abre frase: "Sino llueve, ..." es "si no".
+        self.assertEqual(expand_amalgams("sino llueve mañana, iremos al parque"),
+                         "si no llueve mañana, iremos al parque")
+        self.assertEqual(expand_amalgams("es tarde. Sino corres, lo pierdes"),
+                         "es tarde. Si no corres, lo pierdes")
+
+    def test_sino_que_abriendo_oracion_se_conserva(self):
+        self.assertEqual(expand_amalgams("sino que me quedé en casa"),
+                         "sino que me quedé en casa")
+
     def test_sino_adversativo_se_conserva(self):
         # "no quiero esto sino aquello": conjunción legítima ante determinante.
         self.assertEqual(expand_amalgams("no quiero esto sino aquello"),
@@ -131,6 +142,40 @@ class TestColectivos(unittest.TestCase):
     def test_plural_real_se_conserva(self):
         self.assertEqual(correct_grammar("los equipos ganaron el partido"),
                          "los equipos ganaron el partido")
+
+    def test_verbo_regular_por_sufijo(self):
+        # Formas fuera de la tabla: pretérito, futuro, imperfecto y presente.
+        self.assertEqual(correct_grammar("el equipo perdieron el partido"),
+                         "el equipo perdió el partido")
+        self.assertEqual(correct_grammar("la gente aplaudieron mucho"),
+                         "la gente aplaudió mucho")
+        self.assertEqual(correct_grammar("mi familia leyeron el libro"),
+                         "mi familia leyó el libro")
+        self.assertEqual(correct_grammar("el equipo ganaran si entrenan"),
+                         "el equipo ganará si entrenan")
+        self.assertEqual(correct_grammar("mi familia vendran el domingo"),
+                         "mi familia vendrá el domingo")
+        self.assertEqual(correct_grammar("la gente tenian miedo"),
+                         "la gente tenía miedo")
+        self.assertEqual(correct_grammar("la gente cambian de opinión"),
+                         "la gente cambia de opinión")
+        self.assertEqual(correct_grammar("el grupo cantan muy bien"),
+                         "el grupo canta muy bien")
+
+    def test_presente_solo_si_el_singular_esta_en_el_lexico(self):
+        # Sustantivos en -an/-en tras el colectivo no se tocan.
+        for frase in ("el grupo examen", "el equipo alemán ganó",
+                      "la gente joven baila", "el equipo tren", "el grupo tan grande"):
+            self.assertEqual(correct_grammar(frase), frase)
+
+    def test_haber_impersonal_futuro_y_subjuntivo(self):
+        self.assertEqual(correct_grammar("mañana habran muchas nubes"),
+                         "mañana habrá muchas nubes")
+        self.assertEqual(correct_grammar("espero que hayan muchas personas"),
+                         "espero que haya muchas personas")
+        # Auxiliar legítimo: no se toca.
+        self.assertEqual(correct_grammar("habrán llegado ya"), "habrán llegado ya")
+        self.assertEqual(correct_grammar("ojalá hayan comido"), "ojalá hayan comido")
 
     def test_adjetivo_fuera_de_la_lista_blanca_se_conserva(self):
         # El verbo se corrige; el predicado solo se singulariza si está en la

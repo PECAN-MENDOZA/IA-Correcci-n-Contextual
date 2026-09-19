@@ -15,9 +15,10 @@ ejemplo de alumno que la motiva):
                                 ("puede haber si quieres"); si no, es la
                                 amalgama de "a ver".
   3. `asique` -> `así que`   — incondicional (no existe).
-  4. `sino`   -> `si no`     — solo ante verbo conjugado o clítico
-                                ("sino vienes"); la conjunción adversativa
-                                ("no esto sino aquello", "sino que") se conserva.
+  4. `sino`   -> `si no`     — ante verbo conjugado o clítico ("sino
+                                vienes") o abriendo la oración ("Sino llueve,
+                                ..."); la conjunción adversativa ("no esto
+                                sino aquello", "sino que") se conserva.
   5. `porque` -> `por qué`   — solo cuando abre una interrogativa
                                 ("porque no vienes?"); el causal se conserva.
 
@@ -39,6 +40,20 @@ _SINO_VERBS = {
     "dice", "dicen", "vuelves", "vuelve", "vuelven", "apuras", "apura",
     "terminas", "termina", "terminan", "empiezas", "empieza", "empiezan",
     "ayudas", "ayuda", "ayudan", "escuchas", "escucha", "escuchan",
+    "llueve", "nieva", "funciona", "pasa", "sirve", "gusta", "importa",
+    "entiendes", "entiende", "cambias", "cambia", "corres", "corre", "juegas",
+    "juega", "duermes", "duerme", "aprendes", "aprende", "lees", "lee",
+    "escribes", "escribe", "respondes", "responde", "contestas", "contesta",
+    "practicas", "practica", "trabajas", "trabaja", "limpias", "limpia",
+    "ordenas", "ordena", "guardas", "guarda", "pagas", "paga", "llamas",
+    "llama", "esperas", "espera", "consigues", "consigue", "logras", "logra",
+    "subes", "sube", "bajas", "baja", "entras", "entra", "abres", "abre",
+    "cierras", "cierra", "ganas", "gana", "pierdes", "pierde", "cuidas",
+    "cuida", "avisas", "avisa", "obedeces", "obedece",
+    "viniste", "vino", "vinieron", "fuiste", "fue", "fueron", "hiciste",
+    "hizo", "hicieron", "pudiste", "pudo", "pudieron", "quisiste", "quiso",
+    "tuviste", "tuvo", "llegaste", "llego", "terminaste", "termino",
+    "ayudaste", "ayudo", "estudiaste", "estudio",
 }
 # Pronombres átonos: "sino te apuras" -> "si no te apuras".
 _SINO_CLITICS = {"me", "te", "se", "le", "nos", "les", "lo", "la", "los", "las"}
@@ -117,9 +132,13 @@ def expand_amalgams(text: str) -> str:
         elif low in ("asique", "asiq"):
             replacement = "así que"
 
-        # 4. "sino vienes" -> "si no vienes" (ante verbo o clítico; la
-        #    adversativa "no esto sino aquello" y "sino que" se conservan)
-        elif low == "sino" and (nxt in _SINO_VERBS or nxt in _SINO_CLITICS):
+        # 4. "sino vienes" -> "si no vienes" (ante verbo o clítico, o abriendo
+        #    la oración: la adversativa "no esto sino aquello" nunca abre frase;
+        #    "sino que" se conserva)
+        elif low == "sino" and (
+            nxt in _SINO_VERBS or nxt in _SINO_CLITICS
+            or (opens_sentence and nxt and nxt != "que")
+        ):
             replacement = "si no"
 
         # 5. "porque no vienes?" -> "por qué no vienes?" (solo si abre la

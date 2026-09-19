@@ -8,6 +8,8 @@ reentrena). Cubre errores frecuentes del español expresables sin parsing:
                         "me gusta los dulces"     -> "me gustan los dulces"
   3. Número tras cuantificador: "dos gato"         -> "dos gatos"
   9. Colectivo singular:  "la gente son amables"   -> "la gente es amable"
+                          (irregulares por tabla; regulares por sufijo, con
+                          el léxico es_50k como guarda para el presente)
 
 Cada regla es conservadora: solo dispara cuando el patrón es inequívoco, para
 no introducir regresiones (verificado con evaluate.py sobre el set gold).
@@ -68,7 +70,10 @@ def _pluralize(noun: str) -> str:
 # 1. Haber impersonal: la forma plural es siempre incorrecta cuando NO va seguida
 #    de participio/gerundio (que sería su uso auxiliar legítimo: "habían comido").
 #    Claves SIN tilde (se emparejan con _norm); los valores llevan la tilde correcta.
-_HABER_IMPERSONAL = {"habian": "había", "habrian": "habría", "hubieron": "hubo"}
+_HABER_IMPERSONAL = {
+    "habian": "había", "habrian": "habría", "hubieron": "hubo",
+    "habran": "habrá", "hayan": "haya", "hubieran": "hubiera", "hubiesen": "hubiese",
+}
 
 # Cuantificadores que fuerzan plural en el sustantivo siguiente.
 _QUANTIFIERS = {
@@ -145,7 +150,13 @@ _S_NOUN_STOP = {
 #    se excluyen a propósito los cuantificadores partitivos ("la mayoría",
 #    "parte de", "un montón de"), donde la concordancia ad sensum ("la mayoría
 #    llegaron") está aceptada y corregirla sería un falso positivo.
-_COLLECTIVE_NOUNS = {"gente", "familia", "grupo", "equipo", "publico", "gentio"}
+_COLLECTIVE_NOUNS = {
+    "gente", "familia", "grupo", "equipo", "publico", "gentio", "multitud",
+    "muchedumbre", "policia", "ejercito", "gobierno", "jurado", "alumnado",
+    "profesorado",
+}
+# Formas irregulares o que no se singularizan por sufijo. Las regulares las
+# resuelve `_collective_singular` por morfología (ver abajo).
 _PLURAL_TO_SG_VERB = {
     "son": "es", "estan": "está", "eran": "era", "estaban": "estaba",
     "fueron": "fue", "seran": "será", "estaran": "estará",
@@ -164,7 +175,75 @@ _PLURAL_TO_SG_VERB = {
     "parecen": "parece", "parecian": "parecía", "necesitan": "necesita",
     "trabajan": "trabaja", "esperan": "espera", "entran": "entra",
     "salieran": "saliera", "gritan": "grita", "aplauden": "aplaude",
+    # Futuros irregulares (el sufijo no es -arán/-erán/-irán).
+    "vendran": "vendrá", "tendran": "tendrá", "pondran": "pondrá",
+    "saldran": "saldrá", "podran": "podrá", "querran": "querrá",
+    "sabran": "sabrá", "habran": "habrá", "haran": "hará", "diran": "dirá",
+    "valdran": "valdrá", "cabran": "cabrá",
 }
+# Singularización morfológica del verbo plural (claves sin tilde). Los
+# sufijos de pretérito, imperfecto y futuro son inequívocamente verbales; el
+# presente (-an/-en) choca con sustantivos ("examen", "pan"), así que solo se
+# acepta si la forma singular existe en el léxico es_50k y no está en la
+# lista de colisiones conocidas.
+_COLLECTIVE_VERB_SUFFIXES = (
+    # (sufijo plural, sufijo singular, exige léxico)
+    ("ieron", "ió", False), ("yeron", "yó", False), ("aron", "ó", False),
+    ("aban", "aba", False),
+    ("aran", "ará", False), ("eran", "erá", False), ("iran", "irá", False),
+    ("an", "a", True), ("en", "e", True),
+)
+_COLLECTIVE_SG_STOP = {"tre", "crime", "resume", "orde", "image", "volume", "ta", "pa", "sa"}
+_LEXICON_PATH = "./es_50k.txt"
+_lexicon_cache: set | None = None
+
+
+def _lexicon() -> set:
+    """Palabras del corpus es_50k (primera columna), cargadas una sola vez.
+    Sin el archivo devuelve un conjunto vacío: las reglas que exigen léxico
+    simplemente no disparan."""
+    global _lexicon_cache
+    if _lexicon_cache is None:
+        words: set = set()
+        try:
+            with open(_LEXICON_PATH, encoding="utf-8") as fh:
+                for line in fh:
+                    parts = line.split()
+                    if parts:
+                        words.add(parts[0].lower())
+        except OSError:
+            pass
+        _lexicon_cache = words
+    return _lexicon_cache
+
+
+def _collective_singular(verb: str) -> str | None:
+    """Forma singular (con tilde) de un verbo plural tras un colectivo, o None
+    si no se reconoce con seguridad. `verb` es el token original (puede traer
+    tilde); la clave se normaliza."""
+    low = _norm(verb)
+    if low in _PLURAL_TO_SG_VERB:
+        return _PLURAL_TO_SG_VERB[low]
+    if len(low) < 4:
+        return None
+    # -ían (imperfecto: tenían -> tenía) vs -ian (presente: cambian -> cambia).
+    # Sin tilde son indistinguibles: gana la lectura cuyo singular está en el léxico.
+    if low.endswith("ian"):
+        stem = low[:-3]
+        if "ían" in _clean(verb) or stem + "ía" in _lexicon():
+            return stem + "ía"
+        if stem + "ia" in _lexicon() and stem + "ia" not in _COLLECTIVE_SG_STOP:
+            return stem + "ia"
+        return None
+    for plural, singular, needs_lexicon in _COLLECTIVE_VERB_SUFFIXES:
+        if low.endswith(plural) and len(low) > len(plural) + 1:
+            candidate = low[: -len(plural)] + singular
+            if needs_lexicon and (candidate not in _lexicon() or candidate in _COLLECTIVE_SG_STOP):
+                return None
+            return candidate
+    return None
+
+
 # Intensificadores que pueden separar el verbo del predicado.
 _INTENSIFIERS = {"muy", "tan", "bastante", "demasiado", "poco", "algo", "super"}
 # Lista blanca de adjetivos que se singularizan detrás del verbo corregido. Es
@@ -227,9 +306,9 @@ def correct_grammar(text: str) -> str:
 
         # 9. Colectivo singular + verbo plural inmediato -> verbo (y predicado
         #    de la lista blanca) en singular: "la gente son muy amables".
-        if low in _COLLECTIVE_NOUNS and _norm(next_content(i)) in _PLURAL_TO_SG_VERB:
-            verb_tok = tokens[i + 1]
-            tokens[i + 1] = _reword(verb_tok, _PLURAL_TO_SG_VERB[_norm(verb_tok)])
+        singular = _collective_singular(next_content(i)) if low in _COLLECTIVE_NOUNS else None
+        if singular is not None:
+            tokens[i + 1] = _reword(tokens[i + 1], singular)
             j = i + 2
             if j < len(tokens) and _norm(tokens[j]) in _INTENSIFIERS:
                 j += 1
