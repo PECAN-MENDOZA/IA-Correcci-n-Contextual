@@ -10,6 +10,8 @@ reentrena). Cubre errores frecuentes del español expresables sin parsing:
   9. Colectivo singular:  "la gente son amables"   -> "la gente es amable"
                           (irregulares por tabla; regulares por sufijo, con
                           el léxico es_50k como guarda para el presente)
+ 10. Ortografía vigente:  "sólo" -> "solo" (RAE 2010; `normalize_modern_spelling`,
+                          se aplica al final del pipeline)
 
 Cada regla es conservadora: solo dispara cuando el patrón es inequívoco, para
 no introducir regresiones (verificado con evaluate.py sobre el set gold).
@@ -348,6 +350,34 @@ def correct_grammar(text: str) -> str:
             continue
 
     return " ".join(tokens)
+
+
+# 10. Ortografía vigente (RAE 2010): "sólo", "guión" y los demostrativos con
+#     tilde ya no se acentúan. El corpus de subtítulos con el que se entrenó el
+#     T5 y el léxico es_50k son anteriores a la reforma y las reponen; en
+#     COWS-L2H el profesor las marca como error. Se normaliza al final del
+#     pipeline salvo que el propio alumno haya escrito la tilde.
+_MODERN_SPELLING = {
+    "sólo": "solo", "guión": "guion", "truhán": "truhan",
+    "éste": "este", "ésta": "esta", "éstos": "estos", "éstas": "estas",
+    "ése": "ese", "ésa": "esa", "ésos": "esos", "ésas": "esas",
+    "aquél": "aquel", "aquélla": "aquella", "aquéllos": "aquellos", "aquéllas": "aquellas",
+}
+
+
+def normalize_modern_spelling(text: str, written: set | None = None) -> str:
+    """Quita las tildes abolidas en 2010 (ver _MODERN_SPELLING). `written` son
+    las palabras (en minúsculas) que el alumno escribió ya con tilde: esas se
+    respetan, igual que en la capa 1."""
+    written = written or set()
+    out = []
+    for tok in text.split():
+        core = _clean(tok)
+        if core in _MODERN_SPELLING and core not in written:
+            out.append(_reword(tok, _MODERN_SPELLING[core]))
+        else:
+            out.append(tok)
+    return " ".join(out)
 
 
 def _reword(original_token: str, replacement: str) -> str:

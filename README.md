@@ -195,6 +195,12 @@ python evaluate.py --dataset data/test_agreement.csv       --t5-dir models/t5_co
 python evaluate.py --dataset data/test_subjunctive.csv     --t5-dir models/t5_correction --development --out reports/subjunctive.json      # 19/20 (Navidad)
 python evaluate.py --dataset data/test_tiempos.csv         --t5-dir models/t5_correction --development --out reports/tiempos.json          # 58/60 (2 de SymSpell)
 python evaluate.py --dataset data/test_sobrecorreccion.csv --t5-dir models/t5_correction --development --out reports/sobrecorreccion.json  # 17/18 (el te/él te)
+# Dos sets EXTERNOS con oraciones reales (COWS-L2H dev, universitarios de español L2, corrección de
+# un profesor; scripts/sample_cowsl2h.py, semilla 2026). No son la población objetivo: miden daño
+# (precisión) y sirven para comparar versiones. Placeholders *FIRST_NAME* -> *FIRSTNAME* cuentan
+# como FP y son artefacto del corpus (4-8 por muestra). Valores v4 + ortografía vigente (2026-09-19):
+python evaluate.py --dataset data/test_cowsl2h_spelling200.csv --t5-dir models/t5_correction --development --out reports/cowsl2h_spelling200.json  # P 0,735 R 0,454 F0.5 0,654 (74/200; v3: 0,701/0,437/0,625)
+python evaluate.py --dataset data/test_cowsl2h_random200.csv   --t5-dir models/t5_correction --development --out reports/cowsl2h_random200.json    # P 0,544 R 0,145 F0.5 0,351 (26/200; v3: 0,495/0,126/0,313)
 # Una corrida con la misma semilla NO es determinista en GPU: v4c (mismos datos que v4b salvo
 # 3 pares) perdió `mis amigos no vino` en test_agreement. Guardar el adaptador de cada intento
 # (models/grammar_lora_v4a..c) y elegir por las cinco regresiones, no por val_loss.
@@ -285,6 +291,7 @@ se ha generado todavía.
 | 2.5  | Desambiguación contextual de homófonos y tildes con BETO MLM |
 | 3    | Gramática por reglas (haber impersonal, gustar, concordancia de número) |
 | 4    | Refinamiento gramatical con T5 + LoRA global (beam search, 3 candidatos con score); el beam 1 se recomienda solo si pasa la guarda de cantidad (`is_safe_refinement`) y la léxica (`is_lexically_plausible_refinement`: reemplazos cercanos, inserciones/borrados solo de la lista blanca, nunca negadores ni cuantificadores) |
+| 4.5  | Ortografía vigente (RAE 2010): `sólo`, `guión` y los demostrativos con tilde se normalizan salvo que el alumno haya escrito la tilde (`normalize_modern_spelling`); el corpus de subtítulos del T5 y `es_50k` son anteriores a la reforma |
 | 5    | Selección de alternativas: una recomendación, o hasta 3 opciones solo con señal positiva de ambigüedad (modo, tilde o empate de BETO; ver abajo) |
 
 ## Evaluación: Precisión, Recall y F0.5 a nivel de edición (`evaluate.py`)

@@ -10,7 +10,7 @@ from symspellpy import SymSpell, Verbosity
 from infrastructure.nlp.phonetic_engine import PhoneticEngine, match_case, to_phonetic, DICT_PATH
 from infrastructure.nlp.context_judge import ContextJudge
 from infrastructure.nlp.amalgams import expand_amalgams
-from infrastructure.nlp.grammar_rules import correct_grammar
+from infrastructure.nlp.grammar_rules import correct_grammar, normalize_modern_spelling
 from infrastructure.nlp.alternatives import THRESHOLDS, select_alternatives
 from infrastructure.ml.t5_model import T5CorrectionModel, T5SpanishTokenizer
 from infrastructure.ml.guards import is_lexically_plausible_refinement, is_safe_refinement
@@ -363,6 +363,13 @@ class CorrectionPipeline:
         # señal positiva de ambigüedad (contraste de modo o de tilde sobre una
         # palabra corregida); el léxico de frecuencias decide la conjugación
         # en el filtro de modo tras "es posible que", "ojalá", etc.
+        # Ortografía vigente (RAE 2010): "sólo" -> "solo", salvo que el alumno
+        # lo haya escrito con tilde. Va después de T5 porque el corpus de
+        # entrenamiento es anterior a la reforma y la repone.
+        base_corrected = normalize_modern_spelling(base_corrected, written_accents)
+        refined = [(normalize_modern_spelling(t, written_accents), s) for t, s in refined]
+        ambiguous_variants = [(normalize_modern_spelling(v, written_accents), s) for v, s in ambiguous_variants]
+
         recommended = refined[0][0] if refined else base_corrected
         best_score  = max((s for _, s in refined), default=0.0)
         return select_alternatives(

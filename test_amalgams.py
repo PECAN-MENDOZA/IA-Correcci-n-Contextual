@@ -19,7 +19,7 @@ Uso:
 import unittest
 
 from infrastructure.nlp.amalgams import expand_amalgams
-from infrastructure.nlp.grammar_rules import correct_grammar
+from infrastructure.nlp.grammar_rules import correct_grammar, normalize_modern_spelling
 
 
 class TestAmalgams(unittest.TestCase):
@@ -182,6 +182,23 @@ class TestColectivos(unittest.TestCase):
         # lista blanca de adjetivos (evita tocar sintagmas nominales).
         self.assertEqual(correct_grammar("la gente son mis vecinos"),
                          "la gente es mis vecinos")
+
+
+class TestOrtografiaVigente(unittest.TestCase):
+    """`normalize_modern_spelling`: tildes abolidas por la RAE en 2010."""
+
+    def test_solo_sin_tilde(self):
+        self.assertEqual(normalize_modern_spelling("sólo quiero agua"), "solo quiero agua")
+        self.assertEqual(normalize_modern_spelling("Sólo quiero agua."), "Solo quiero agua.")
+        self.assertEqual(normalize_modern_spelling("éste es mi guión"), "este es mi guion")
+
+    def test_respeta_lo_que_escribio_el_alumno(self):
+        self.assertEqual(normalize_modern_spelling("sólo quiero agua", written={"sólo"}),
+                         "sólo quiero agua")
+
+    def test_no_toca_otras_tildes(self):
+        self.assertEqual(normalize_modern_spelling("él está solo en la habitación"),
+                         "él está solo en la habitación")
 
 
 if __name__ == "__main__":

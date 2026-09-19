@@ -1,0 +1,206 @@
+# Oraciones REALES de COWS-L2H (github.com/ucdaviscl/cowsl2h, Apache-2.0), partición de
+# desarrollo (nunca el holdout), muestreadas por scripts/sample_cowsl2h.py con semilla 2026.
+# Referencia: corrección holística de un profesor (esperado_1; esperado_2 cuando hay dos).
+# Población: universitarios de español L2 — sirve para medir daño y comparar versiones,
+# no sustituye a la población objetivo. Los placeholders *FIRST_NAME* son del corpus.
+categoria|entrada|esperado_1|esperado_2
+cowsl2h|Lo primero que hicimos fue ponernos protector solar para que no nos queme el sol.|Lo primero que hicimos fue ponernos protector solar para que no nos quemara el sol.
+cowsl2h|Su padre es poco gordo y alto, pero su madre es baja y delgada.|Su padre es un poco gordo y alto, pero su madre es baja y delgada.
+cowsl2h|Yo no estaba viviendo mi vida solo estaba existiendo sin esperanza.|No estaba viviendo mi vida, solo estaba existiendo sin esperanza.
+cowsl2h|Estaba quince años y un atleta de deportes acuáticos.|Tenía quince años y era un atleta de deportes acuáticos.
+cowsl2h|También me gusta viajar a otras países.|También me gusta viajar a otros países.
+cowsl2h|Mis padres están casados por veintiocho años ahora.|Mis padres han estado casados por veintiocho años ya.
+cowsl2h|Sus colores favoritos son el blanco y la crema.|Sus colores favoritos son el blanco y el crema.|Sus colores favoritos son el blanco y el crema.
+cowsl2h|Entonces, ordenaría un bistec y las patatas fritas.|Entonces, ordenaría un bistec y patatas fritas.
+cowsl2h|Yo voy a conseguir otro perro.|Voy a conseguir otro perro.
+cowsl2h|Entonces, comemos la paella, el pollo con aruz, y el pescado.|Entonces, comemos paella, pollo con arroz y pescado.|Entonces, comemos paella, pollo con arroz, y pescado.
+cowsl2h|Olvido como su hija siempre le hacia de comer.|Olvidó como su hija siempre le hacía de comer.
+cowsl2h|No tengo un colore favorito.|No tengo un color favorito.
+cowsl2h|Nosotros veríamos una película de acción y caminaríamos por la isla para explorar.|Veríamos una película de acción y caminaríamos por la isla para explorarla.|Veríamos una película de acción y caminaríamos por la isla para explorar.
+cowsl2h|Ir de vacaciones es muy caro, pero si fui ser yo sería más barato.|Ir de vacaciones es muy caro, pero si fuese yo sería más barato.|Ir de vacaciones es muy caro, pero si fuese yo, sería más barato.
+cowsl2h|Disfruto aprendiendo español y espero poder seguir mejorando y mejorar en hablar coloquialmente!|Disfruto aprendiendo español y espero poder seguir mejorando y mejorar en hablar coloquialmente.
+cowsl2h|Sin embargo, necesito mejorar mi habilidad para entender y hablar en español primero.|Sin embargo, necesito mejorar mis habilidades para entender y hablar en español primero.
+cowsl2h|Tengo *AGE* años.|Tengo veintiún años.
+cowsl2h|Yo deseo esta historia es solo una historia o una historia que tiene no mas problema de corrupción.|Deseo que esta historia sea solo una historia o una historia que tiene no más problemas de corrupción.
+cowsl2h|Soy de *CITY*, *STATE*.|Soy de *CITY*, *STATE*lifornia.
+cowsl2h|No me gusta ir de compras, pero cuando necesito, voy a la tienda se llama *PLACE*.|No me gusta ir de compras, pero cuando necesito, voy a la tienda que se llama Target.
+cowsl2h|No nunca he viajado a España, Francia, o Italia, pero mi amiga me dijo son hermosas.|No nunca he viajado a España, Francia, o Italia, pero mi amiga me dijo que son hermosas.|Nunca he viajado a España, Francia o Italia, pero mi amiga me dijo que son hermosas.
+cowsl2h|Pero no sabía que ese año sufriría una lesión por sobreentrenamiento, lo que cambiaría mi vida como corredora.|No sabía que ese año sufriría una lesión por sobreentrenamiento, lo que cambiaría mi vida como corredora.
+cowsl2h|Por estas razones, muchas personas la admiran ya que ella simboliza un riel de libertad de expresiones y emociones.|Por estas razones, muchas personas la admiran ya que Lady Gaga simboliza una vía para la libertad de expresiones y emociones.|Por estas razones, muchas personas la admiran ya que ella simboliza un riel de libertad de expresiones y emociones.
+cowsl2h|El hombre fue un cantante muy talentoso también.|El hombre era un cantante muy talentoso también.
+cowsl2h|Mi vacation ideal Al poder planear la vacación perfecta, tendría que tomar en consideración varios elementos.|Mi vacación ideal Al poder planear la vacación perfecta, tendría que tomar en consideración varios elementos.
+cowsl2h|Desde entonces el muchacho cambio para lo mejor.|Desde entonces, el muchacho cambió para mejor.
+cowsl2h|Teníamos nuestro desayuno en nuestras mochilas y empezábamos nuestra caminata.|Teníamos nuestro desayuno en nuestras mochilas y empezamos nuestra caminata.
+cowsl2h|Nunca me peleaba, nunca me gritaba, sólo me decía- con pacienca y amabilidad- lo que necesitaba cambiar.|Nunca me reñía, nunca me gritaba, solo me decía (con paciencia y amabilidad) lo que necesitaba cambiar.
+cowsl2h|Después de compras, fuimos a la playa otro vez.|Después de compras, fuimos a la playa otra vez.
+cowsl2h|Durante mi espacio de *FIRST_NAME*, yo aprendí mucho sobre mí mismo.|Durante mi espacio de *FIRST_NAME*, aprendí mucho sobre mí misma.
+cowsl2h|Afortunadamente, *FIRST_NAME* vino a mi casa y me dio una sopa que ella hizo para mí.|Afortunadamente, Michelle vino a mi casa y me dio una sopa que ella hizo para mí.
+cowsl2h|En unos pocos meses estoy apunto de graduarme.|En unos pocos meses estoy a punto de graduarme.
+cowsl2h|Dos años pasado, fui a Barcelona para un viaje y me encanté con la ciudad y la cultura.|Hace dos años, fui a Barcelona en un viaje y me encantó la ciudad y la cultura.
+cowsl2h|Estaba atrapado y supongo me caí con suficiente potencia que me rompí mi cóccix.|Estaba atrapado y supongo que me caí con suficiente potencia que me rompí mi cóccix.
+cowsl2h|Él esta un poco gordo.|Está un poco gordo.
+cowsl2h|Mi mama es muy especial porque ella es muy simpatico.|Mi mamá es muy especial porque es muy simpática.
+cowsl2h|Hay muchas personas famosas en el mundo, pero Beyonce es muy especial a mi.|Hay muchas personas famosas en el mundo, pero Beyoncé es muy especial para mí.|﻿Hay muchas personas famosas en el mundo, pero Beyonce es muy especial para mi.
+cowsl2h|Él es muy simpático y alentador hacia mí desde el comienzo.|Es muy simpático y alentador hacia mí desde el comienzo.
+cowsl2h|Ella también tiene un esposo llamado Benjamin Millepied.|También tiene un esposo llamado Benjamin Millepied.
+cowsl2h|Segundo, mi abuela paterna es importante para mi porque ella me sienta feliz cuando se hablo.|Segundo, mi abuela paterna es importante para mí porque me siento feliz cuando me habla.
+cowsl2h|Yo no tengo ningunos hermanos, pero *FIRST_NAME* tenía tres hermanos.|Yo no tengo ningún hermano, pero *FIRST_NAME* tenía tres hermanos.
+cowsl2h|Me gusta pasa tiempo con mi novia y mis amigos.|Me gusta pasar tiempo con mi novia y mis amigos.
+cowsl2h|En el gimnasio, hay varios máquinas de gimnasio y muchos estudiantes que correr y hacer ejercios.|En el gimnasio, hay varias máquinas de gimnasio y muchos estudiantes que corren y hacen ejercicio.
+cowsl2h|Tengo un hermano que tiene *AGE* años y estudia psicología en *PLACE*.|Tengo un hermano que tiene *AGE* años y estudia Psicología en *PLACE*.
+cowsl2h|A ella le gustaba los perros y los gatos y quería ayudarlos.|A ella le gustaban los perros y los gatos y quería ayudarlos.
+cowsl2h|Trabajo en *PLACE* y *PLACE* and *PLACE* *PLACE*.|Trabajo en *PLACE* y en *PLACE* and *PLACE* *PLACE*.
+cowsl2h|Es muy tímido y asustado porque ningún otro estudiante se le acerca.|Era muy tímido y estaba asustado porque ningún otro estudiante se le acercaba.
+cowsl2h|Soy de *CITY* *CITY*, *STATE* y tengo *AGE* años.|Soy de *CITY* *CITY*, *STATE*, y tengo *AGE* años.
+cowsl2h|Ella es una de mis personas favoritas.|Es una de mis personas favoritas.
+cowsl2h|Tristezas porque ese dia tenia que despedirme de muchas amistades que crecieron por años.|Tristezas porque ese día tenía que despedirme de muchas amistades que crecieron por años.
+cowsl2h|Mi familia también les gusta mirar películas en el cine.|A mi familia también le gusta ver películas en el cine.|A mi familia también les gusta mirar películas en el cine.
+cowsl2h|Viajamos de uno a dos meses en Europa.|Viajamos de uno a dos meses por Europa.|Viajamos de uno a dos meses en Europa.
+cowsl2h|Encontré en una tienda de época en una ciudad cerca de la playa este año pasado.|Lo encontré en una tienda de época en una ciudad cerca de la playa este año pasado.
+cowsl2h|No hay dudo que ellas iban a decir "Sí."|No hay duda de que ellas iban a decir "sí".
+cowsl2h|En totalidad María se enfermó CUATRO VECES.|En total, María se enfermó CUATRO VECES.
+cowsl2h|Ha ayudado promover donaciones para diferentes [charities] que ayudan a niños con enfermedades y deseabilidades.|Ha ayudado a promover donaciones para diferentes caridades que ayudan a niños con enfermedades y deseabilidades.|Ha ayudado promover donaciones para diferentes organizaciones benéficas que ayudan a niños con enfermedades y discapacidades.
+cowsl2h|Yo estudio en la universidad de *UNIVERSITY* por tres años y me gusta mucha.|Yo estudio en la universidad de *UNIVERSITY* desde hace tres años y me gusta mucho.
+cowsl2h|Yo comparto una habitación con mi buen amiga en un apartamento cerca del campus.|Yo comparto una habitación con mi buena amiga en un apartamento cerca del campus.
+cowsl2h|Soy alta, atlética y a veces graciosas.|Soy alta, atlética y a veces graciosa.
+cowsl2h|Al subir al avión, la azafata me preguntara que quiero comer y que quiero tomar.|Al subir al avión, la azafata me preguntará qué quiero comer y qué quiero tomar.|Al subir al avión, la azafata me preguntará qué quiero comer y qué quiero tomar.
+cowsl2h|Tengo muchas personas que son importante a mí, pero pienso que mi madre es numero uno.|Tengo muchas personas que son importantes para mí, pero pienso que mi madre es la número uno.
+cowsl2h|Ella se rió y dijo que tampoco podía esperar.|Ella se rio y dijo que tampoco podía esperar.
+cowsl2h|Tengo clases muy dificiles, pero son interesantes.|Tengo clases muy difíciles, pero son interesantes.
+cowsl2h|Creo que ella puede hacer lo que ella pone su mente.|Creo que puede hacer lo que ponga su mente.
+cowsl2h|Tuvo cancer dos veces.|Tuvo cáncer dos veces.
+cowsl2h|Fue morena con ventanas azules y una puerta larga.|Era morena con ventanas azules y una puerta larga.
+cowsl2h|Yo hablo con el camarero.|Hablo con el camarero.
+cowsl2h|Las calles fue un poco socio y llenó con gente.|Las calles estaban un poco sucias y llenas de gente.
+cowsl2h|Con suerte, sin embargo, tendremos tiempo para visitarnos.|Con suerte tendremos tiempo para visitarnos.
+cowsl2h|Las estaciones de esquí es rango de fácil a difícil.|Las estaciones de esquí tienen rangos de fácil a difícil.|Las estaciones de esquí son de rango fácil a difícil.
+cowsl2h|Después, quiero comiere el pescado frito con papas fritas con Guinness.|Después, quiero comer pescado frito con papas fritas con Guinness.|Después, quiero comer pescado frito con papas fritas y con una Guinness.
+cowsl2h|Para convencer a sus hermanas que había una lucha, dejaría sangre falsa en el césped.|Para convencer a sus hermanas de que había una lucha, dejaría sangre falsa en el césped.
+cowsl2h|Y es algo que muchas personas valoren.|Y es algo que muchas personas valoran.
+cowsl2h|Creo que crecía estar enfermo por la comida, el altitud, y demasiado vino con los amigos.|Creo que la enfermedad se fue desarrollando por la comida, la altitud, y demasiado vino con los amigos.
+cowsl2h|El avión se retrasaste hasta el día siguiente para despegar porque el tiempo estuve terrible.|El avión se retrasó hasta el día siguiente para despegar porque el tiempo estuve terrible.
+cowsl2h|Soy estudiante, sí, y en adición también soy instructora de natación.|Soy estudiante, sí, y también soy instructora de natación.
+cowsl2h|Fue muy difícil porque era mas joven y no tenía una persona en la que confiar.|Fue muy difícil porque era muy joven y no tenía una persona en la que confiar.
+cowsl2h|Ojalá puedo ir a estas vacaciones un día.|Ojalá pueda ir a estas vacaciones un día.
+cowsl2h|No soy una persona que tengo mucha suerte con mi salud.|No soy una persona que tiene mucha suerte con la salud.
+cowsl2h|No sabía si quería ir a la escuela tan lejos de mi familia, amigos y todo lo que sé.|No sabía si quería ir a la escuela tan lejos de mi familia, amigos y todo lo que conozco.
+cowsl2h|También hay una historia de Hawaii la comida está llena de alimentos tradicionales.|También hay una historia de Hawái la comida está llena de alimentos tradicionales.
+cowsl2h|Diego Tinoco es un actor se nació el 25 de diciembre en 1997, tiene 20 años.|Diego Tinoco es un actor que nació el 25 de diciembre de 1997, tiene 20 años.
+cowsl2h|Fuimos a la casa de mi amiga para el proyecto y lo encontramos en el piso de la sala.|Fuimos a la casa de mi amigo para el proyecto y lo encontramos en el piso de la sala.
+cowsl2h|Nunca he estado en Fiji pero siempre ha sido un interés mío para ir.|Nunca he estado en Fiji pero siempre ha sido un interés mío por ir.|Nunca he estado en Fiji pero siempre ha sido me ha interesado ir.
+cowsl2h|Caminaba alrededor el piso para encontrar un otro amigo.|Caminaba alrededor el piso para encontrar otro amigo.
+cowsl2h|A la periodista le irrita que el periodista tenía esa fama.|A la periodista le irritaba que el periodista tuviera esa fama.
+cowsl2h|Estaríamos un poco triste de dejar a tras la playa y el hermoso clima tropical.|Estaríamos un poco tristes de dejar atrás la playa y el hermoso clima tropical.
+cowsl2h|Mi amigo y yo estábamos feliz por ellos.|Mi amigo y yo estábamos felices por ellos.
+cowsl2h|Cuando llegamos al aeropuerto de Los Ángeles, vamos a alquilar un coche nueva.|Cuando llegamos al aeropuerto de Los Ángeles, vamos a alquilar un coche nuevo.|Cuando llegamos al aeropuerto de Los Ángeles, vamos a alquilar un coche nuevo.
+cowsl2h|Él es muy divertido y extrovertido.|Es muy divertido y extrovertido.|Él es muy divertido y extrovertido.
+cowsl2h|Cuando fui acceptada a la universidad, yo estaba enfocada en recibir mi licenciatura en ciencias biologicas.|Cuando fui aceptada en la universidad, yo estaba enfocada en recibir mi licenciatura en ciencias biológicas.
+cowsl2h|Se lleva el bebé y ve a un señor caminando por una calle.|Se lleva al bebé y ve a un señor caminando por una calle.
+cowsl2h|En estos casos como en muchas otras circunstancias un poco miedo es vital para mi supervivencia.|En estos casos, como en muchas otras circunstancias, un poco de miedo es vital para mi supervivencia.
+cowsl2h|Me gusta escuchar musica.|Me gusta escuchar música.
+cowsl2h|Vamos a montar a muchos paseos allí.|Vamos a dar muchos paseos allí.
+cowsl2h|Ahora, yo estudio mucho en mi dormitorio y pasar al tiempo con mis amigos.|Ahora, estudio mucho en mi dormitorio y paso el tiempo con mis amigos.
+cowsl2h|Todos de mis tíos y mi abuelo están in *PLACE*.|Todos mis tíos y mi abuelo están in *PLACE*.
+cowsl2h|Quiero tener dos perros y uno gato en el futuro en mi casa.|Quiero tener dos perros y un gato en el futuro en mi casa.
+cowsl2h|Espero que puedo ir a España el proximo verano para estudiar algo.|Espero poder ir a España el próximo verano para estudiar algo.
+cowsl2h|Existen varias historias terribles en mi vida, la peor fue la muerte de mi abuela hace 6 anos.|Existen varias historias terribles en mi vida, la peor fue la muerte de mi abuela hace 6 años.
+cowsl2h|Unos de los razones es porque ella fue muy borracha, porque el alcohol es muy mal para su salud.|Una de las razones es porque ella estaba muy borracha, porque el alcohol es muy mal para su salud.
+cowsl2h|Antes de ir, la maestra pedia todos los estudiantes a escribir una pregunta sobre la antártica.|Antes de ir, la maestra pedía a todos los estudiantes escribir una pregunta sobre la Antártica.
+cowsl2h|Inmediatamente después, de que tomé otro Uber para al aeropuerto.|Inmediatamente después, tomé otro Uber para al aeropuerto.
+cowsl2h|Becky seguía subiendo covers de las canciones de otros artistas en youtube hasta que empezó a recibir bastante views del público.|Becky seguía subiendo sus versiones de las canciones de otros artistas a YouTube hasta que empezó a recibir bastantes visitas del público.|Becky seguía subiendo covers de las canciones de otros artistas en youtube hasta que empezó a recibir bastante views del público.
+cowsl2h|Así que, ahora va a una venta para encontrar una persona a crear a su en un caballero.|Así que, ahora va a una venta para encontrar a una persona que lo arme caballero.
+cowsl2h|Usualmente, levanto temprano, pero me acuesto tarde a menudo.|Normalmente, me levanto temprano, pero me acuesto tarde a menudo.
+cowsl2h|Es tranquilo y me concentro mejor.|Es tranquila y me concentro mejor.
+cowsl2h|Casi lloraba en la casa de espanto porque todo estaba oscuro y había gente brincando para asustarme.|Casi lloré en la casa de espanto porque todo estaba oscuro y había gente brincando para asustarme.
+cowsl2h|Mi compañero de cuarto se llama *FIRST_NAME*.|Mi compañero de cuarto se llama Ángel.
+cowsl2h|Voy a hablar de uno de los peores dias de mi toda mi vida.|Voy a hablar de uno de los peores días de mi toda mi vida.
+cowsl2h|Además, yo soy muy dedicada y determinada a las cosas que me encantan.|Además, soy muy dedicada y determinada con las cosas que me encantan.
+cowsl2h|Un día, espero que poder pintar bien.|Un día, espero poder pintar bien.|Un día, espero poder pintar bien.
+cowsl2h|Siento que las celebridades ahora no están haciendo nada importante para ayudar a otros.|Siento que las celebridades ahora no están haciendo nada importante para ayudar a los demás.
+cowsl2h|Nosotros empacaremos todos y nos iremos Yosemite en uno o dos de la tarde y conducir de regreso a San Diego.|Nosotros empacaremos todos y nos iremos de Yosemite a la una o dos de la tarde y conduciremos de regreso a San Diego.|Empacaremos todo y nos iremos de Yosemite sobre la una o las dos de la tarde, y conduciremos de regreso a San Diego.
+cowsl2h|Mi mamá tiene un perro se llama Trixie.|Mi mamá tiene un perro que se llama Trixie.
+cowsl2h|La mayoría de las veces que voy son con mi mamá porque mi papá trabaja mucho.|La mayoría de las veces que voy es con mi mamá porque mi papá trabaja mucho.
+cowsl2h|Ella es baja y guapa.|Es baja y guapa.
+cowsl2h|Cuando salgo de Hawaii siempre estoy triste y me gustaría poder mover allí.|Cuando salgo de Hawái siempre estoy triste y me gustaría poder mudarme allí.|Cuando me voy de Hawái siempre estoy triste y me gustaría poder mudarme allí.
+cowsl2h|Ahora, estoy estudiando literatura en ingles y espanol, y comunicación en la universidad de *UNIVERSITY*.|Ahora, estoy estudiando Literatura en inglés y español, y Comunicación en la universidad de *UNIVERSITY*.
+cowsl2h|Yo era tímida, introvertida, y muy reservada.|Era tímida, introvertida, y muy reservada.
+cowsl2h|Porque no hice mis deberes, mi professor estaba enojada.|Porque no hice mis deberes, mi profesora estaba enojada.
+cowsl2h|Mi familia es de *PLACE* y con mucho orgullo digo que soy una muchacha *PLACE*.|Mi familia es de *PLACE* y con mucho orgullo digo que soy una muchacha latina.
+cowsl2h|Tenía algunas minutos más hasta que llegó mi madre.|Tenía algunos minutos más hasta que llegó mi madre.
+cowsl2h|Yo me defino a mi misma como una persona muy determinada, responsable y persistente.|Me defino a mí misma como una persona muy determinada, responsable y persistente.
+cowsl2h|Ella es simpática y confiable.|Es simpática y confiable.
+cowsl2h|Obtuvo una A y sintió que podría pasar la final con una A si dedica todo su tiempo al cálculo.|Obtuvo una A y sintió que podría pasar la final con una A si dedicaba todo su tiempo al cálculo.
+cowsl2h|Donald juega el fútbol de americano en Universidad de Fordham.|Donald juega al fútbol americano en la Universidad de Fordham.|Donald jugaba al fútbol de americano en la Universidad de Fordham.
+cowsl2h|Mi abuela es muy difícil.|Mi abuela es muy duras.
+cowsl2h|Ella es muy generosa interesante e inteligente.|Es muy generosa interesante e inteligente.
+cowsl2h|Mi perro va al parte posterior de la casa y ¡los "raccoons" la atacan mi perro!|Mi perro va a la parte posterior de la casa y ¡las "mofetas" atacan a mi perro!
+cowsl2h|Yo tengo una hermosa historia.|Tengo una hermosa historia.
+cowsl2h|Allí, se fundó a un grupo musical con unos amigos y unos hermanos, quienes hicieron canciones originales en inglés.|Allí, fundó un grupo musical con unos amigos y sus hermanos, quienes hicieron canciones originales en inglés.|Allí, fundó un grupo musical con unos amigos y unos hermanos, quienes hicieron canciones originales en inglés.
+cowsl2h|Además, soy inteligente, emocionante, divertidísima, atlética, y asombrosa.|Además, soy inteligente, emocionante, divertidísima, atlética y asombrosa.
+cowsl2h|Me pongo muy emocionado estar en un lugar diferente de estoy acostumbrado porque siento cómo un personaje perdido en otra lugar.|Me pongo muy emocionado por estar en un lugar diferente del que estoy acostumbrado porque me siento como un personaje perdido en otro lugar.
+cowsl2h|Me siente muy triste.|Me sentí muy triste.
+cowsl2h|Soy el tipo de persona para decir algo y defendir a mis amigos y las creencias que tengo.|Soy el tipo de persona que dice algo y defiende a sus amigos y las creencias que tiene.
+cowsl2h|Nosotros vamos a visitar a las tiendas de juegos como "It´s Game Time" en Los Ángeles Oeste.|Vamos a visitar tiendas de juegos como "It´s Game Time" en Los Ángeles Oeste.
+cowsl2h|Deciden construir una casa juntos, y construyen una gran telaraña en este árbol, lo suficientemente grande para los dos.|Decidieron construir una casa juntos y construyen una gran telaraña en este árbol, lo suficientemente grande para los dos.
+cowsl2h|Yo tengo muchos buenos recuerdos con mi mamá.|Tengo muchos buenos recuerdos con mi mamá.
+cowsl2h|Taylor es divertida, generosa y inteligente.|Taylor es divertida, generosa e inteligente.|Taylor es divertida, generosa e inteligente.
+cowsl2h|Él es un artista que canta, escribe canciones, también es rapero, productor y fotógrafo.|Es un artista que canta, escribe canciones, también es rapero, productor y fotógrafo.
+cowsl2h|No soy aggresivo o maleducado.|No soy agresivo o maleducado.
+cowsl2h|El mesero está ocupado y no habla para mi familia.|El mesero está ocupado y no habla con mi familia.
+cowsl2h|Max siempre les dice a los amigos imaginarios que no se molesten en la noche pero nunca lo escuchan.|Max siempre les decía a los amigos imaginarios que no moléstenle molestaran en la noche pero nunca lo escuchaban.
+cowsl2h|Marco lleva una chaqueta de azur y los vaqueros.|Marco lleva una chaqueta azul y vaqueros.
+cowsl2h|Nos gustan las mismas programas y nos miramos juntos, y nos escuchamos la misma musíca también.|Nos gustan los mismos programas y los miramos juntas, y escuchamos la misma música también.
+cowsl2h|Allí, yo, mi tía, y mi primo esperamos para el doctor por muchas horas.|Allí, yo, mi tía, y mi primo esperamos al doctor por muchas horas.
+cowsl2h|Estoy en esta internada porque necesito experiencia en medicina y no tengo muchos opciones, pero me gusta la mucho.|Estoy en esta interinidad porque necesito experiencia en medicina y no tengo muchas opciones, pero me gusta mucho.
+cowsl2h|El estaba muy asustado porque no sabía dónde se había perdido.|Estaba muy asustado porque no sabía dónde se había perdido.
+cowsl2h|Después de la semana, regresaría a mi estado natal, *STATE*.|Después, regresaría a mi estado natal, *STATE*.|Después de la semana, regresaría a mi estado natal, *STATE*.
+cowsl2h|También me gusta hablar a mis amigos y ir de compras con ellos.|También me gusta hablar a mis amigos e ir de compras con ellos.
+cowsl2h|Sin embargo, después de unos mese, pude entender.|Sin embargo, después de unos meses, pude entender.
+cowsl2h|A veces *FIRST_NAME* esta timido pero usalmente el es extrovertido.|A veces *FIRST_NAME* es tímido, pero usualmente es extrovertido.
+cowsl2h|El perro es el bebe de nuestra familia.|El perro es el bebé de nuestra familia.
+cowsl2h|Una ves, roti mi hombro cuando jugaba al futbol con mis amigos.|Una vez, me rompí el hombro cuando jugaba al futbol con mis amigos.
+cowsl2h|He dominado la cocina India.|He dominado la cocina india.
+cowsl2h|Ellos se conocieron cuando tenían *AGE* y *AGE*.|Se conocieron cuando tenían *AGE* y *AGE*.
+cowsl2h|Yo se que Dios sabe lo que está haciendo y me pongo toda mi fe en el, siempre.|Yo sé que Dios sabe lo que está haciendo y me pongo toda mi fe en él, siempre.
+cowsl2h|Durante todo mi niñez fui criada por las tradiciones de el lado de mi mama.|Durante toda mi niñez fui criada con las tradiciones del lado de mi mamá.
+cowsl2h|Llevo la ropa arriesgada, arreglada y cómoda, pero cuando bailo llevo la ropa deportiva.|Llevo ropa reveladora, arreglada y cómoda, pero cuando bailo llevo ropa deportiva.
+cowsl2h|Me encantan los animales, pero también me gusta poder ayudar la gente.|Me encantan los animales, pero también me gusta poder ayudar a la gente.
+cowsl2h|También, nosotros conoceremos nuevas personas en la ciudad.|También, conoceremos personas nuevas en la ciudad.
+cowsl2h|El crea que tiene un futuro, la única posibilidad es hacer parte de la misma pandilla de su familia.|Cree que tiene un futuro, la única posibilidad es hacer parte de la misma pandilla de su familia.
+cowsl2h|Fue un apocalipsis zombi!|¡Era un apocalipsis zombi!
+cowsl2h|Lo gana diez premios al Grammys en 2004.|Ganó diez premios Grammys en 2004.|Ganó diez premios Grammy en 2004.
+cowsl2h|El es un chef de comida vegetariana.|Él es un chef de comida vegetariana.
+cowsl2h|Como se despierta antes que yo, así tengo café para beber.|Como se despierta antes que yo, tengo café para beber.
+cowsl2h|Los dos de mis compañeros de mi cuarto tenían clases todo el día y no pueden ir al dormitorio.|Mis dos compañeros de cuarto tenían clases todo el día y no pueden ir al dormitorio.
+cowsl2h|En ese momento *FIRST_NAME* empezaba a necesitar querer recorrer el país y buscar a su madre.|En ese momento *FIRST_NAME* empezaba a necesitar recorrer el país y buscar a su madre.
+cowsl2h|En el futuro, me gustaría a vivir en un país que hablan español.|En el futuro, me gustaría a vivir en un país en el que hablen español.
+cowsl2h|Cante en voz alta y baile como y si nadie me estuvo viendo.|Canté en voz alta y bailé como si nadie me estuviera viendo.
+cowsl2h|Él es un gerente y ingeniero para una empresa de ingeniera sostenible.|Él es gerente e ingeniero para una empresa de ingeniera sostenible.
+cowsl2h|Por eso el perro y la mujer estaban feliz.|Por eso el perro y la mujer estaban felices.
+cowsl2h|Fue a la Universidad de Columbia y Harvard para escuela de law.|Fue a la Universidad de Columbia y Harvard para la escuela de law.|Fue a la Universidad de Columbia y a Harvard para la Escuela de Derecho.
+cowsl2h|A veces hay que mirar cosas en otra manera para que no te consume tu vida.|A veces hay que mirar las cosas de otra manera para que no te consuma tu vida.
+cowsl2h|Ella me enseña ser símpatica y lo es el mejor regalo en el mundo.|Ella me enseña a ser simpática y lo es el mejor regalo en el mundo.
+cowsl2h|Él a menudo le gusta usar el color negro; se ve muy bien en la ropa.|A menudo le gusta usar el color negro; se ve muy bien en la ropa.
+cowsl2h|No pude hablar con él o mirar en su cara.|No pude hablar con él o mirarlo a la cara.
+cowsl2h|Ahora, pienso sobre *FIRST_NAME* y el facto que él me salvó mucho pero menos.|Ahora, pienso en *FIRST_NAME* y el hecho de que él me salvó mucho pero menos.
+cowsl2h|Me fascino hablar y comprender a personas de diferentes culturas y entornos socioeconómicos y raciales.|Me fascinó hablar y comprender a personas de diferentes culturas y entornos socioeconómicos y raciales.
+cowsl2h|Entonces, el hombre entró el hermoso restaurante.|Entonces, el hombre entró en el hermoso restaurante.
+cowsl2h|El novio dice: "¡Es Freddy!" y abrazo mucho a Freddy.|El novio dice: "¡Es Freddy!" y abraza mucho a Freddy.
+cowsl2h|Mis vacaciones perfectas sería a Bora Bora.|Mis vacaciones perfectas serían en Bora Bora.|Mis vacaciones perfectas serían a Bora Bora.
+cowsl2h|En Francia ellos tienen torre Eiffel, Palacio de versalles, el Museo del louvre, y mucho más.|En Francia tienen la torre Eiffel, el Palacio de Versalles, el Museo del Louvre, y mucho más.|En Francia tienen la torre Eiffel, el Palacio de Versalles, el Museo del Louvre, y mucho más.
+cowsl2h|Caundo *FIRST_NAME* estaba emarazada para la primera vez, tenía *AGE* años.|Cuando *FIRST_NAME* estaba embarazada por primera vez, tenía *AGE* años.
+cowsl2h|La historia es muy interesante, especialmente porque los acciones terrible de los personas como Pizzaro.|La historia es muy interesante, especialmente por las terribles acciones de las personas como Pizarro.
+cowsl2h|Me gusta leer libros, hablar mucho, pasar tiempo con mis amigos, y viajar adonde yo puedo.|Me gusta leer libros, hablar mucho, pasar tiempo con mis amigos y viajar donde puedo.
+cowsl2h|Había una película hecha sobre él llamado "la red social."|Había una película hecha sobre él llamada "La red social."|Había una película hecha sobre él llamada "la red social."
+cowsl2h|Espero que él pase un buen rato con su familia y cante canciones más bonitas.|Espero que pase un buen rato con su familia y cante canciones más bonitas.
+cowsl2h|Las dos personas y el perro necesitaron saltar entre la cosas diferentes en la casa.|Las *AGE* personas y el perro necesitaron saltar entre la cosas diferentes en la casa.
+cowsl2h|Me gusta llevar suéteres, jeans y botas o zapatillas.|Me gusta llevar suéteres, vaqueros y botas o zapatillas.
+cowsl2h|La policía fue por los dos hombres y un oficial le hacía preguntas como el crimen en la estación.|La policía fue a por los dos hombres y un oficial le hizo preguntas sobre el crimen en la comisaría.
+cowsl2h|Pero ella le gustó su tiempo allí muchísimo y ahora está trabajando en una carrera interesante.|Pero disfrutó muchísimo de su tiempo allí y ahora está trabajando en un puesto interesante.
+cowsl2h|La Sagrada familia es finalmente construido, ahora la puedo mirar.|La Sagrada Familia está finalmente construida, ahora la puedo ver.|La Sagrada familia está finalmente construida, ahora la puedo ver.
+cowsl2h|Las incluyen Zodiac, Tropic Thunder y Sherlock Holmes y mucho más.|Incluyen Zodiac, Tropic Thunder y Sherlock Holmes y mucho más.
+cowsl2h|Desde hace dos años trabaja para las *PLACE* *PLACE* como asesora financiera.|Desde hace dos años trabaja para las *PLACE* *FIRST_NAME* como asesora financiera.
+cowsl2h|Durante el fin de semana, Yo gusta ir compras por comida, bebir y los ropas!|Durante el fin de semana, Me gusta ir de compras por comida, bebida y ropas!
+cowsl2h|Mi artista musical favorito es red velvet un grupo de coreanos.|Mi artista musical favorito es Red Velvet, un grupo coreano.
+cowsl2h|No es porque confío más en ella, pero ella siempre toma el tiempo para comprobarme.|No es porque confío más en ella, pero ella siempre se toma el tiempo para ver cómo estoy.
+cowsl2h|Ella secretamente crea historias imaginativos sobre la vida de las personas en su vida.|Ella secretamente crea historias imaginarias sobre la vida de las personas en su vida.|Secretamente crea historias inventadas sobre la vida de las personas de su alrededor.
