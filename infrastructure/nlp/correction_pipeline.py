@@ -11,6 +11,7 @@ from infrastructure.nlp.phonetic_engine import PhoneticEngine, match_case, to_ph
 from infrastructure.nlp.context_judge import ContextJudge
 from infrastructure.nlp.amalgams import expand_amalgams
 from infrastructure.nlp.grammar_rules import correct_grammar, normalize_modern_spelling
+from infrastructure.nlp.candidates import is_regular_verb_form, pick_candidate
 from infrastructure.nlp.alternatives import THRESHOLDS, select_alternatives
 from infrastructure.ml.t5_model import T5CorrectionModel, T5SpanishTokenizer
 from infrastructure.ml.guards import is_lexically_plausible_refinement, is_safe_refinement
@@ -100,7 +101,9 @@ class CorrectionPipeline:
         self._phonetic  = phonetic
         self._judge     = judge  # Mantenemos la firma para compatibilidad con inyección de dependencias
         self._symspell  = SymSpell(max_dictionary_edit_distance=3, prefix_length=7)
-        self._symspell.load_dictionary(DICT_PATH, term_index=0, count_index=1)
+        # encoding explícito: sin él, en Windows se lee en cp1252 y las palabras
+        # con tilde entran como "dormirÃ¡n" (SymSpell nunca las proponía).
+        self._symspell.load_dictionary(DICT_PATH, term_index=0, count_index=1, encoding="utf-8")
         self._seq2seq   = seq2seq
         self._tokenizer = tokenizer
 
@@ -296,6 +299,12 @@ class CorrectionPipeline:
                 best     = self._phonetic.restore_accent(core)
                 resolved = True
 
+            # Forma verbal regular fuera de las 50k palabras (nadaremos,
+            # dibujaremos): se respeta; SymSpell la destrozaría (daremos).
+            if not resolved and is_regular_verb_form(lower, self._phonetic.word_freqs):
+                best     = core
+                resolved = True
+
             # Búsqueda fonética
             if not resolved:
                 word_sound = to_phonetic(lower)
@@ -305,11 +314,14 @@ class CorrectionPipeline:
                         best     = self._phonetic.restore_accent(match_case(core, phonetic_best))
                         resolved = True
 
-            # SymSpell sin destruir homófonos
+            # SymSpell: todos los candidatos a distancia <= 2, elegidos por coste
+            # disléxico (candidates.pick_candidate) y no por distancia entera +
+            # frecuencia: jugan -> juegan (no jugar), aruz -> arroz (no cruz).
             if not resolved:
-                suggestions = self._symspell.lookup(lower, Verbosity.CLOSEST, max_edit_distance=2)
-                if suggestions and suggestions[0].term != lower:
-                    best = match_case(core, self._phonetic.restore_accent(suggestions[0].term))
+                suggestions = self._symspell.lookup(lower, Verbosity.ALL, max_edit_distance=2)
+                pick = pick_candidate(lower, [(s.term, s.count) for s in suggestions]) if suggestions else None
+                if pick:
+                    best = match_case(core, self._phonetic.restore_accent(pick))
 
             # Restauración de ñ (nino->niño, manana->mañana) y luego del acento
             # (compañia->compañía): ambas son seguras (solo actúan sobre entradas

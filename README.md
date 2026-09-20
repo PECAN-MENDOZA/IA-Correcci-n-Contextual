@@ -193,14 +193,14 @@ python scripts/merge_grammar_lora.py
 python evaluate.py --dataset data/eval_gold.csv            --t5-dir models/t5_correction --development --out reports/gold.json             # 47/48 (dónde)
 python evaluate.py --dataset data/test_agreement.csv       --t5-dir models/t5_correction --development --out reports/agreement.json        # 15/15
 python evaluate.py --dataset data/test_subjunctive.csv     --t5-dir models/t5_correction --development --out reports/subjunctive.json      # 19/20 (Navidad)
-python evaluate.py --dataset data/test_tiempos.csv         --t5-dir models/t5_correction --development --out reports/tiempos.json          # 58/60 (2 de SymSpell)
+python evaluate.py --dataset data/test_tiempos.csv         --t5-dir models/t5_correction --development --out reports/tiempos.json          # 60/60
 python evaluate.py --dataset data/test_sobrecorreccion.csv --t5-dir models/t5_correction --development --out reports/sobrecorreccion.json  # 17/18 (el te/él te)
 # Dos sets EXTERNOS con oraciones reales (COWS-L2H dev, universitarios de español L2, corrección de
 # un profesor; scripts/sample_cowsl2h.py, semilla 2026). No son la población objetivo: miden daño
 # (precisión) y sirven para comparar versiones. Placeholders *FIRST_NAME* -> *FIRSTNAME* cuentan
 # como FP y son artefacto del corpus (4-8 por muestra). Valores v4 + ortografía vigente (2026-09-19):
-python evaluate.py --dataset data/test_cowsl2h_spelling200.csv --t5-dir models/t5_correction --development --out reports/cowsl2h_spelling200.json  # P 0,735 R 0,454 F0.5 0,654 (74/200; v3: 0,701/0,437/0,625)
-python evaluate.py --dataset data/test_cowsl2h_random200.csv   --t5-dir models/t5_correction --development --out reports/cowsl2h_random200.json    # P 0,544 R 0,145 F0.5 0,351 (26/200; v3: 0,495/0,126/0,313)
+python evaluate.py --dataset data/test_cowsl2h_spelling200.csv --t5-dir models/t5_correction --development --out reports/cowsl2h_spelling200.json  # P 0,738 R 0,461 F0.5 0,659 (74/200; v3: 0,701/0,437/0,625)
+python evaluate.py --dataset data/test_cowsl2h_random200.csv   --t5-dir models/t5_correction --development --out reports/cowsl2h_random200.json    # P 0,580 R 0,152 F0.5 0,371 (27/200; v3: 0,495/0,126/0,313)
 # Una corrida con la misma semilla NO es determinista en GPU: v4c (mismos datos que v4b salvo
 # 3 pares) perdió `mis amigos no vino` en test_agreement. Guardar el adaptador de cada intento
 # (models/grammar_lora_v4a..c) y elegir por las cinco regresiones, no por val_loss.
@@ -286,8 +286,9 @@ se ha generado todavía.
 | 1    | Palabras ya acentuadas: se respetan (solo restauración de tilde/ñ) |
 | 1.1  | Correcciones manuales de alta prioridad (abreviaturas de chat, homófonos frecuentes) |
 | 1.2  | Escudo de palabras cortas (evita alucinaciones en "y", "a", "mi") |
+| 1.25 | Formas verbales regulares fuera de `es_50k` (`nadaremos`, `dibujaremos`): si la terminación no sufre cambio de raíz y el infinitivo está en el léxico, se respetan (`candidates.is_regular_verb_form`) |
 | 1.3  | Fonética dirigida a la palabra de mayor frecuencia |
-| 2    | SymSpell (Levenshtein ≤ 2) + restauración de ñ y tildes |
+| 2    | SymSpell (todos los candidatos a Damerau-Levenshtein ≤ 2) elegidos por **coste disléxico** (`candidates.pick_candidate`): tilde 0,1; vocal↔vocal, consonantes confundibles (b/v, c/s/z, g/j, m/n, r/l, d/t), inserción/omisión de vocal, duplicación (rr/ll), transposición y cambio de raíz o/u→ue, e→ie 0,5; `h` 0,3; resto 1; +0,5 si cambia la primera letra (salvo confundible); empate → frecuencia; piso 150. Antes: distancia entera y luego frecuencia (`jugan → jugar`, `aruz → cruz`, `camera → cadera`). El diccionario se carga con `encoding="utf-8"` (sin él, en Windows las palabras con tilde entraban como `dormirÃ¡n`). Después, restauración de ñ y tildes |
 | 2.5  | Desambiguación contextual de homófonos y tildes con BETO MLM |
 | 3    | Gramática por reglas (haber impersonal, gustar, concordancia de número) |
 | 4    | Refinamiento gramatical con T5 + LoRA global (beam search, 3 candidatos con score); el beam 1 se recomienda solo si pasa la guarda de cantidad (`is_safe_refinement`) y la léxica (`is_lexically_plausible_refinement`: reemplazos cercanos, inserciones/borrados solo de la lista blanca, nunca negadores ni cuantificadores) |
