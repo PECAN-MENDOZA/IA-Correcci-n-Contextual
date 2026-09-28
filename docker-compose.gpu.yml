@@ -1,0 +1,15 @@
+# Despliegue en la VM con GPU (servidor-tesis, T4):
+#   docker-compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+# Construye torch con CUDA, publica la API en el puerto 80 (el firewall solo
+# abre 80/443) y usa la caché de Hugging Face que se sube con models/ (sin red).
+services:
+  api:
+    build:
+      context: .
+      args:
+        TORCH_INDEX: https://download.pytorch.org/whl/cu124
+    environment:
+      HF_HOME: /app/models/hf-cache
+      HF_HUB_OFFLINE: "1"
+    ports:
+      - "80:8080"

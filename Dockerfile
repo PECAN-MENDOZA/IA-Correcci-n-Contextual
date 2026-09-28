@@ -4,9 +4,10 @@ WORKDIR /app
 
 COPY requirements.txt .
 
-# 1. PyTorch con CUDA 12.8 (soporta Blackwell/RTX 50-series, sm_120)
-RUN pip install --no-cache-dir torch==2.6.0  \
-    --index-url https://download.pytorch.org/whl/cpu
+# 1. PyTorch. Por defecto CPU; en la VM con GPU T4 se construye con
+#    --build-arg TORCH_INDEX=https://download.pytorch.org/whl/cu124
+ARG TORCH_INDEX=https://download.pytorch.org/whl/cpu
+RUN pip install --no-cache-dir torch==2.6.0 --index-url ${TORCH_INDEX}
 
 
 # 2. Dependencias (incluye peft para LoRA)
