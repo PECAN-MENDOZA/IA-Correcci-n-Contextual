@@ -12,6 +12,10 @@ reentrena). Cubre errores frecuentes del español expresables sin parsing:
                           el léxico es_50k como guarda para el presente)
  10. Ortografía vigente:  "sólo" -> "solo" (RAE 2010; `normalize_modern_spelling`,
                           se aplica al final del pipeline)
+ 11. Adverbio de lugar:   "mi mochila está hay"    -> "mi mochila está ahí"
+ 12. Artículo femenino:   "el canción"             -> "la canción"
+                          (solo sufijos siempre femeninos: -ción, -dad...)
+ 13. Posesivo plural:     "mi amigos"              -> "mis amigos"
 
 Cada regla es conservadora: solo dispara cuando el patrón es inequívoco, para
 no introducir regresiones (verificado con evaluate.py sobre el set gold).
@@ -246,6 +250,31 @@ def _collective_singular(verb: str) -> str | None:
     return None
 
 
+# 11. "hay" -> "ahí": verbos de ubicación que piden un adverbio de lugar
+#     detrás, y preposiciones que solo admiten "ahí" a final de frase.
+_AHI_VERBS = {
+    "esta", "estan", "estaba", "estaban", "estoy", "estas", "estamos", "estuvo",
+    "estuvieron", "queda", "quedo", "quedan", "quedaron", "deje", "dejo",
+    "dejaste", "puse", "puso", "pusiste", "pon", "ponlo", "ponla", "dejalo", "dejala",
+}
+_AHI_PREPS = {"por", "de", "hasta", "desde"}
+_AHI_PREP_NEXT = {"que", "mismo", "nomas", "no"}
+
+# 12. Sufijos siempre femeninos (-ción, -sión, -dad, -tad, -tud, -umbre) y la
+#     forma femenina del determinante masculino que los precede.
+_FEM_SUFFIXES = ("cion", "sion", "dad", "tad", "tud", "umbre")
+_FEM_ARTICLE = {"el": "la", "un": "una", "del": "de la", "al": "a la",
+                "este": "esta", "ese": "esa", "aquel": "aquella"}
+
+# 9 (género). Colectivos femeninos: su predicado va en femenino.
+_FEM_COLLECTIVES = {"gente", "familia", "policia", "multitud", "muchedumbre"}
+
+# 13. Posesivo singular ante sustantivo plural. Singulares terminados en
+#     -os/-as que no deben pluralizar el posesivo (su forma sin -s existe).
+# Sin "tu": "tu" + palabra en -s es el pronombre "tú" (regla 8: "tu juegas").
+_POSSESSIVE_SG = {"mi", "su"}
+_POSSESSIVE_PLURAL_STOP = {"dios", "caos", "cosmos", "atlas", "tras", "pues", "jamas", "adios"}
+
 # Intensificadores que pueden separar el verbo del predicado.
 _INTENSIFIERS = {"muy", "tan", "bastante", "demasiado", "poco", "algo", "super"}
 # Lista blanca de adjetivos que se singularizan detrás del verbo corregido. Es
@@ -315,10 +344,25 @@ def correct_grammar(text: str) -> str:
             if j < len(tokens) and _norm(tokens[j]) in _INTENSIFIERS:
                 j += 1
             if j < len(tokens) and _norm(tokens[j]) in _COLLECTIVE_ADJECTIVES:
-                tokens[j] = _reword(tokens[j], _singularize(_clean(tokens[j])))
+                adjective = _singularize(_clean(tokens[j]))
+                # Colectivo femenino: "la gente está contenta" (no "contento").
+                if low in _FEM_COLLECTIVES and adjective.endswith("o"):
+                    adjective = adjective[:-1] + "a"
+                tokens[j] = _reword(tokens[j], adjective)
 
         prev = _norm(tokens[i - 1]) if i > 0 else ""
         nxt  = _norm(next_content(i))
+
+        # 13. Posesivo singular + sustantivo plural en -os/-as: "mi amigos" ->
+        #     "mis amigos". El singular (sin la -s) debe existir en es_50k; se
+        #     excluyen los singulares en -s ("mi dios") y los nombres propios.
+        nxt_tok = _clean(next_content(i))
+        if (low in _POSSESSIVE_SG and len(nxt) > 3 and nxt.endswith(("os", "as"))
+                and not nxt.endswith("mos")
+                and nxt not in _S_NOUN_STOP and nxt not in _POSSESSIVE_PLURAL_STOP
+                and next_content(i)[:1].islower() and nxt_tok[:-1] in _lexicon()):
+            tokens[i] = _reword(tok, low + "s")
+            continue
 
         # 4. mí (pronombre) tras preposición, ante clítico o fin de frase
         if low == "mi" and prev in _PREPS and (nxt in _MI_NEXT or nxt == ""):
@@ -347,6 +391,21 @@ def correct_grammar(text: str) -> str:
             or (len(nxt) > 2 and nxt.endswith("s") and nxt not in _S_NOUN_STOP)
         ):
             tokens[i] = _reword(tok, "tú")
+            continue
+
+        # 11. ahí (lugar) vs hay (haber): "está hay" -> "está ahí"; "por hay"
+        #     a final de frase -> "por ahí". Un signo tras el verbo corta el
+        #     marco ("está, hay ...").
+        if low == "hay" and i > 0 and _clean(tokens[i - 1]) == tokens[i - 1].lower():
+            ends = nxt == "" or tok != tok.rstrip(".,;:!?")
+            if prev in _AHI_VERBS or (prev in _AHI_PREPS and (ends or nxt in _AHI_PREP_NEXT)):
+                tokens[i] = _reword(tok, "ahí")
+                continue
+
+        # 12. Artículo masculino ante sustantivo femenino por sufijo:
+        #     "el canción" -> "la canción", "al estación" -> "a la estación".
+        if low in _FEM_ARTICLE and len(nxt) > 3 and nxt.endswith(_FEM_SUFFIXES):
+            tokens[i] = _reword(tok, _FEM_ARTICLE[low])
             continue
 
     return " ".join(tokens)

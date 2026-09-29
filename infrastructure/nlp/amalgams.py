@@ -21,6 +21,13 @@ ejemplo de alumno que la motiva):
                                 sino aquello", "sino que") se conserva.
   5. `porque` -> `por qué`   — solo cuando abre una interrogativa
                                 ("porque no vienes?"); el causal se conserva.
+  6. Locuciones pegadas que no existen como palabra (`porfavor`, `enserio`,
+     `aveces`, `derrepente`, `talvez`, `osea`, `nose`...): incondicional.
+  7. `con migo/tigo/sigo` -> `conmigo/contigo/consigo`: incondicional.
+  8. `haber` tras verbo de movimiento: `ir haber a mi abuela` -> `ir a ver a
+     mi abuela` (ante `a`, `si`, interrogativo o determinante definido);
+     `va haber una fiesta` -> `va a haber una fiesta` (ante indefinido o
+     cuantificador: el "haber" existencial).
 
 La concordancia con colectivos (`la gente son` -> `la gente es`) vive en
 grammar_rules.py, que es donde está el resto de la concordancia.
@@ -62,6 +69,34 @@ _SINO_CLITICS = {"me", "te", "se", "le", "nos", "les", "lo", "la", "los", "las"}
 _HABER_MODALS = {
     "puede", "pueden", "podia", "podria", "podrian", "debe", "deben", "debia",
     "deberia", "suele", "suelen", "tiene", "va", "iba", "parece", "de", "al",
+}
+# 6. Locuciones escritas en una palabra (ninguna existe en español).
+_JOINED = {
+    "porfavor": "por favor", "enserio": "en serio",
+    "aveces": "a veces", "derrepente": "de repente", "depronto": "de pronto",
+    "talvez": "tal vez", "osea": "o sea", "apesar": "a pesar",
+    "atraves": "a través", "atravez": "a través", "deveras": "de veras",
+    "nose": "no sé", "sinembargo": "sin embargo", "encambio": "en cambio",
+    "almenos": "al menos", "porsupuesto": "por supuesto", "enfin": "en fin",
+}
+# 7. Pronombres con "con" escritos separados.
+_CON_JOIN = {"migo": "conmigo", "tigo": "contigo", "sigo": "consigo"}
+# 8. Verbos de movimiento que rigen "a + infinitivo" ("voy a ver", "va a haber").
+_MOTION = {
+    "ir", "voy", "vas", "va", "vamos", "van", "fui", "fue", "fuimos", "fueron",
+    "iba", "ibas", "iban", "ibamos", "vine", "vino", "vinimos", "vinieron",
+    "vengo", "viene", "vienen", "venimos",
+}
+# Sin "si": "haber si" lo resuelve la regla 2 (respeta los modales).
+_VER_NEXT = {
+    "a", "al", "que", "como", "quien", "quienes", "cuando", "donde",
+    "el", "la", "los", "las", "mi", "mis", "tu", "tus", "su", "sus",
+    "esto", "eso", "este", "esta", "ese", "esa", "estos", "esas",
+}
+_HABER_EXIST_NEXT = {
+    "un", "una", "unos", "unas", "mucho", "mucha", "muchos", "muchas", "mas",
+    "poco", "poca", "pocos", "pocas", "algo", "alguien", "nada", "nadie",
+    "clases", "clase", "examen", "fiesta", "lluvia", "tiempo", "problemas",
 }
 _PARTICIPLE_RE = re.compile(r"(ado|ados|ada|adas|ido|idos|ida|idas)$", re.IGNORECASE)
 _IRREGULAR_PARTICIPLES = {
@@ -106,6 +141,19 @@ def expand_amalgams(text: str) -> str:
     if not tokens:
         return text
 
+    # 7. "con migo" -> "conmigo": une antes del resto porque cambia el número
+    #    de tokens (la puntuación de "migo," pasa a la palabra unida).
+    joined: list[str] = []
+    for token in tokens:
+        pref, core, suff = _split(token)
+        if (joined and _norm(core) in _CON_JOIN and not pref
+                and _norm(joined[-1]) == "con" and _split(joined[-1])[2] == ""):
+            prev_pref, prev_core, _ = _split(joined[-1])
+            joined[-1] = prev_pref + _match_case(prev_core, _CON_JOIN[_norm(core)]) + suff
+        else:
+            joined.append(token)
+    tokens = joined
+
     out: list[str] = []
     for i, token in enumerate(tokens):
         # ¿abre oración? primer token, tras cierre de frase, o tras '¿'/'¡'.
@@ -127,6 +175,17 @@ def expand_amalgams(text: str) -> str:
         # 2. "haber si vienes" -> "a ver si vienes" (no tras modal, no + participio)
         elif low == "haber" and nxt == "si" and prev not in _HABER_MODALS:
             replacement = "a ver"
+
+        # 8. "ir haber a mi abuela" -> "ir a ver a mi abuela";
+        #    "va haber una fiesta" -> "va a haber una fiesta"
+        elif low == "haber" and prev in _MOTION and nxt in _VER_NEXT:
+            replacement = "a ver"
+        elif low == "haber" and prev in _MOTION and nxt in _HABER_EXIST_NEXT:
+            replacement = "a haber"
+
+        # 6. "porfavor" -> "por favor", "enserio" -> "en serio"...
+        elif low in _JOINED:
+            replacement = _JOINED[low]
 
         # 3. "asique me fui" -> "así que me fui"
         elif low in ("asique", "asiq"):

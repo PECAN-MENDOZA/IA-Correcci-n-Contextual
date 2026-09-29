@@ -114,8 +114,9 @@ class TestColectivos(unittest.TestCase):
                          "la gente es muy amable")
 
     def test_la_gente_estan(self):
+        # "gente" es femenino: el predicado concuerda en género ("cansada").
         self.assertEqual(correct_grammar("la gente están cansados"),
-                         "la gente está cansado")
+                         "la gente está cansada")
 
     def test_la_familia_vienen(self):
         self.assertEqual(correct_grammar("mi familia vienen mañana"),
