@@ -1,0 +1,79 @@
+# Sonda de ERRORES DE ESCRITURA INFANTIL (categoria|entrada|esperado). Escrita el 2026-09-29
+# al revisar el despliegue: errores típicos de primaria en Perú (ll/y, b/v, h, c/s/z, g/j, r/rr,
+# tildes, homófonos, segmentación, concordancia) y frases correctas que no se deben tocar.
+# Conocidos al cierre: 'el jirafa' (género sin sufijo, requiere léxico) y 'que si/sí vendría'
+# (se ofrece como alternativa, no como recomendada). Pasar junto a los otros siete sets.
+categoria|entrada|esperado
+ll_y|el perro de mi tia se callo en el rio|el perro de mi tía se cayó en el río
+ll_y|mi hermano se callo de la bicicleta|mi hermano se cayó de la bicicleta
+ll_y|el vaso se callo de la mesa|el vaso se cayó de la mesa
+ll_y|mi abuelita se callo en la escalera|mi abuelita se cayó en la escalera
+ll_y|se me callo el elado|se me cayó el helado
+ll_y|el niño se callo cuando entro la maestra|el niño se calló cuando entró la maestra
+ll_y|mi mama se callo y no dijo nada|mi mamá se calló y no dijo nada
+ll_y|los niños se calleron en el patio|los niños se cayeron en el patio
+ll_y|quiero que mi papa valla al parque|quiero que mi papá vaya al parque
+ll_y|no creo que halla tarea mañana|no creo que haya tarea mañana
+ll_y|me gusta comer poyo con arroz|me gusta comer pollo con arroz
+ll_y|mañana boy a la playa con mi famila|mañana voy a la playa con mi familia
+ll_y|la yave de la casa esta en la mesa|la llave de la casa está en la mesa
+ll_y|ayer llovio mucho en mi pueblo|ayer llovió mucho en mi pueblo
+b_v|mi abuela bive en el campo|mi abuela vive en el campo
+b_v|el caballo es muy vonito|el caballo es muy bonito
+b_v|yo iva a la escuela caminando|yo iba a la escuela caminando
+b_v|tube que acer la tarea|tuve que hacer la tarea
+b_v|el tuvo del agua esta roto|el tubo del agua está roto
+b_v|mi papa tubo un accidente|mi papá tuvo un accidente
+h|ayer ise mi tarea de matematica|ayer hice mi tarea de matemática
+h|mi ermano tiene ocho años|mi hermano tiene ocho años
+h|yo e comido mucho hoy|yo he comido mucho hoy
+h|el elado de fresa es rico|el helado de fresa es rico
+h|hay que acer la tarea|hay que hacer la tarea
+h|la ormiga es pequeña|la hormiga es pequeña
+c_s_z|mi casa es muy grande y bonita|mi casa es muy grande y bonita
+c_s_z|el sapato de mi hermana es azul|el zapato de mi hermana es azul
+c_s_z|la sebra tiene rayas|la cebra tiene rayas
+c_s_z|tengo dies años|tengo diez años
+c_s_z|me gusta la ensalada de lechuga|me gusta la ensalada de lechuga
+c_s_z|hise un dibujo para mi mama|hice un dibujo para mi mamá
+g_j|mi abuelo es muy jenial|mi abuelo es muy genial
+g_j|el jirafa es alta|la jirafa es alta
+g_j|fuimos al zoologico y vimos una girafa|fuimos al zoológico y vimos una jirafa
+r_rr|el pero ladra mucho|el perro ladra mucho
+r_rr|me gusta el aros con pollo|me gusta el arroz con pollo
+r_rr|el caro de mi papa es rojo|el carro de mi papá es rojo
+tilde|mi papa trabaja en la ciudad|mi papá trabaja en la ciudad
+tilde|el arbol es muy alto|el árbol es muy alto
+tilde|mañana tengo examen de ingles|mañana tengo examen de inglés
+tilde|el cancion que canto es bonita|la canción que canto es bonita
+tilde|¿donde esta mi lapiz?|¿dónde está mi lápiz?
+tilde|¿que quieres comer?|¿qué quieres comer?
+tilde|el me dijo que si vendria|él me dijo que sí vendría
+homofono|ay muchos niños en el parque|hay muchos niños en el parque
+homofono|mi mochila esta hay|mi mochila está ahí
+homofono|ya e echo mi tarea|ya he hecho mi tarea
+homofono|mi mama a cocinado arroz|mi mamá ha cocinado arroz
+homofono|boy a ir a la tienda|voy a ir a la tienda
+homofono|tengo que ir haber a mi abuela|tengo que ir a ver a mi abuela
+segmentacion|aver si vienes a mi casa|a ver si vienes a mi casa
+segmentacion|porfavor dame agua|por favor dame agua
+segmentacion|enserio me gusto la pelicula|en serio me gustó la película
+segmentacion|a veces voy con migo mismo|a veces voy conmigo mismo
+segmentacion|no se por que no vino|no sé por qué no vino
+concordancia|los niño juega en el patio|los niños juegan en el patio
+concordancia|las flores es bonitas|las flores son bonitas
+concordancia|mi amigos vino a mi casa|mis amigos vinieron a mi casa
+concordancia|nosotros fue al cine|nosotros fuimos al cine
+concordancia|quiero que tu vienes conmigo|quiero que tú vengas conmigo
+concordancia|ayer yo comio pan|ayer yo comí pan
+concordancia|la gente estan contentos|la gente está contenta
+concordancia|hubieron muchos problemas|hubo muchos problemas
+correcto|Hoy fui al parque con mi mamá.|Hoy fui al parque con mi mamá.
+correcto|Me gusta jugar fútbol con mis amigos.|Me gusta jugar fútbol con mis amigos.
+correcto|Mi perro se llama Toby.|Mi perro se llama Toby.
+correcto|El niño se calló cuando entró la maestra.|El niño se calló cuando entró la maestra.
+correcto|Tengo un callo en el pie.|Tengo un callo en el pie.
+correcto|Yo me callo cuando habla la profesora.|Yo me callo cuando habla la profesora.
+correcto|El rayo cayó cerca de la casa.|El rayo cayó cerca de la casa.
+correcto|Ojalá que mañana no llueva.|Ojalá que mañana no llueva.
+correcto|Vamos a Cusco en vacaciones.|Vamos a Cusco en vacaciones.

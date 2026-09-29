@@ -157,7 +157,7 @@ python -m pip install -r requirements.txt
 python main.py
 
 # Tests sin GPU ni modelo
-python -m unittest -v test_global_runtime test_alternatives test_correction_layers test_evaluate_metrics test_versioning test_model_manifest test_analyze_sentence_tests
+python -m unittest -v test_global_runtime test_alternatives test_correction_layers test_evaluate_metrics test_versioning test_model_manifest test_analyze_sentence_tests test_amalgams test_confusions
 python test_lora_guards.py
 
 # Prueba de aceptación de la capa 5 con el modelo real (offline; código 1 si falla)
@@ -189,21 +189,24 @@ python train.py --epochs 3 --batch_size 2
 $env:CSV_PATH = 'data/training_pairs_v4.csv'
 python train_grammar_lora.py           # después, poner "lora_tag": "global-lora-v4" en models/grammar_lora/training-manifest.json
 python scripts/merge_grammar_lora.py
-# Las CINCO regresiones, todas antes de promover (valores de v4, 2026-09-19):
+# Las SEIS regresiones internas, todas antes de promover (valores de v4 + reglas del 2026-09-29):
 python evaluate.py --dataset data/eval_gold.csv            --t5-dir models/t5_correction --development --out reports/gold.json             # 47/48 (dónde)
 python evaluate.py --dataset data/test_agreement.csv       --t5-dir models/t5_correction --development --out reports/agreement.json        # 15/15
 python evaluate.py --dataset data/test_subjunctive.csv     --t5-dir models/t5_correction --development --out reports/subjunctive.json      # 19/20 (Navidad)
 python evaluate.py --dataset data/test_tiempos.csv         --t5-dir models/t5_correction --development --out reports/tiempos.json          # 60/60
 python evaluate.py --dataset data/test_sobrecorreccion.csv --t5-dir models/t5_correction --development --out reports/sobrecorreccion.json  # 17/18 (el te/él te)
+python evaluate.py --dataset data/test_ninos.csv          --t5-dir models/t5_correction --development --out reports/ninos.json            # 71/73 (el jirafa; que si/sí). Antes de las reglas del 29-sep: 53/73
 # Dos sets EXTERNOS con oraciones reales (COWS-L2H dev, universitarios de español L2, corrección de
 # un profesor; scripts/sample_cowsl2h.py, semilla 2026). No son la población objetivo: miden daño
 # (precisión) y sirven para comparar versiones. Placeholders *FIRST_NAME* -> *FIRSTNAME* cuentan
-# como FP y son artefacto del corpus (4-8 por muestra). Valores v4 + ortografía vigente (2026-09-19):
-python evaluate.py --dataset data/test_cowsl2h_spelling200.csv --t5-dir models/t5_correction --development --out reports/cowsl2h_spelling200.json  # P 0,738 R 0,461 F0.5 0,659 (74/200; v3: 0,701/0,437/0,625)
-python evaluate.py --dataset data/test_cowsl2h_random200.csv   --t5-dir models/t5_correction --development --out reports/cowsl2h_random200.json    # P 0,580 R 0,152 F0.5 0,371 (27/200; v3: 0,495/0,126/0,313)
+# como FP y son artefacto del corpus (4-8 por muestra). Valores v4 + reglas del 2026-09-29 (entre
+# paréntesis, los del 19-sep): el recall cae 1-2 aciertos porque los nombres propios en mitad de
+# frase ya no se corrigen (Pizzaro, Ireland), a cambio de no estropear Stefani, Amtrak, Uber...
+python evaluate.py --dataset data/test_cowsl2h_spelling200.csv --t5-dir models/t5_correction --development --out reports/cowsl2h_spelling200.json  # P 0,762 R 0,460 F0.5 0,674 (76/200; 19-sep: 0,738/0,461/0,659)
+python evaluate.py --dataset data/test_cowsl2h_random200.csv   --t5-dir models/t5_correction --development --out reports/cowsl2h_random200.json    # P 0,604 R 0,150 F0.5 0,376 (27/200; 19-sep: 0,580/0,152/0,371)
 # Una corrida con la misma semilla NO es determinista en GPU: v4c (mismos datos que v4b salvo
 # 3 pares) perdió `mis amigos no vino` en test_agreement. Guardar el adaptador de cada intento
-# (models/grammar_lora_v4a..c) y elegir por las cinco regresiones, no por val_loss.
+# (models/grammar_lora_v4a..c) y elegir por las regresiones, no por val_loss.
 
 # Manifiestos de artefactos ya entrenados (solo hashes; no entrena ni fusiona)
 python scripts/model_manifest.py --write-current

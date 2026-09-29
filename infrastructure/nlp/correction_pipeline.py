@@ -10,6 +10,7 @@ from symspellpy import SymSpell, Verbosity
 from infrastructure.nlp.phonetic_engine import PhoneticEngine, match_case, to_phonetic, DICT_PATH
 from infrastructure.nlp.context_judge import ContextJudge
 from infrastructure.nlp.amalgams import expand_amalgams
+from infrastructure.nlp.confusions import fix_lexical_confusions, resolve_final_confusions
 from infrastructure.nlp.grammar_rules import correct_grammar, normalize_modern_spelling
 from infrastructure.nlp.candidates import is_regular_verb_form, pick_candidate
 from infrastructure.nlp.alternatives import THRESHOLDS, select_alternatives
@@ -248,6 +249,10 @@ class CorrectionPipeline:
         # porque la corrección son dos palabras (elegiría "ver").
         text_expanded = expand_amalgams(text)
 
+        # --- CAPA 0.2: r/rr entre palabras reales ("el pero ladra" -> "el
+        # perro ladra"); antes de BETO, que con "el pero" haría "él pero".
+        text_expanded = fix_lexical_confusions(text_expanded)
+
         # --- CAPAS 1-2: Corrección Ortográfica y Fonética ---
         words = text_expanded.split()
         pre_words    = []
@@ -287,6 +292,15 @@ class CorrectionPipeline:
             # Sobrescritura léxica explícita (vacía en el runtime global)
             if not resolved and lower in user_vocab:
                 best     = match_case(core, user_vocab[lower])
+                resolved = True
+
+            # Nombre propio: mayúscula en mitad de la oración y fuera del
+            # diccionario ("Vamos a Cusco"): no se corrige (SymSpell lo
+            # convertía en "Casco"). Abriendo oración la mayúscula no dice nada.
+            opens_sentence = i == 0 or words[i - 1].endswith((".", "!", "?", ":", ";"))
+            if (not resolved and core[:1].isupper() and not opens_sentence
+                    and not self._symspell.lookup(lower, Verbosity.TOP, max_edit_distance=0)):
+                best     = core
                 resolved = True
 
             # Palabras muy cortas — no tocar
@@ -381,6 +395,20 @@ class CorrectionPipeline:
         base_corrected = normalize_modern_spelling(base_corrected, written_accents)
         refined = [(normalize_modern_spelling(t, written_accents), s) for t, s in refined]
         ambiguous_variants = [(normalize_modern_spelling(v, written_accents), s) for v, s in ambiguous_variants]
+
+        # --- CAPA 6: Conjuntos de confusión que T5 deshace (confusions.py) ---
+        # caer/callar ("se callo en el río" -> "se cayó", no el "se calló"
+        # fijo de T5) y "yo" + pretérito de 3.ª persona ("yo comió" -> "yo
+        # comí"). Sobre la base, los beams y las segundas lecturas.
+        def _final(t: str) -> str:
+            try:
+                return resolve_final_confusions(t, written_accents, judge=self._judge)
+            except Exception as e:
+                print(f"[WARN] Conjuntos de confusión fallaron: {e}")
+                return t
+        base_corrected = _final(base_corrected)
+        refined = [(_final(t), s) for t, s in refined]
+        ambiguous_variants = [(_final(v), s) for v, s in ambiguous_variants]
 
         recommended = refined[0][0] if refined else base_corrected
         best_score  = max((s for _, s in refined), default=0.0)
