@@ -310,7 +310,9 @@ class CorrectPipelineTests(unittest.TestCase):
     def test_lexical_guard_keeps_irregular_agreement_in_first_beam(self):
         # es→son (0.40), hizo→hicieron (0.50), viene→vengan (0.55) siguen
         # recomendándose; una flexión no es una sustitución léxica.
-        for original, beam in [("la gente es muy amables", "la gente son muy amables"),
+        # (Sin "la gente": la regla de colectivos, que se reaplica a los beams,
+        # la corrige a "la gente es muy amable".)
+        for original, beam in [("los perros es muy grandes", "los perros son muy grandes"),
                                ("ellos hizo la tarea", "ellos hicieron la tarea"),
                                ("espero que ellos viene", "espero que ellos vengan")]:
             pipe = self._pipeline(judge=FakeJudge({}), seq2seq=FakeSeq2Seq([(beam, -0.05)]))
@@ -563,6 +565,33 @@ class GenerateWithLoraTests(unittest.TestCase):
     def test_no_real_torch_loaded(self):
         self.assertIs(sys.modules["torch"], self.mod.torch)
         self.assertFalse(hasattr(sys.modules["torch"], "__file__"))
+
+
+class AuditoriaPipelineTests(unittest.TestCase):
+    """Contraejemplos de la auditoría B (2026-09-30), con colaboradores falsos."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.mod = import_isolated(cls, "infrastructure.nlp.correction_pipeline", _pipeline_stubs())
+
+    def _pipeline(self, seq2seq=None, word_freqs=None):
+        pipe = self.mod.CorrectionPipeline.__new__(self.mod.CorrectionPipeline)
+        pipe._phonetic  = FakePhonetic(None, word_freqs)
+        pipe._symspell  = FakeSymSpell()
+        pipe._judge     = None
+        pipe._seq2seq   = seq2seq
+        pipe._tokenizer = object() if seq2seq is not None else None
+        return pipe
+
+    def test_t5_no_deshace_una_regla_determinista(self):
+        pipe = self._pipeline(FakeSeq2Seq([("Ella a ido al colegio", -0.01)]))
+        self.assertEqual(pipe.correct("Ella a ido al colegio", {})[0], "Ella ha ido al colegio")
+
+    def test_enclitico_con_c_en_infinitivos_cortos_y_largos(self):
+        pipe = self._pipeline(word_freqs={"tragar": 1000})
+        self.assertEqual(pipe.correct("voy a vercelo", {})[0], "voy a vérselo")
+        self.assertEqual(pipe.correct("para tragarcelo", {})[0], "para tragárselo")
+        self.assertEqual(pipe.correct("le dije a marcelo", {})[0], "le dije a marcelo")
 
 
 if __name__ == "__main__":

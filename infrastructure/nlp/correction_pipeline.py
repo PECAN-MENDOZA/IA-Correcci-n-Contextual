@@ -11,10 +11,10 @@ from infrastructure.nlp.phonetic_engine import PhoneticEngine, match_case, to_ph
 from infrastructure.nlp.context_judge import ContextJudge
 from infrastructure.nlp.amalgams import expand_amalgams
 from infrastructure.nlp.confusions import fix_lexical_confusions, resolve_final_confusions
-from infrastructure.nlp.grammar_rules import correct_grammar, normalize_modern_spelling
+from infrastructure.nlp.grammar_rules import correct_auxiliaries, correct_grammar, normalize_modern_spelling
 from infrastructure.nlp.candidates import dyslexic_cost, is_regular_verb_form, rank_candidates
 from infrastructure.nlp.segmentation import (
-    choose_split, is_spanish_word, join_split_words, split_candidates,
+    FUNCTION_WORDS, choose_split, is_spanish_word, join_split_words, split_candidates,
 )
 from infrastructure.nlp.alternatives import THRESHOLDS, select_alternatives
 from infrastructure.ml.t5_model import T5CorrectionModel, T5SpanishTokenizer
@@ -98,8 +98,20 @@ _RIVAL_MAX_COST = 0.5
 _RIVAL_MIN_RATIO = 100
 _RIVAL_MAX_LEN = 5            # quero, com; no "defino" ni "covers" (formas raras pero válidas)
 _RIVAL_BETO_MARGIN = 3.0      # com -> con gana por 7,4; azur -> azar, covers -> cobres no
-# Enclítico con "c" por "s": tragárcelo -> tragárselo, diciéndocelo -> diciéndoselo.
-_ENCLITIC_CE_RE = re.compile(r"^(.{2,}(?:[aáeéií]r|ndo))ce(l[oa]s?)$")
+# Enclítico con "c" por "s": tragárcelo -> tragárselo, vercelo -> vérselo,
+# diciéndocelo -> diciéndoselo. Delante debe quedar un infinitivo del
+# diccionario (5+ letras o uno corto de la lista) o un gerundio: no "Marcelo".
+_ENCLITIC_CE_RE = re.compile(r"^(.+?(?:[aáeéií]r|ndo))ce(l[oa]s?)$")
+_SHORT_INFINITIVES = {"ver", "dar", "ir", "leer", "oir", "ser", "reir", "freir", "traer", "caer"}
+_STRESS = str.maketrans("aei", "áéí")
+# Palabra en mayúscula al abrir la frase y fuera del diccionario: puede ser un
+# nombre (Cacachi, Toquepala). Solo se corrige si el mejor candidato es un error
+# barato (Entonses, Binieron: 0,5) y solo se parte si empieza por una palabra
+# funcional (Sefue); Cacachi -> Kakashi (1,5) y Toquepala -> "toque pala" no.
+_INITIAL_MAX_COST = 0.5
+# Un homófono fonético se acepta solo si también es un error barato: la clave
+# fonética iguala "cacachi" y "kakashi" (coste 1,5), no así kaye/calle (1,0).
+_PHONETIC_MAX_COST = 1.0
 _ACCENT_VOWELS = str.maketrans("áéíóúü", "aeiouu")
 
 
@@ -237,6 +249,24 @@ class CorrectionPipeline:
             variants.append((" ".join(alt_tokens), -diff))
 
         return text, variants
+
+    @staticmethod
+    def _enclitic_host(base: str, freqs: dict) -> bool:
+        """`base` (lo que precede a "celo") es un gerundio o un infinitivo del
+        diccionario de 5+ letras o de la lista corta (ver, dar, leer...)."""
+        if base.endswith("ndo"):
+            return True
+        plain = base.translate(_ACCENT_VOWELS)
+        return plain in _SHORT_INFINITIVES or (len(plain) >= 5 and plain in freqs)
+
+    @staticmethod
+    def _stressed(base: str) -> str:
+        """Tilde de la forma con dos enclíticos: vér-, tragár-, diciéndo-."""
+        if _has_accent(base):
+            return base
+        if base.endswith("ndo"):
+            return base[:-4] + base[-4].translate(_STRESS) + "ndo"
+        return base[:-2] + base[-2].translate(_STRESS) + base[-1]
 
     def _contextual_pick(self, words: list, i: int, pref: str, suff: str, core: str,
                          ranked: list) -> str | None:
@@ -382,8 +412,8 @@ class CorrectionPipeline:
             # Enclítico escrito con "c": "tragárcelo" -> "tragárselo" (no
             # "Marcelo": delante debe quedar un infinitivo de 4+ letras o un gerundio).
             m = _ENCLITIC_CE_RE.match(lower)
-            if m and (m.group(1).endswith("ndo") or len(m.group(1)) >= 5):
-                best     = match_case(core, m.group(1) + "se" + m.group(2))
+            if m and self._enclitic_host(m.group(1), freqs):
+                best     = match_case(core, self._stressed(m.group(1)) + "se" + m.group(2))
                 resolved = True
 
             # Tilde mal puesta que deja la palabra fuera del diccionario
@@ -444,7 +474,11 @@ class CorrectionPipeline:
                 word_sound = to_phonetic(lower)
                 if word_sound in self._phonetic.phonetic_dict:
                     phonetic_best = self._phonetic.phonetic_dict[word_sound]
-                    if phonetic_best != lower:
+                    max_cost = _INITIAL_MAX_COST if (opens_sentence and core[:1].isupper()) else _PHONETIC_MAX_COST
+                    # La "h" es muda: sin la penalización de primera letra (aser -> hacer, avia -> había).
+                    h_diff = lower.startswith("h") != phonetic_best.startswith("h")
+                    cost = dyslexic_cost(lower.removeprefix("h"), phonetic_best.removeprefix("h")) + (0.3 if h_diff else 0)
+                    if phonetic_best != lower and cost <= max_cost:
                         best     = self._phonetic.restore_accent(match_case(core, phonetic_best))
                         resolved = True
 
@@ -457,9 +491,14 @@ class CorrectionPipeline:
             if not resolved:
                 suggestions = self._symspell.lookup(lower, Verbosity.ALL, max_edit_distance=2)
                 ranked = rank_candidates(lower, [(s.term, s.count) for s in suggestions]) if suggestions else []
+                splits = split_candidates(lower, freqs, accents)
+                if opens_sentence and core[:1].isupper() and not core.isupper():
+                    if ranked and ranked[0][0] > _INITIAL_MAX_COST:
+                        ranked = []
+                    splits = [p for p in splits if p[0] in FUNCTION_WORDS]
                 pick = self._contextual_pick(words, i, pref, suff, core, ranked)
                 split = choose_split(
-                    words, i, split_candidates(lower, freqs, accents), pick, judge=self._judge,
+                    words, i, splits, pick, judge=self._judge,
                     pick_cost=dyslexic_cost(lower, pick) if pick else None,
                 )
                 if split:
@@ -527,7 +566,9 @@ class CorrectionPipeline:
         # lo haya escrito con tilde. Va después de T5 porque el corpus de
         # entrenamiento es anterior a la reforma y la repone.
         base_corrected = normalize_modern_spelling(base_corrected, written_accents)
-        refined = [(normalize_modern_spelling(t, written_accents), s) for t, s in refined]
+        # Los auxiliares de la capa 3 se reaplican a los beams: T5 no puede
+        # deshacer una corrección determinista ("ha ido" -> "a ido"; auditoría B).
+        refined = [(normalize_modern_spelling(correct_auxiliaries(t), written_accents), s) for t, s in refined]
         ambiguous_variants = [(normalize_modern_spelling(v, written_accents), s) for v, s in ambiguous_variants]
 
         # --- CAPA 6: Conjuntos de confusión que T5 deshace (confusions.py) ---

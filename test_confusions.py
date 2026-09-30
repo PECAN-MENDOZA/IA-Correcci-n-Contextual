@@ -217,5 +217,22 @@ class TestAuxiliarHaber(unittest.TestCase):
         self.assertEqual(correct_grammar("paseaba por hay voy a entrar"), "paseaba por ahí voy a entrar")
 
 
+class TestAuxiliarHaberAuditoria(unittest.TestCase):
+    """Contraejemplos de la auditoría B (2026-09-30): "a" preposición y "aya" sustantivo."""
+
+    def test_a_preposicion_ante_participio_se_conserva(self):
+        for frase in ["La cocina huele a quemado.", "sabe a quemado", "juega a escondido"]:
+            self.assertEqual(correct_grammar(frase), frase)
+
+    def test_aya_sustantivo_se_conserva(self):
+        for frase in ["El aya vestida de negro llegó.", "la aya vestida"]:
+            self.assertEqual(correct_grammar(frase), frase)
+
+    def test_contextos_auxiliares(self):
+        self.assertEqual(correct_grammar("lo que a pasado"), "lo que ha pasado")
+        self.assertEqual(correct_grammar("me a dicho que sí"), "me ha dicho que sí")
+        self.assertEqual(correct_grammar("que aya llegado"), "que haya llegado")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -213,7 +213,7 @@ class TestEscrituraInfantilReal(unittest.TestCase):
     def test_por_que_abriendo_oracion_es_interrogativo(self):
         self.assertEqual(expand_amalgams("y por que tienes la nariz tan grande"),
                          "y por qué tienes la nariz tan grande")
-        self.assertEqual(expand_amalgams("Por que no vienes"), "Por qué no vienes")
+        self.assertEqual(expand_amalgams("Por que no vienes?"), "Por qué no vienes?")
 
     def test_por_que_en_mitad_de_frase_es_causal(self):
         self.assertEqual(expand_amalgams("no entendía nada por que yo no quería"),
@@ -228,6 +228,26 @@ class TestEscrituraInfantilReal(unittest.TestCase):
     def test_monosilabos_pierden_la_tilde_aunque_la_escriba_el_alumno(self):
         self.assertEqual(normalize_modern_spelling("se fué y me dió", {"fué", "dió"}), "se fue y me dio")
         self.assertEqual(normalize_modern_spelling("sólo quiero", {"sólo"}), "sólo quiero")
+
+
+class TestPorQueAuditoria(unittest.TestCase):
+    """Contraejemplos de la auditoría B (2026-09-30): no decidir solo por posición."""
+
+    def test_finalidad_con_subjuntivo_se_conserva(self):
+        frase = "Luchó por que sus hijos pudieran estudiar."
+        self.assertEqual(expand_amalgams(frase), frase)
+
+    def test_interrogativa_indirecta_tras_verbo_de_pregunta_se_conserva(self):
+        for frase in ["No recuerdo por que ella lloraba.", "Averigua por que no vino."]:
+            self.assertEqual(expand_amalgams(frase), frase)
+
+    def test_porque_con_coletilla_interrogativa_no_es_por_que(self):
+        frase = "Porque llueve me mojo, ¿verdad?"
+        self.assertEqual(expand_amalgams(frase), frase)
+
+    def test_por_que_causal_al_abrir_sin_pregunta_se_conserva(self):
+        frase = "Por que llueve, me mojo."
+        self.assertEqual(expand_amalgams(frase), frase)
 
 
 if __name__ == "__main__":

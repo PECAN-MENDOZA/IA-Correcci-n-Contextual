@@ -237,6 +237,13 @@ def main() -> int:
             ("tele", "television"), ("verdaderamente", "realmente"), ("se", "le")]),
     ))
     results.append(check(
+        "variante (auditoría B): otra palabra con la misma inicial o cambio de tiempo NO es variante",
+        not any(is_same_word_variant(a, b, _SOUND) for a, b in [
+            ("casa", "cosa"), ("es", "fue"), ("madre", "padre")])
+        and all(is_same_word_variant(a, b, _SOUND) for a, b in [
+            ("vienes", "vengas"), ("das", "des"), ("tenia", "tuviera"), ("sabe", "sepa")]),
+    ))
+    results.append(check(
         "reversión: devuelve solo la palabra mal cambiada y conserva el resto del beam",
         revert_lexical_substitutions("agarro la alcancia que estaba arriba",
                                      "agarró la caja que estaba arriba", _KNOWN, _SOUND)

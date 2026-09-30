@@ -93,7 +93,8 @@ def has_explicit_plural_subject(tokens: list, vi: int) -> bool:
 
 def mine_pairs(limit: int) -> list:
     out = []
-    rows = list(csv.reader(open(CLEAN_CSV, encoding="utf-8")))[1:]
+    with open(CLEAN_CSV, encoding="utf-8") as fh:
+        rows = list(csv.reader(fh))[1:]
     for r in rows:
         if len(r) < 2:
             continue
@@ -194,7 +195,8 @@ def template_pairs(n: int) -> list:
 
 
 def general_sample(n: int) -> list:
-    rows = list(csv.reader(open(CLEAN_CSV, encoding="utf-8")))[1:]
+    with open(CLEAN_CSV, encoding="utf-8") as fh:
+        rows = list(csv.reader(fh))[1:]
     random.shuffle(rows)
     # fuera los pares que enseñan "había -> habían" (haber impersonal en plural)
     return [(r[0].strip(), r[1].strip()) for r in rows[:n] if len(r) >= 2

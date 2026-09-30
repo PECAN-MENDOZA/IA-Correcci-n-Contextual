@@ -35,7 +35,7 @@ from infrastructure.nlp.phonetic_engine import to_phonetic
 # Palabras españolas de una o dos letras (es_50k trae también `to`, `do`, `in`...).
 SHORT_WORDS = {
     "a", "o", "y", "e", "u",
-    "al", "da", "ir", "de", "di", "el", "en", "es", "fe", "ha", "he", "la", "le", "lo",
+    "al", "as", "da", "ir", "de", "di", "el", "en", "es", "fe", "ha", "he", "la", "le", "lo",
     "me", "mi", "ni", "no", "os", "se", "si", "su", "te", "ti", "tu", "un", "va",
     "ve", "vi", "ya", "yo", "dé", "sé", "sí", "tú", "él", "mí",
 }
@@ -175,7 +175,9 @@ def join_split_words(text: str, freqs: dict, accent_dict: dict, judge=None,
     while i + 1 < len(tokens):
         pref_a, a, suff_a = _split_punct(tokens[i])
         pref_b, b, suff_b = _split_punct(tokens[i + 1])
-        form = None if (suff_a or pref_b) else _joined_form(a, b, freqs, accent_dict)
+        # Nombres propios y siglas no se unen ("a Ra", "Ma Ri", "de PTO").
+        names = b[:1].isupper() or (len(a) > 1 and a.isupper()) or (len(b) > 1 and b.isupper())
+        form = None if (suff_a or pref_b or names) else _joined_form(a, b, freqs, accent_dict)
         if form is None:
             i += 1
             continue
@@ -200,9 +202,13 @@ def join_split_words(text: str, freqs: dict, accent_dict: dict, judge=None,
               and not (a.lower() in _FUNCTION and b.lower() in _FUNCTION)):
             split_cand = pref_a + f"{a} {b}" + suff_b
             join_cand = pref_a + _match_case(a, form) + suff_b
-            ranked = dict(_best_variant(judge, tokens[:i] + [split_cand] + tokens[i + 2:], i,
-                                        [split_cand, join_cand]))
-            join = ranked[join_cand] - ranked[split_cand] >= JOIN_MARGIN
+            try:
+                ranked = dict(_best_variant(judge, tokens[:i] + [split_cand] + tokens[i + 2:], i,
+                                            [split_cand, join_cand]))
+                join = ranked[join_cand] - ranked[split_cand] >= JOIN_MARGIN
+            except Exception as e:                       # BETO caído: no se une
+                print(f"[WARN] Segmentación (BETO) falló: {e}")
+                join = False
         if join:
             tokens[i:i + 2] = [pref_a + _match_case(a, form) + suff_b]
         else:
@@ -215,8 +221,9 @@ def split_candidates(word: str, freqs: dict, accent_dict: dict,
     """Hasta `k` particiones de `word` en 2..MAX_SPLIT_PIECES palabras españolas,
     de mayor a menor probabilidad unigrama (Norvig)."""
     w = word.lower()
-    if len(w) < 4 or _looks_compound(w):
+    if len(w) < 4:
         return []
+    compound = _looks_compound(w)
     total = sum(freqs.values()) or 1
 
     def piece(p: str) -> str | None:
@@ -242,6 +249,11 @@ def split_candidates(word: str, freqs: dict, accent_dict: dict,
 
     walk(0, [], 0.0)
     found = [(lp, p) for lp, p in found if _plausible_split(p)]
+    if compound:
+        # `sobreentrenamiento` no se parte; `sobrelamesa` sí: tras el prefijo
+        # viene una palabra funcional (sobre la mesa, contra la pared).
+        found = [(lp, p) for lp, p in found
+                 if len(p) >= 3 and p[0] in _COMPOUND_PREFIXES and p[1] in _FUNCTION]
     if not found:
         return []
     # Solo las particiones con menos trozos (`poreso` -> `por eso`, no `por es o`).
@@ -258,6 +270,9 @@ def _plausible_split(pieces: list) -> bool:
     if pieces[-1] in _CLITICS and len(pieces) >= 2 and pieces[-2].endswith(_CLITIC_HOSTS):
         return False                               # confiar se
     return True
+
+
+FUNCTION_WORDS = frozenset(_FUNCTION)
 
 
 def _looks_compound(word: str) -> bool:
@@ -285,7 +300,11 @@ def choose_split(tokens: list, i: int, splits: list, pick: str | None, judge=Non
         return None
     variants = [pref + _match_case(core, o) + suff for o in options]
     pick_variant = pref + _match_case(core, pick) + suff if pick else None
-    ranked = _best_variant(judge, tokens, i, variants + ([pick_variant] if pick_variant else []))
+    try:
+        ranked = _best_variant(judge, tokens, i, variants + ([pick_variant] if pick_variant else []))
+    except Exception as e:                               # BETO caído: gana la palabra
+        print(f"[WARN] Segmentación (BETO) falló: {e}")
+        return None
     best, best_score = next((v, s) for v, s in ranked if v != pick_variant)
     if pick_variant is not None:
         pick_score = dict(ranked)[pick_variant]

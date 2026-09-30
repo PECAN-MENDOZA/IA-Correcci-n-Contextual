@@ -75,5 +75,10 @@ class TestYeismo(unittest.TestCase):
         self.assertLess(dyslexic_cost("tiyo", "tío"), 1.0)
 
 
+class TestYeismoSoloJuntoAVocal(unittest.TestCase):
+    def test_y_tras_consonante_cuesta_como_cualquier_letra(self):
+        self.assertLess(dyslexic_cost("tiyo", "tio"), dyslexic_cost("tryo", "tro"))
+
+
 if __name__ == "__main__":
     unittest.main()
