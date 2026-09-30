@@ -1,0 +1,158 @@
+# Oraciones CORRECTAS en registro escolar infantil (Perú / Latinoamérica), ESCRITAS POR EL
+# DESARROLLADOR el 2026-09-30 para medir el daño sobre texto correcto (auditoría A/B): no son
+# escritura infantil real y se redactaron conociendo las reglas del sistema (sesgo declarado).
+# Incluyen a propósito contraejemplos de cada regla (preposición "a" ante participio, "por que"
+# final o interrogativo indirecto, uniones legítimas, nombres y topónimos, regionalismos,
+# enclíticos, diminutivos, homófonos bien usados). Esperado = entrada; cuando la norma admite
+# dos grafías (en seguida / enseguida) van las dos como referencia.
+categoria|entrada|esperado|esperado_2
+prep_a|La cocina huele a quemado.|La cocina huele a quemado.
+prep_a|El pan sabe a quemado.|El pan sabe a quemado.
+prep_a|La leche huele a podrido.|La leche huele a podrido.
+prep_a|Jugamos a las escondidas en el recreo.|Jugamos a las escondidas en el recreo.
+prep_a|Mi abuela me mandó a comprar pan.|Mi abuela me mandó a comprar pan.
+prep_a|Aprendí a leer cuando tenía seis años.|Aprendí a leer cuando tenía seis años.
+prep_a|Llegamos a tiempo a la escuela.|Llegamos a tiempo a la escuela.
+prep_a|Salimos a pasear con mi perro.|Salimos a pasear con mi perro.
+prep_a|Empezó a llover muy fuerte.|Empezó a llover muy fuerte.
+prep_a|Mi tío cruzó el río a nado.|Mi tío cruzó el río a nado.
+prep_a|Hicimos el mural a pedido de la profesora.|Hicimos el mural a pedido de la profesora.
+prep_a|Subimos al cerro a caballo.|Subimos al cerro a caballo.
+prep_a|A lo lejos se veía el mar.|A lo lejos se veía el mar.
+prep_a|Le enseñé a nadar a mi hermano.|Le enseñé a nadar a mi hermano.
+prep_a|Vivo al lado del mercado.|Vivo al lado del mercado.
+haber|Había una vez un gato muy curioso.|Había una vez un gato muy curioso.
+haber|Mañana va a haber una fiesta en el colegio.|Mañana va a haber una fiesta en el colegio.
+haber|Hay que lavarse las manos antes de comer.|Hay que lavarse las manos antes de comer.
+haber|Esta semana ha llovido mucho.|Esta semana ha llovido mucho.
+haber|Ya he terminado mi tarea.|Ya he terminado mi tarea.
+haber|Nos hemos divertido mucho en el paseo.|Nos hemos divertido mucho en el paseo.
+haber|A ver si mañana vienes a jugar.|A ver si mañana vienes a jugar.
+haber|¡Ay, me duele la rodilla!|¡Ay, me duele la rodilla!
+haber|Ahí está mi mochila.|Ahí está mi mochila.
+haber|La aya cuidaba al bebé.|La aya cuidaba al bebé.
+porque|No fui al colegio porque estaba enfermo.|No fui al colegio porque estaba enfermo.
+porque|¿Por qué lloras?|¿Por qué lloras?
+porque|No sé por qué se fue tan temprano.|No sé por qué se fue tan temprano.
+porque|Me pregunto por qué el cielo es azul.|Me pregunto por qué el cielo es azul.
+porque|Estoy feliz porque hoy es mi cumpleaños.|Estoy feliz porque hoy es mi cumpleaños.
+porque|¿Por qué no vienes a mi casa?|¿Por qué no vienes a mi casa?
+porque|Quiero saber el porqué de las cosas.|Quiero saber el porqué de las cosas.
+porque|Mi mamá trabaja mucho para que yo estudie.|Mi mamá trabaja mucho para que yo estudie.
+porque|Me quedé en casa porque llovía.|Me quedé en casa porque llovía.
+porque|Porque llueve, me quedo en casa.|Porque llueve, me quedo en casa.
+nombres|Nino es mi mejor amigo.|Nino es mi mejor amigo.
+nombres|Rosa y Luz fueron al parque.|Rosa y Luz fueron al parque.
+nombres|Mi prima vive en Toquepala.|Mi prima vive en Toquepala.
+nombres|Cacachi es un pueblo de Arequipa.|Cacachi es un pueblo de Arequipa.
+nombres|Toquepala queda en Tacna.|Toquepala queda en Tacna.
+nombres|Ayer vino Mateo a mi casa.|Ayer vino Mateo a mi casa.
+nombres|Paz me prestó su lápiz.|Paz me prestó su lápiz.
+nombres|Fuimos de paseo a Bagua Grande.|Fuimos de paseo a Bagua Grande.
+nombres|Mi perro se llama Firulais.|Mi perro se llama Firulais.
+nombres|Karol y Jhon juegan fútbol.|Karol y Jhon juegan fútbol.
+nombres|El profesor Quispe nos enseña matemática.|El profesor Quispe nos enseña matemática.
+nombres|Chiclayo es una ciudad muy bonita.|Chiclayo es una ciudad muy bonita.
+nombres|Mi tía Yessenia vive en Juliaca.|Mi tía Yessenia vive en Juliaca.
+nombres|Viajamos a Huancayo en bus.|Viajamos a Huancayo en bus.
+nombres|Ignacio llegó tarde al colegio.|Ignacio llegó tarde al colegio.
+regionalismos|Me compraron una chompa roja.|Me compraron una chompa roja.
+regionalismos|Mi mamá preparó un sánguche de pollo.|Mi mamá preparó un sánguche de pollo.
+regionalismos|Comimos choclo con queso.|Comimos choclo con queso.
+regionalismos|Mi papá maneja una combi.|Mi papá maneja una combi.
+regionalismos|Jugamos fútbol en la cancha del barrio.|Jugamos fútbol en la cancha del barrio.
+regionalismos|Me encanta la palta con pan.|Me encanta la palta con pan.
+regionalismos|Mi polo blanco está sucio.|Mi polo blanco está sucio.
+regionalismos|El chancho come mucho.|El chancho come mucho.
+regionalismos|Mi pata Luis me ayudó con la tarea.|Mi pata Luis me ayudó con la tarea.
+regionalismos|Tomamos chicha morada en el almuerzo.|Tomamos chicha morada en el almuerzo.
+regionalismos|La profe nos dejó mucha tarea.|La profe nos dejó mucha tarea.
+regionalismos|Fuimos a la chacra de mi abuelo.|Fuimos a la chacra de mi abuelo.
+segmentacion|A veces juego con mi hermano.|A veces juego con mi hermano.
+segmentacion|Sobre todo me gusta dibujar.|Sobre todo me gusta dibujar.
+segmentacion|Lo hizo tan bien que ganó el concurso.|Lo hizo tan bien que ganó el concurso.
+segmentacion|De repente empezó a llover.|De repente empezó a llover.
+segmentacion|Si no estudias, no vas a aprender.|Si no estudias, no vas a aprender.
+segmentacion|No quiero agua sino jugo.|No quiero agua sino jugo.
+segmentacion|Tengo un as de corazones.|Tengo un as de corazones.
+segmentacion|Nos vemos en seguida.|Nos vemos en seguida.|Nos vemos enseguida.
+segmentacion|Se fue a dormir temprano.|Se fue a dormir temprano.
+segmentacion|Me dijo que no.|Me dijo que no.
+segmentacion|Sin embargo, no vino a la fiesta.|Sin embargo, no vino a la fiesta.
+segmentacion|Tal vez mañana llueva.|Tal vez mañana llueva.
+segmentacion|Por eso me quedé en casa.|Por eso me quedé en casa.
+segmentacion|Mi gato duerme sobre la mesa.|Mi gato duerme sobre la mesa.
+segmentacion|Entre todos limpiamos el salón.|Entre todos limpiamos el salón.
+encliticos|Dámelo, por favor.|Dámelo, por favor.
+encliticos|Cómetelo todo.|Cómetelo todo.
+encliticos|Voy a decírselo a mi mamá.|Voy a decírselo a mi mamá.
+encliticos|Quiero comprármelo.|Quiero comprármelo.
+encliticos|Mi papá está leyéndolo.|Mi papá está leyéndolo.
+encliticos|Tráemelo mañana.|Tráemelo mañana.
+encliticos|Dáselo a tu hermana.|Dáselo a tu hermana.
+encliticos|Póntelo, que hace frío.|Póntelo, que hace frío.
+encliticos|Vamos a contárselo a la profesora.|Vamos a contárselo a la profesora.
+encliticos|Estoy pensándolo.|Estoy pensándolo.
+diminutivos|Mi abuelita me regaló un perrito.|Mi abuelita me regaló un perrito.
+diminutivos|La casita del árbol es pequeñita.|La casita del árbol es pequeñita.
+diminutivos|Compré un sacapuntas nuevo.|Compré un sacapuntas nuevo.
+diminutivos|Llevé mi paraguas al colegio.|Llevé mi paraguas al colegio.
+diminutivos|Hoy es mi cumpleaños.|Hoy es mi cumpleaños.
+diminutivos|El abrelatas está en la cocina.|El abrelatas está en la cocina.
+diminutivos|Mi hermanito duerme en su cuna.|Mi hermanito duerme en su cuna.
+diminutivos|El pajarito canta en la ventana.|El pajarito canta en la ventana.
+diminutivos|Juanito tiene un cochecito rojo.|Juanito tiene un cochecito rojo.
+diminutivos|Mi mamá me compró un lapicito.|Mi mamá me compró un lapicito.
+homofonos|Mi hermano tuvo fiebre ayer.|Mi hermano tuvo fiebre ayer.
+homofonos|El agua sale por el tubo.|El agua sale por el tubo.
+homofonos|¡Vaya sorpresa!|¡Vaya sorpresa!
+homofonos|La valla del colegio es alta.|La valla del colegio es alta.
+homofonos|Ya he hecho la tarea.|Ya he hecho la tarea.
+homofonos|Echo agua a las plantas todos los días.|Echo agua a las plantas todos los días.
+homofonos|Tú eres mi mejor amigo.|Tú eres mi mejor amigo.
+homofonos|Tu mochila es azul.|Tu mochila es azul.
+homofonos|Él juega y el perro corre.|Él juega y el perro corre.
+homofonos|Sí, quiero ir al parque.|Sí, quiero ir al parque.
+homofonos|Si llueve, no salgo.|Si llueve, no salgo.
+homofonos|Este regalo es para mí.|Este regalo es para mí.
+homofonos|Mi casa es grande.|Mi casa es grande.
+homofonos|Quiero más pan.|Quiero más pan.
+homofonos|Tomé té con mi abuela.|Tomé té con mi abuela.
+homofonos|Te quiero mucho, mamá.|Te quiero mucho, mamá.
+homofonos|Vamos a ver la tele.|Vamos a ver la tele.
+homofonos|El cazador salió de caza.|El cazador salió de caza.
+homofonos|Hay una baya roja en el arbusto.|Hay una baya roja en el arbusto.
+homofonos|Mi abuelo usa bastón.|Mi abuelo usa bastón.
+dialogo|—¿Quién eres? —preguntó el lobo.|—¿Quién eres? —preguntó el lobo.
+dialogo|¡Qué bonito día!|¡Qué bonito día!
+dialogo|¿Cuándo vienes al colegio?|¿Cuándo vienes al colegio?
+dialogo|¿Cómo es allá?|¿Cómo es allá?
+dialogo|Hola, me llamo Ana.|Hola, me llamo Ana.
+dialogo|Tengo nueve años y estoy en cuarto grado.|Tengo nueve años y estoy en cuarto grado.
+dialogo|El 12 de octubre no hay clases.|El 12 de octubre no hay clases.
+dialogo|Caperucita dijo: "Abuelita, qué ojos tan grandes tienes".|Caperucita dijo: "Abuelita, qué ojos tan grandes tienes".
+general|El lobo se escondió detrás del árbol.|El lobo se escondió detrás del árbol.
+general|Los niños jugaron en el patio.|Los niños jugaron en el patio.
+general|Mi mamá cocina muy rico.|Mi mamá cocina muy rico.
+general|Ayer fuimos al zoológico.|Ayer fuimos al zoológico.
+general|Me gusta leer cuentos de dragones.|Me gusta leer cuentos de dragones.
+general|La profesora nos leyó un libro.|La profesora nos leyó un libro.
+general|Cuando sea grande, quiero ser doctora.|Cuando sea grande, quiero ser doctora.
+general|El gato subió al techo.|El gato subió al techo.
+general|Mis amigos y yo hicimos una maqueta.|Mis amigos y yo hicimos una maqueta.
+general|Las gallinas pusieron muchos huevos.|Las gallinas pusieron muchos huevos.
+general|Mi papá trabaja en una fábrica.|Mi papá trabaja en una fábrica.
+general|Hoy desayuné pan con mantequilla.|Hoy desayuné pan con mantequilla.
+general|El río Rímac cruza Lima.|El río Rímac cruza Lima.
+general|Nos mojamos con la lluvia.|Nos mojamos con la lluvia.
+general|Mi hermana se cayó de la bicicleta.|Mi hermana se cayó de la bicicleta.
+general|El perro ladró toda la noche.|El perro ladró toda la noche.
+general|Estábamos mirando la televisión.|Estábamos mirando la televisión.
+general|Caperucita se encontró con el lobo en el bosque.|Caperucita se encontró con el lobo en el bosque.
+general|Los tres cerditos construyeron sus casas.|Los tres cerditos construyeron sus casas.
+general|Mi abuelo me contó una historia.|Mi abuelo me contó una historia.
+general|Vi un video en YouTube con mi primo.|Vi un video en YouTube con mi primo.
+general|Jugamos Minecraft después de hacer la tarea.|Jugamos Minecraft después de hacer la tarea.
+general|La vaca comió pasto verde.|La vaca comió pasto verde.
+general|Mis padres fueron a una reunión.|Mis padres fueron a una reunión.
+general|El agua estaba muy fría.|El agua estaba muy fría.

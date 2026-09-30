@@ -80,5 +80,35 @@ class TestYeismoSoloJuntoAVocal(unittest.TestCase):
         self.assertLess(dyslexic_cost("tiyo", "tio"), dyslexic_cost("tryo", "tro"))
 
 
+class TestDerivadosYLexico(unittest.TestCase):
+    """Daño sobre texto correcto (2026-09-30): diminutivos, -mente y léxico peruano."""
+    FREQS = {"perro": 50_000, "casa": 90_000, "lápiz": 5_000, "lapiz": 50, "amigo": 80_000,
+             "chico": 30_000, "pan": 40_000, "árbol": 20_000, "refrescante": 800, "rápida": 9_000,
+             "bis": 400}
+    ACCENTS = {"lapiz": "lápiz", "arbol": "árbol", "rapida": "rápida"}
+
+    def test_diminutivos_de_palabras_del_lexico(self):
+        from infrastructure.nlp.candidates import is_derived_form
+        for w in ["perrito", "casita", "lapicito", "amiguito", "chiquito", "panecito", "arbolito"]:
+            self.assertTrue(is_derived_form(w, self.FREQS, self.ACCENTS), w)
+
+    def test_adverbios_en_mente(self):
+        from infrastructure.nlp.candidates import is_derived_form
+        self.assertTrue(is_derived_form("refrescantemente", self.FREQS, self.ACCENTS))
+        self.assertTrue(is_derived_form("rapidamente", self.FREQS, self.ACCENTS))
+
+    def test_raiz_corta_no_es_diminutivo(self):
+        from infrastructure.nlp.candidates import is_derived_form
+        self.assertFalse(is_derived_form("bisitas", self.FREQS, self.ACCENTS))
+
+    def test_lexico_complementario_con_plurales(self):
+        from infrastructure.nlp.phonetic_engine import _plural, load_supplement
+        self.assertEqual([_plural(w) for w in ["chompa", "ají", "chicharrón", "cuy", "ojotas"]],
+                         ["chompas", "ajíes", "chicharrones", "cuyes", None])
+        lex = load_supplement()
+        for w in ["chompa", "choclo", "combi", "palta", "chancho", "chicha", "chacra", "sánguche"]:
+            self.assertIn(w, lex)
+
+
 if __name__ == "__main__":
     unittest.main()

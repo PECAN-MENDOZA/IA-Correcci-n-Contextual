@@ -260,6 +260,39 @@ class EditScoresTests(unittest.TestCase):
         self.assertEqual(extract_edits("el niño iva", ""), {(0, 3, ())})
 
 
+class HarmTests(unittest.TestCase):
+    """Daño sobre texto correcto (auditoría A, 2026-09-30)."""
+
+    def test_cambio_de_palabra_correcta_es_dano_lexico(self):
+        from evaluate import harm_counts
+        h = harm_counts("La cocina huele a quemado.", "La cocina huele a quemado.",
+                        "La cocina huele ha quemado.")
+        self.assertEqual((h["damaging"], h["damaging_lexical"], h["correct_words"]), (1, 1, 5))
+
+    def test_tilde_mayuscula_o_puntuacion_es_dano_leve(self):
+        from evaluate import harm_counts
+        for pred in ["el Perro come", "el perro come."]:
+            h = harm_counts("el perro come", "el perro come", pred)
+            self.assertEqual((h["damaging"], h["damaging_lexical"]), (1, 0), pred)
+
+    def test_corregir_distinto_un_error_no_es_dano_a_texto_correcto(self):
+        from evaluate import harm_counts
+        h = harm_counts("el perro coma", "el perro come", "el perro comió")
+        self.assertEqual((h["damaging"], h["correct_words"]), (0, 2))
+
+    def test_resumen_por_100_palabras_y_frases_intactas(self):
+        from evaluate import harm_counts, harm_summary
+        rows = []
+        for inp, gold, pred in [("hola amigo", "hola amigo", "hola amigo"),
+                                ("el sol sale", "el sol sale", "el sal sale"),
+                                ("la baca", "la vaca", "la vaca")]:
+            rows.append({"input": inp, "gold": gold, "pred": pred, "harm": harm_counts(inp, gold, pred)})
+        s = harm_summary(rows)
+        self.assertEqual((s["damaging_edits"], s["correct_words"]), (1, 6))
+        self.assertAlmostEqual(s["per100"], 100 / 6)
+        self.assertEqual((s["correct_sentences_intact"], s["correct_sentences"]), (1, 2))
+
+
 class ScoreSentenceReferenceChoiceTests(unittest.TestCase):
     # 20 tokens; la predicción pone en mayúscula los 10 primeros (10 ediciones 1:1).
     SOURCE = " ".join("abcdefghijklmnopqrst")

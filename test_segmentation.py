@@ -151,5 +151,13 @@ class TestAuditoriaSegmentacion(unittest.TestCase):
         self.assertIsNone(seg.choose_split(["dijo", "queno"], 1, [["que", "no"]], "quemo", judge=Boom()))
 
 
+class TestSobreTodo(unittest.TestCase):
+    def test_sobre_todo_no_se_une_aunque_beto_lo_prefiera(self):
+        freqs = dict(FREQS, sobre=300_000, todo=1_000_000, sobretodo=2_000)
+        judge = FakeJudge("sobretodo", bonus=9.0)
+        self.assertEqual(seg.join_split_words("Sobre todo me gusta dibujar", freqs, {}, judge),
+                         "Sobre todo me gusta dibujar")
+
+
 if __name__ == "__main__":
     unittest.main()

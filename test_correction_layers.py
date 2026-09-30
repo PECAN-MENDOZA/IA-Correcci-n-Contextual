@@ -594,5 +594,41 @@ class AuditoriaPipelineTests(unittest.TestCase):
         self.assertEqual(pipe.correct("le dije a marcelo", {})[0], "le dije a marcelo")
 
 
+class DanoTextoCorrectoTests(unittest.TestCase):
+    """Daño sobre texto correcto (2026-09-30), con colaboradores falsos."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.mod = import_isolated(cls, "infrastructure.nlp.correction_pipeline", _pipeline_stubs())
+
+    def _pipeline(self, judge=None, word_freqs=None, accents=None):
+        pipe = self.mod.CorrectionPipeline.__new__(self.mod.CorrectionPipeline)
+        phonetic = FakePhonetic(None, word_freqs)
+        accents = dict(accents or {})
+        phonetic.accent_dict = accents
+        def restore(w):
+            form = accents.get(w.lower())
+            return w if form is None else (form[:1].upper() + form[1:] if w[:1].isupper() else form)
+        phonetic.restore_accent = restore
+        pipe._phonetic  = phonetic
+        pipe._symspell  = FakeSymSpell()
+        pipe._judge     = judge
+        pipe._seq2seq   = None
+        pipe._tokenizer = None
+        return pipe
+
+    def test_interjeccion_ay_no_es_hay(self):
+        pipe = self._pipeline(word_freqs={"ay": 5000, "hay": 900_000})
+        self.assertEqual(pipe.correct("¡Ay, me duele!", {})[0], "¡Ay, me duele!")
+
+    def test_tras_determinante_no_se_pone_tilde_de_preterito(self):
+        freqs = {"cerro": 542, "cerró": 3491, "subimos": 5000, "caballo": 20000, "arbol": 50, "árbol": 9000}
+        accents = {"cerro": "cerró", "arbol": "árbol"}
+        pipe = self._pipeline(None, freqs, accents)
+        self.assertEqual(pipe.correct("subimos al cerro a caballo", {})[0], "subimos al cerro a caballo")
+        self.assertEqual(pipe.correct("se cerro la puerta", {})[0], "se cerró la puerta")
+        self.assertEqual(pipe.correct("el arbol es alto", {})[0], "el árbol es alto")
+
+
 if __name__ == "__main__":
     unittest.main()

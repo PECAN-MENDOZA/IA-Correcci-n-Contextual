@@ -244,6 +244,13 @@ def main() -> int:
             ("vienes", "vengas"), ("das", "des"), ("tenia", "tuviera"), ("sabe", "sepa")]),
     ))
     results.append(check(
+        "reversión: quitar un pronombre enclítico o cambiar sánguche por sándwich se revierte",
+        revert_lexical_substitutions("Mi papá está leyéndolo.", "Mi papá está leyendo.",
+                                     lambda w: False, _SOUND) == "Mi papá está leyéndolo."
+        and not is_same_word_variant("sanguche", "sandwich", _SOUND)
+        and is_same_word_variant("llegamos", "lleguemos", _SOUND),
+    ))
+    results.append(check(
         "reversión: devuelve solo la palabra mal cambiada y conserva el resto del beam",
         revert_lexical_substitutions("agarro la alcancia que estaba arriba",
                                      "agarró la caja que estaba arriba", _KNOWN, _SOUND)

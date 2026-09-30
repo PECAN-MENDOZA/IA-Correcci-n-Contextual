@@ -7,12 +7,12 @@ import re
 import unicodedata
 from symspellpy import SymSpell, Verbosity
 
-from infrastructure.nlp.phonetic_engine import PhoneticEngine, match_case, to_phonetic, DICT_PATH
+from infrastructure.nlp.phonetic_engine import PhoneticEngine, match_case, to_phonetic, DICT_PATH, load_supplement
 from infrastructure.nlp.context_judge import ContextJudge
 from infrastructure.nlp.amalgams import expand_amalgams
 from infrastructure.nlp.confusions import fix_lexical_confusions, resolve_final_confusions
 from infrastructure.nlp.grammar_rules import correct_auxiliaries, correct_grammar, normalize_modern_spelling
-from infrastructure.nlp.candidates import dyslexic_cost, is_regular_verb_form, rank_candidates
+from infrastructure.nlp.candidates import dyslexic_cost, is_derived_form, is_regular_verb_form, rank_candidates
 from infrastructure.nlp.segmentation import (
     FUNCTION_WORDS, choose_split, is_spanish_word, join_split_words, split_candidates,
 )
@@ -109,6 +109,10 @@ _STRESS = str.maketrans("aei", "áéí")
 # barato (Entonses, Binieron: 0,5) y solo se parte si empieza por una palabra
 # funcional (Sefue); Cacachi -> Kakashi (1,5) y Toquepala -> "toque pala" no.
 _INITIAL_MAX_COST = 0.5
+# Determinantes: tras ellos no se pone la tilde de pretérito por frecuencia
+# ("al cerro" no es "al cerró").
+_DETERMINERS = {"el", "la", "los", "las", "un", "una", "unos", "unas", "al", "del", "mi", "mis",
+                "tu", "tus", "su", "sus", "este", "esta", "ese", "esa", "aquel", "aquella", "otro", "otra"}
 # Un homófono fonético se acepta solo si también es un error barato: la clave
 # fonética iguala "cacachi" y "kakashi" (coste 1,5), no así kaye/calle (1,0).
 _PHONETIC_MAX_COST = 1.0
@@ -141,6 +145,8 @@ class CorrectionPipeline:
         # encoding explícito: sin él, en Windows se lee en cp1252 y las palabras
         # con tilde entran como "dormirÃ¡n" (SymSpell nunca las proponía).
         self._symspell.load_dictionary(DICT_PATH, term_index=0, count_index=1, encoding="utf-8")
+        for word, count in load_supplement().items():      # vocabulario escolar peruano
+            self._symspell.create_dictionary_entry(word, count)
         self._seq2seq   = seq2seq
         self._tokenizer = tokenizer
 
@@ -189,6 +195,9 @@ class CorrectionPipeline:
                 continue
 
             lower = core.lower()
+            pref0, suff0 = affixes[i]
+            if lower == "ay" and ("¡" in pref0 or suff0.startswith((",", "!"))):
+                continue                                 # interjección: "¡Ay, me duele!"
             candidates = self._phonetic.homophone_candidates(lower)
             # La palabra original siempre compite consigo misma (permite "no tocar").
             candidates = list(dict.fromkeys([lower] + candidates))
@@ -406,6 +415,7 @@ class CorrectionPipeline:
             lower    = core.lower()
             best     = core
             resolved = False
+            keep_plain = False
             opens_sentence = i == 0 or words[i - 1].endswith((".", "!", "?", ":", ";"))
             proper_noun = core[:1].isupper() and not opens_sentence
 
@@ -429,6 +439,11 @@ class CorrectionPipeline:
             # Proteger palabras que ya tienen acento — no tocar
             if not resolved and _has_accent(lower):
                 best     = self._phonetic.restore_accent(core)
+                resolved = True
+
+            # "¡Ay, me duele!": interjección, no "hay" (MANUAL_CORRECTIONS la cambiaría).
+            if not resolved and lower == "ay" and ("¡" in pref or suff.startswith((",", "!"))):
+                best     = core
                 resolved = True
 
             # Correcciones manuales de alta prioridad
@@ -459,13 +474,23 @@ class CorrectionPipeline:
             if not resolved and self._symspell.lookup(lower, Verbosity.TOP, max_edit_distance=0):
                 best     = self._phonetic.restore_accent(core)
                 resolved = True
+                # Tras un determinante va un sustantivo, no un pretérito: "al
+                # cerro" no es "al cerró" (la tilde final en -ó/-é la ponía la
+                # frecuencia). BETO no sirve aquí: prefiere las formas sin tilde
+                # (pájaros, iré, éramos las perdía; medido el 2026-09-30).
+                prev_word = words[i - 1].lower().strip(".,;:!?¡¿\"'()") if i > 0 else ""
+                if (best.lower() != lower and best.lower().endswith(("ó", "é"))
+                        and prev_word in _DETERMINERS):
+                    best = core
+                    keep_plain = True
                 if (not proper_noun and len(lower) <= _RIVAL_MAX_LEN
                         and not is_spanish_word(best.lower(), freqs, accents)):
                     best = self._rescue_rare_word(words, i, pref, suff, core, lower, best)
 
             # Forma verbal regular fuera de las 50k palabras (nadaremos,
             # dibujaremos): se respeta; SymSpell la destrozaría (daremos).
-            if not resolved and is_regular_verb_form(lower, self._phonetic.word_freqs):
+            if not resolved and (is_regular_verb_form(lower, self._phonetic.word_freqs)
+                                 or is_derived_form(lower, freqs, accents)):
                 best     = core
                 resolved = True
 
@@ -513,7 +538,8 @@ class CorrectionPipeline:
             # propio ("soy Nino" no es "soy Niño").
             if not proper_noun:
                 best = self._phonetic.restore_enye(best)
-            best = self._phonetic.restore_accent(best)
+            if not keep_plain:                           # la tilde descartada no vuelve
+                best = self._phonetic.restore_accent(best)
             result.append(pref + best + suff)
 
         base_corrected = " ".join(result)
