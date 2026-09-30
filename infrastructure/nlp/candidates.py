@@ -163,5 +163,56 @@ def is_regular_verb_form(word: str, word_freqs: dict) -> bool:
     return False
 
 
+# ── Derivados válidos fuera del léxico ───────────────────────────────────────
+# Diminutivos y adverbios en -mente: productivos en la escritura infantil y casi
+# nunca en es_50k (lapicito -> "lapicero", refrescantemente -> "refrescante
+# mente" antes de esta guarda; medido con data/test_correcto_ninos.csv).
+_DIMINUTIVE_SUFFIXES = (
+    # (sufijo, terminaciones posibles de la base)
+    ("ecitos", ("",)), ("ecitas", ("",)), ("ecito", ("",)), ("ecita", ("",)),
+    ("citos", ("", "z")), ("citas", ("", "z")), ("cito", ("", "z")), ("cita", ("", "z")),
+    ("itos", ("o", "a", "e", "")), ("itas", ("a", "o", "e", "")),
+    ("ito", ("o", "a", "e", "")), ("ita", ("a", "o", "e", "")),
+    ("illos", ("o", "a", "e", "")), ("illas", ("a", "o", "e", "")),
+    ("illo", ("o", "a", "e", "")), ("illa", ("a", "o", "e", "")),
+)
+_MIN_BASE_COUNT = 300
+
+
+def _known(word: str, word_freqs: dict, accent_dict: dict) -> bool:
+    # es_50k trae a veces la forma sin tilde como ruido (lapiz, raton): vale la mayor.
+    freq = max(word_freqs.get(word, 0), word_freqs.get(accent_dict.get(word, ""), 0))
+    return freq >= _MIN_BASE_COUNT
+
+
+def is_derived_form(word: str, word_freqs: dict, accent_dict: dict | None = None) -> bool:
+    """True si `word` (minúsculas) es un diminutivo (perrito, casita, lapicito,
+    amiguito, chiquito, panecito) o un adverbio en -mente (rápidamente,
+    refrescantemente) de una palabra del léxico."""
+    accent_dict = accent_dict or {}
+    w = _strip(word.lower())
+    if len(w) < 6 or not re.fullmatch(r"[a-zñ]+", w):
+        return False
+    if w.endswith("mente") and len(w) >= 9:
+        return _known(w[:-5], word_freqs, accent_dict)
+    for suffix, endings in _DIMINUTIVE_SUFFIXES:
+        if not w.endswith(suffix) or len(w) - len(suffix) < 2:
+            continue
+        base = w[: -len(suffix)]
+        stems = [base]
+        if base.endswith("qu"):                      # chiquito -> chico
+            stems.append(base[:-2] + "c")
+        if base.endswith("gu"):                      # amiguito -> amigo
+            stems.append(base[:-1])
+        # "bisitas" no es diminutivo de "bis": raíz >= 3 letras, y la raíz sola
+        # con -ito/-illo (árbol -> arbolito) solo si tiene 4+; -cito/-ecito ya
+        # marcan el diminutivo (pan -> panecito).
+        if any(_known(stem + e, word_freqs, accent_dict) for stem in stems for e in endings
+               if len(stem) >= 3 and (e or len(stem) >= 4 or suffix.startswith("c") or suffix.startswith("ec"))):
+            return True
+    return False
+
+
 __all__ = ["dyslexic_cost", "pick_candidate", "rank_candidates", "is_regular_verb_form",
+           "is_derived_form",
            "MIN_CANDIDATE_COUNT"]

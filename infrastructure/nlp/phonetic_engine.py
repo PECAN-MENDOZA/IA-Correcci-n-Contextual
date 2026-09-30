@@ -21,6 +21,44 @@ DICT_URL   = (
 HOMOPHONE_FREQ_FLOOR = 5000
 
 
+# Léxico complementario (vocabulario escolar e infantil del Perú que falta en es_50k:
+# chompa, choclo, combi, palta...). Se suma con esta frecuencia, más el plural de
+# cada sustantivo simple; ver data/lexico/lexico_peru_escolar.txt.
+SUPPLEMENT_PATHS = ("./data/lexico/lexico_peru_escolar.txt",)
+SUPPLEMENT_FREQ = 5000
+_UNSTRESS = str.maketrans("áéíóú", "aeiou")
+
+
+def _plural(word: str) -> str | None:
+    """Plural regular de un sustantivo simple (None si ya acaba en -s)."""
+    if word.endswith("s"):
+        return None
+    if word[-1] in "aeiouáéó":
+        return word + "s"
+    if word[-1] in "íú":
+        return word + "es"                                   # ají -> ajíes
+    base = word[:-2] + word[-2].translate(_UNSTRESS) + word[-1]   # chicharrón -> chicharron-
+    return base + "es"
+
+
+def load_supplement(paths=SUPPLEMENT_PATHS, freq: int = SUPPLEMENT_FREQ) -> dict:
+    """{palabra: frecuencia} del léxico complementario (con plurales); {} si no existe."""
+    out = {}
+    for path in paths:
+        if not os.path.exists(path):
+            continue
+        with open(path, encoding="utf-8") as fh:
+            for line in fh:
+                word = line.strip().lower()
+                if not word or word.startswith("#"):
+                    continue
+                out[word] = freq
+                plural = _plural(word)
+                if plural:
+                    out.setdefault(plural, freq)
+    return out
+
+
 def _ensure_dict() -> None:
     if not os.path.exists(DICT_PATH):
         print("[INFO] Descargando diccionario de frecuencias...")
@@ -86,6 +124,8 @@ class PhoneticEngine:
                 parts = line.split()
                 if parts:
                     self.word_freqs[parts[0].lower()] = int(parts[1])
+        for word, freq in load_supplement().items():
+            self.word_freqs[word] = max(self.word_freqs.get(word, 0), freq)
 
         for word, freq in self.word_freqs.items():
             if len(word) <= 2:

@@ -218,7 +218,22 @@ python evaluate.py --dataset data/test_ninos_reales.csv   --t5-dir models/t5_cor
 # coste (entrege, utimos, rodia, tiyo), yeísmo con coste propio, palabras raras de es_50k (quero, com),
 # tilde mal puesta (vínieron), enclíticos -rcelo, aver+participio, por que causal/interrogativo, por hay,
 # a/aya + participio, fué/dió: 30 -> 37/61, P 0,890, F0.5 0,861; internos sin cambios.
-python evaluate.py --dataset data/test_ninos_reales_dev.csv --t5-dir models/t5_correction --development --out reports/ninos_reales_dev.json  # 37/61, P 0,890 R 0,762 F0.5 0,861
+python evaluate.py --dataset data/test_ninos_reales_dev.csv --t5-dir models/t5_correction --development --out reports/ninos_reales_dev.json  # 38/61, P 0,891 R 0,768 F0.5 0,863
+# DAÑO SOBRE TEXTO CORRECTO (evaluate.harm_counts, línea "DAÑO" y bloque global.harm del informe):
+# ediciones de la predicción sobre tokens que la referencia deja intactos, por 100 palabras
+# correctas ("léxicas" = cambia la palabra; "leves" = tilde/mayúscula/puntuación) y frases
+# correctas que quedan intactas. Dos sets de solo texto correcto (esperado = entrada):
+#   - data/test_correcto_ninos.csv (150, escritas por el desarrollador en registro escolar
+#     peruano, con contraejemplos de cada regla; sesgo declarado en el archivo);
+#   - data/test_correcto_cowsl2h200.csv (200 reales que el profesor no corrigió, solo autores de
+#     desarrollo; scripts/sample_identity_controls.py). Algún "daño" es acierto que el profesor
+#     pasó por alto (a mi -> a mí, aun -> aún).
+# 30-sep: niños 13/150 dañadas (1,57/100) -> 1/150 (0,12; solo Nino -> Niño, ambiguo) con el
+# léxico escolar peruano (data/lexico/lexico_peru_escolar.txt: chompa, choclo, combi, palta...),
+# diminutivos y -mente como formas válidas, "¡Ay", "sobre todo", guarda de enclíticos en T5,
+# "al cerro" (sin tilde de pretérito tras determinante). COWS correctas 13 -> 12/200 (T5).
+python evaluate.py --dataset data/test_correcto_ninos.csv      --t5-dir models/t5_correction --development --out reports/correcto_ninos.json      # 149/150; daño 0,12/100 (0 léxicas)
+python evaluate.py --dataset data/test_correcto_cowsl2h200.csv --t5-dir models/t5_correction --development --out reports/correcto_cowsl2h200.json # 188/200; daño 0,69/100 (0,59 léxicas)
 # Auditoría externa (30-sep, informes en .local/auditoria/, fuera de git): las cifras de ninos_reales_dev
 # son de DESARROLLO (se ajustó mirando esas 61 frases) y la reserva de 38 es post hoc (se vio antes de
 # partir): no son evidencia confirmatoria. Arreglos de código de la auditoría sin cambio de métricas:

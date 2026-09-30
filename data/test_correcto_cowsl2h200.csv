@@ -1,0 +1,206 @@
+# Oraciones CORRECTAS reales de COWS-L2H (github.com/ucdaviscl/cowsl2h, Apache-2.0): el
+# profesor las dejó sin cambios. Solo autores de la partición de DESARROLLO (misma
+# partición por autor, semilla 42, que fetch_external_data.py); muestra de 200 con semilla
+# 2026 (scripts/sample_identity_controls.py). Mide el daño sobre texto correcto; población:
+# universitarios de español L2, no niños. Esperado = entrada.
+categoria|entrada|esperado
+correcta_l2|Rara vez estaba en mi casa y me aburría cuando no estaba con ella.|Rara vez estaba en mi casa y me aburría cuando no estaba con ella.
+correcta_l2|Una cosa que me gusta más de Europa es disfrutar de las hermosas playas.|Una cosa que me gusta más de Europa es disfrutar de las hermosas playas.
+correcta_l2|A veces es aterrador estar en el océano porque podría haber tiburones.|A veces es aterrador estar en el océano porque podría haber tiburones.
+correcta_l2|Sé que estos son muchos países para viajar, pero creo que puedo hacer el trabajo.|Sé que estos son muchos países para viajar, pero creo que puedo hacer el trabajo.
+correcta_l2|Una de las personas más especiales de mi vida es mi hermana.|Una de las personas más especiales de mi vida es mi hermana.
+correcta_l2|Hay varias playas y lugares turísticos como Sydney que ofrecen la oportunidad de poder explorar las costas.|Hay varias playas y lugares turísticos como Sydney que ofrecen la oportunidad de poder explorar las costas.
+correcta_l2|Primero, necesito aprender a bucear.|Primero, necesito aprender a bucear.
+correcta_l2|En el pueblo se encuentra con un chico de la misma edad que ella.|En el pueblo se encuentra con un chico de la misma edad que ella.
+correcta_l2|Quiero aprender español porque es un idioma universal.|Quiero aprender español porque es un idioma universal.
+correcta_l2|Fue agradable comer allí porque la vista era bonita.|Fue agradable comer allí porque la vista era bonita.
+correcta_l2|Venezuela está en una crisis de la economía y la gente necesita comida y medicina.|Venezuela está en una crisis de la economía y la gente necesita comida y medicina.
+correcta_l2|Y después de hacer todo eso, estaba tan feliz.|Y después de hacer todo eso, estaba tan feliz.
+correcta_l2|Dos años más tarde, todavía tenía una amistad con él.|Dos años más tarde, todavía tenía una amistad con él.
+correcta_l2|Barcelona es una ciudad muy grande y bonita.|Barcelona es una ciudad muy grande y bonita.
+correcta_l2|También, quiero ir a aprender más español.|También, quiero ir a aprender más español.
+correcta_l2|Me dijo que mi abuelo estaba muy enfermo y necesitaba ir al hospital.|Me dijo que mi abuelo estaba muy enfermo y necesitaba ir al hospital.
+correcta_l2|Creo que es malo porque los dulces empeoran las caries.|Creo que es malo porque los dulces empeoran las caries.
+correcta_l2|Siempre me divierto cuando canto con ella.|Siempre me divierto cuando canto con ella.
+correcta_l2|Después de su carrera como actor se convirtió en fotógrafo.|Después de su carrera como actor se convirtió en fotógrafo.
+correcta_l2|Volvió corriendo a su habitación a buscar su teléfono.|Volvió corriendo a su habitación a buscar su teléfono.
+correcta_l2|Aunque mis vacaciones fueron cortas, tuve unas vacaciones perfectas con mi novia.|Aunque mis vacaciones fueron cortas, tuve unas vacaciones perfectas con mi novia.
+correcta_l2|El anillo era grande y hermoso.|El anillo era grande y hermoso.
+correcta_l2|Cuando eres famoso y rompes la ley, es muy difícil mantenerlo en secreto.|Cuando eres famoso y rompes la ley, es muy difícil mantenerlo en secreto.
+correcta_l2|En la India, ayudaré a la gente y el medio ambiente.|En la India, ayudaré a la gente y el medio ambiente.
+correcta_l2|Durante todo el día, me divertí con amigos y pasé tiempo con ellos.|Durante todo el día, me divertí con amigos y pasé tiempo con ellos.
+correcta_l2|España sería un gran lugar para visitar.|España sería un gran lugar para visitar.
+correcta_l2|Waikiki está en la cuidad de Honolulu.|Waikiki está en la cuidad de Honolulu.
+correcta_l2|Me gusta el estilo relajado.|Me gusta el estilo relajado.
+correcta_l2|Su esposa es Melania Trump.|Su esposa es Melania Trump.
+correcta_l2|Se estaban enamorando.|Se estaban enamorando.
+correcta_l2|Trajimos accesorios médicos y ayudamos a la gente local.|Trajimos accesorios médicos y ayudamos a la gente local.
+correcta_l2|Me gusta dar caminatas con mis amigos o solo también y me gustan las plantas.|Me gusta dar caminatas con mis amigos o solo también y me gustan las plantas.
+correcta_l2|También sería beber muchos refrescos.|También sería beber muchos refrescos.
+correcta_l2|Agradecieron a sus vecinos y les prepararon a todos un gran festín.|Agradecieron a sus vecinos y les prepararon a todos un gran festín.
+correcta_l2|Tuvimos que asegurar la carpa colocando grandes rocas dentro de ella para que no explotara.|Tuvimos que asegurar la carpa colocando grandes rocas dentro de ella para que no explotara.
+correcta_l2|Como resultado, muchas personas se quedaron atascadas en el tráfico en la tormenta.|Como resultado, muchas personas se quedaron atascadas en el tráfico en la tormenta.
+correcta_l2|También es un buen y leal amigo que tener.|También es un buen y leal amigo que tener.
+correcta_l2|Fui con mi prima, mi tía y mi tío.|Fui con mi prima, mi tía y mi tío.
+correcta_l2|Un día, se despiertan y no ven al gato, Freddy.|Un día, se despiertan y no ven al gato, Freddy.
+correcta_l2|Eso sería divertido y completo.|Eso sería divertido y completo.
+correcta_l2|Todos nosotros estábamos estresados porque estábamos emocionados de ir.|Todos nosotros estábamos estresados porque estábamos emocionados de ir.
+correcta_l2|La misteriosa persona sonrió y entró en la casa.|La misteriosa persona sonrió y entró en la casa.
+correcta_l2|Es muy tonto y gordo.|Es muy tonto y gordo.
+correcta_l2|Es de Houston, Texas, pero vive en New York y California.|Es de Houston, Texas, pero vive en New York y California.
+correcta_l2|No hay otra persona que me conozca más bien que yo.|No hay otra persona que me conozca más bien que yo.
+correcta_l2|Quiero llegar a un montón de pulseras únicas.|Quiero llegar a un montón de pulseras únicas.
+correcta_l2|Becky G es una de las artistas que más me ha llamado la atención.|Becky G es una de las artistas que más me ha llamado la atención.
+correcta_l2|Pienso que soy bonita.|Pienso que soy bonita.
+correcta_l2|Durante la semana, ha publicado muchos tweets controversiales.|Durante la semana, ha publicado muchos tweets controversiales.
+correcta_l2|Se sentía muy oscuro y sombrío y el trueno era muy ruidoso.|Se sentía muy oscuro y sombrío y el trueno era muy ruidoso.
+correcta_l2|Barack era senador.|Barack era senador.
+correcta_l2|Todos respondieron y estaban emocionados de que quisiéramos pasar el rato.|Todos respondieron y estaban emocionados de que quisiéramos pasar el rato.
+correcta_l2|Corre por la casa todos los días.|Corre por la casa todos los días.
+correcta_l2|Messi ha jugado para el equipo nacional y para un equipo del club.|Messi ha jugado para el equipo nacional y para un equipo del club.
+correcta_l2|Steve Ballmer tiene mucho dinero.|Steve Ballmer tiene mucho dinero.
+correcta_l2|La multitud se queda en silencio.|La multitud se queda en silencio.
+correcta_l2|La gente y su cultura son diferentes.|La gente y su cultura son diferentes.
+correcta_l2|Le gusta estudiar psicología si no canta.|Le gusta estudiar psicología si no canta.
+correcta_l2|Mis ojos y el color de mi piel son marrón.|Mis ojos y el color de mi piel son marrón.
+correcta_l2|Tengo dos clases de sociología, una clase de administración de empresas y una clase de español.|Tengo dos clases de sociología, una clase de administración de empresas y una clase de español.
+correcta_l2|Ella es bonita, amable, graciosa y desinteresada.|Ella es bonita, amable, graciosa y desinteresada.
+correcta_l2|También disfruté del museo de arte interactivo.|También disfruté del museo de arte interactivo.
+correcta_l2|El océano era cálido y azul claro.|El océano era cálido y azul claro.
+correcta_l2|Después de la graduación quiero viajar a España y Grecia.|Después de la graduación quiero viajar a España y Grecia.
+correcta_l2|El entrenador con el corazón roto inmediatamente comenzó el turno diciéndole a su compañero que perdonara si estaba callado.|El entrenador con el corazón roto inmediatamente comenzó el turno diciéndole a su compañero que perdonara si estaba callado.
+correcta_l2|Me gusta comer tacos, burritos, sushi, ensaladas de pollo, y otras comidas.|Me gusta comer tacos, burritos, sushi, ensaladas de pollo, y otras comidas.
+correcta_l2|Extraño mi hogar cuando estoy lejos y extraño la comida de mi madre.|Extraño mi hogar cuando estoy lejos y extraño la comida de mi madre.
+correcta_l2|Pasaríamos la noche en nuestra habitación para mirar una comedia romántica.|Pasaríamos la noche en nuestra habitación para mirar una comedia romántica.
+correcta_l2|Corrí hacia mi auto, volví y agarré mis zapatos.|Corrí hacia mi auto, volví y agarré mis zapatos.
+correcta_l2|Cuando ella habla quieres escuchar.|Cuando ella habla quieres escuchar.
+correcta_l2|Compraría frutas y verduras frescas para preparar mis comidas todos los días.|Compraría frutas y verduras frescas para preparar mis comidas todos los días.
+correcta_l2|Dejé de buscar el amor y finalmente el amor me encontró.|Dejé de buscar el amor y finalmente el amor me encontró.
+correcta_l2|Mi color favorito es el rojo.|Mi color favorito es el rojo.
+correcta_l2|Si no me gustaban las clases de ciencias en la universidad, ¿cómo me iba a gustar ser doctora?|Si no me gustaban las clases de ciencias en la universidad, ¿cómo me iba a gustar ser doctora?
+correcta_l2|Era muy brutal y, a veces, violento.|Era muy brutal y, a veces, violento.
+correcta_l2|No puedo imaginar mi vida sin mi hermana.|No puedo imaginar mi vida sin mi hermana.
+correcta_l2|Lo echo menos todos los días.|Lo echo menos todos los días.
+correcta_l2|Sin embargo, estaba demasiado ocupado al comienzo del trimestre de otoño y olvidó este plan.|Sin embargo, estaba demasiado ocupado al comienzo del trimestre de otoño y olvidó este plan.
+correcta_l2|Paso lentamente por las escaleras.|Paso lentamente por las escaleras.
+correcta_l2|Cuando entré lo vi.|Cuando entré lo vi.
+correcta_l2|Soy una estudiante de segundo año y mi especialidad es la psicología.|Soy una estudiante de segundo año y mi especialidad es la psicología.
+correcta_l2|Usó los beneficios de esta beca para ir a la escuela de medicina.|Usó los beneficios de esta beca para ir a la escuela de medicina.
+correcta_l2|Ella misma se empezó a querer mucho.|Ella misma se empezó a querer mucho.
+correcta_l2|Jesús ordenó a sus apóstoles ir por todo el mundo y difundir el evangelio, el camino de la salvación.|Jesús ordenó a sus apóstoles ir por todo el mundo y difundir el evangelio, el camino de la salvación.
+correcta_l2|Su hija es muy linda.|Su hija es muy linda.
+correcta_l2|A ella le encantar viajar y comprar.|A ella le encantar viajar y comprar.
+correcta_l2|Tiene dos hermanas y un hermano; sus nombres son Lucy, Anna y Will.|Tiene dos hermanas y un hermano; sus nombres son Lucy, Anna y Will.
+correcta_l2|Nunca se enfada.|Nunca se enfada.
+correcta_l2|Tiene un perro.|Tiene un perro.
+correcta_l2|También me gusta ir de excursión así que quizás vaya a sus caminatas locales en España.|También me gusta ir de excursión así que quizás vaya a sus caminatas locales en España.
+correcta_l2|Se enamoró de otras chicas.|Se enamoró de otras chicas.
+correcta_l2|La mujer sale justo cuando pasa el hombre del traje y comienza a golpearlo con su paraguas.|La mujer sale justo cuando pasa el hombre del traje y comienza a golpearlo con su paraguas.
+correcta_l2|Muchas personas lo hicieron por publicidad.|Muchas personas lo hicieron por publicidad.
+correcta_l2|Algunos de mis pasatiempos son el dibujo, la moda y la cocina.|Algunos de mis pasatiempos son el dibujo, la moda y la cocina.
+correcta_l2|Creo que esto no es bueno porque los critican por sus acciones.|Creo que esto no es bueno porque los critican por sus acciones.
+correcta_l2|Tomé muchas pastillas y me fui a dormir de mal humor.|Tomé muchas pastillas y me fui a dormir de mal humor.
+correcta_l2|Me encanta ir a la playa con mi hermana.|Me encanta ir a la playa con mi hermana.
+correcta_l2|Me gusta leer libros y ver películas.|Me gusta leer libros y ver películas.
+correcta_l2|Los skates regulares no eran 'cool', entonces yo conseguí los roller blades en Classic Skating.|Los skates regulares no eran 'cool', entonces yo conseguí los roller blades en Classic Skating.
+correcta_l2|Este fue un evento terrible para mí.|Este fue un evento terrible para mí.
+correcta_l2|No creía que haría cualquier cosa mejor para tener una amistad nueva.|No creía que haría cualquier cosa mejor para tener una amistad nueva.
+correcta_l2|Y ahora enseña a los niños pequeños en la escuela.|Y ahora enseña a los niños pequeños en la escuela.
+correcta_l2|Mi madre quiere viajar a Tailandia porque le gusta la playa y el mar.|Mi madre quiere viajar a Tailandia porque le gusta la playa y el mar.
+correcta_l2|Pude recuperar mi teléfono.|Pude recuperar mi teléfono.
+correcta_l2|Mi hermana es muy bonita.|Mi hermana es muy bonita.
+correcta_l2|Dios sabe todo.|Dios sabe todo.
+correcta_l2|Aprendió a tocar la guitarra parque le gusta la música rock.|Aprendió a tocar la guitarra parque le gusta la música rock.
+correcta_l2|Después de comer, la familia empezó una película en el cuarto de los padres.|Después de comer, la familia empezó una película en el cuarto de los padres.
+correcta_l2|Soy muy extrovertida.|Soy muy extrovertida.
+correcta_l2|Pero, ¿por qué desconectarnos del mundo?|Pero, ¿por qué desconectarnos del mundo?
+correcta_l2|La música en el restaurante no es interesante.|La música en el restaurante no es interesante.
+correcta_l2|Esto nunca ocurre.|Esto nunca ocurre.
+correcta_l2|Mis atuendos suelen ser cómodos o casuales.|Mis atuendos suelen ser cómodos o casuales.
+correcta_l2|También tuvo depresión.|También tuvo depresión.
+correcta_l2|El dueño saludó al perro también y le ofreció una galleta para perros.|El dueño saludó al perro también y le ofreció una galleta para perros.
+correcta_l2|Cuando termine mi primer libro, quiero darle la primera copia.|Cuando termine mi primer libro, quiero darle la primera copia.
+correcta_l2|Muchas personas resultaron heridas y algunas murieron.|Muchas personas resultaron heridas y algunas murieron.
+correcta_l2|Mi madre siempre me ayuda con mis problemas.|Mi madre siempre me ayuda con mis problemas.
+correcta_l2|También escucho mucha música.|También escucho mucha música.
+correcta_l2|Pienso que soy agradable y cariñosa.|Pienso que soy agradable y cariñosa.
+correcta_l2|Después de estar en la ciudad por un tiempo nos fuimos al monte donde vivía mi padre.|Después de estar en la ciudad por un tiempo nos fuimos al monte donde vivía mi padre.
+correcta_l2|Entonces, durante los fines de semana, me quedaba con mis abuelos porque quería.|Entonces, durante los fines de semana, me quedaba con mis abuelos porque quería.
+correcta_l2|El deporte fue increíblemente difícil.|El deporte fue increíblemente difícil.
+correcta_l2|Mi madre es una persona que siempre estará allí para las personas que más le importan, ella es muy leal.|Mi madre es una persona que siempre estará allí para las personas que más le importan, ella es muy leal.
+correcta_l2|Pero eso no es todo.|Pero eso no es todo.
+correcta_l2|Sin embargo, la verdad estaba fuera de mi expectativa.|Sin embargo, la verdad estaba fuera de mi expectativa.
+correcta_l2|Mis piernas y brazos son más oscuros que mi cara.|Mis piernas y brazos son más oscuros que mi cara.
+correcta_l2|Mi cabello es naturalmente rubio, pero lo prefiero negro.|Mi cabello es naturalmente rubio, pero lo prefiero negro.
+correcta_l2|Fue nuestra primera cita, y aunque los dos estábamos nerviosos, lo pasábamos bien y disfrutábamos nuestra compañía.|Fue nuestra primera cita, y aunque los dos estábamos nerviosos, lo pasábamos bien y disfrutábamos nuestra compañía.
+correcta_l2|Soy una estudiante universitaria de primera generación.|Soy una estudiante universitaria de primera generación.
+correcta_l2|La amo por eso.|La amo por eso.
+correcta_l2|Extraño a mis padres y su comida casera.|Extraño a mis padres y su comida casera.
+correcta_l2|Mi madre piensa que soy inteligente, agradable y divertido.|Mi madre piensa que soy inteligente, agradable y divertido.
+correcta_l2|Frida estaba muy enferma.|Frida estaba muy enferma.
+correcta_l2|Después de las clases, ella venía a mi casa.|Después de las clases, ella venía a mi casa.
+correcta_l2|Una persona muy famosa es Ariana Grande.|Una persona muy famosa es Ariana Grande.
+correcta_l2|Hace tres años, mi esposa y yo nos fuimos de vacaciones a un resort en Santa Lucía.|Hace tres años, mi esposa y yo nos fuimos de vacaciones a un resort en Santa Lucía.
+correcta_l2|Tengo una gran pasión por el cine y todas las categorías relacionadas.|Tengo una gran pasión por el cine y todas las categorías relacionadas.
+correcta_l2|Trevor Noah es el presentador de "The Daily Show."|Trevor Noah es el presentador de "The Daily Show."
+correcta_l2|Este país es muy pequeño.|Este país es muy pequeño.
+correcta_l2|Tomé un suspiro y comencé a tranquilizar mis emociones.|Tomé un suspiro y comencé a tranquilizar mis emociones.
+correcta_l2|Por supuesto, son famosos y tienen una audiencia.|Por supuesto, son famosos y tienen una audiencia.
+correcta_l2|Las luces bajas del invierno duran hasta marzo cuando empieza la primavera.|Las luces bajas del invierno duran hasta marzo cuando empieza la primavera.
+correcta_l2|Y durante el día disfrutaremos de la rica comida que venden en el centro.|Y durante el día disfrutaremos de la rica comida que venden en el centro.
+correcta_l2|Siempre me ha gustado la forma en que Carli golpea la pelota con autoridad y poder.|Siempre me ha gustado la forma en que Carli golpea la pelota con autoridad y poder.
+correcta_l2|Hubo tantas veces que estuve tan cerca de lastimarme, pero nunca lo hice.|Hubo tantas veces que estuve tan cerca de lastimarme, pero nunca lo hice.
+correcta_l2|Me inspira a ser una persona mejor todos los días.|Me inspira a ser una persona mejor todos los días.
+correcta_l2|Pero ese día fue el peor día de mi vida.|Pero ese día fue el peor día de mi vida.
+correcta_l2|Todos juntos esperando nuestra llegada ansiosamente.|Todos juntos esperando nuestra llegada ansiosamente.
+correcta_l2|Una manada de lobos acuden a mi y arrastran mi ropa y la piel.|Una manada de lobos acuden a mi y arrastran mi ropa y la piel.
+correcta_l2|Al final del día siempre está allí cuando la necesito.|Al final del día siempre está allí cuando la necesito.
+correcta_l2|También me gustaría conocer a otras personas que viajan por el mundo como yo y experimentar su comida también.|También me gustaría conocer a otras personas que viajan por el mundo como yo y experimentar su comida también.
+correcta_l2|Mi familia y yo fuimos a México por dos semanas.|Mi familia y yo fuimos a México por dos semanas.
+correcta_l2|Cada día habla conmigo.|Cada día habla conmigo.
+correcta_l2|Le gusta jugar al golf y al baloncesto.|Le gusta jugar al golf y al baloncesto.
+correcta_l2|Tenemos mucho en común.|Tenemos mucho en común.
+correcta_l2|Vimos dos grandes perros marrones.|Vimos dos grandes perros marrones.
+correcta_l2|Zac Efron también tiene otros rumores que lo hacen muy intrigante.|Zac Efron también tiene otros rumores que lo hacen muy intrigante.
+correcta_l2|Taylor es de Estados Unidos.|Taylor es de Estados Unidos.
+correcta_l2|En vacaciones, puedo divertirme y seguir agregando a mi estilo.|En vacaciones, puedo divertirme y seguir agregando a mi estilo.
+correcta_l2|La conozco desde la escuela primaria y aun seguimos siendo amigas.|La conozco desde la escuela primaria y aun seguimos siendo amigas.
+correcta_l2|Aunque esta historia puede ser cliché, es refrescantemente optimista.|Aunque esta historia puede ser cliché, es refrescantemente optimista.
+correcta_l2|Ojalá esté feliz y contenta en su futuro.|Ojalá esté feliz y contenta en su futuro.
+correcta_l2|Se diferencian del resto.|Se diferencian del resto.
+correcta_l2|Escuché que tienen buena comida.|Escuché que tienen buena comida.
+correcta_l2|When the bear saw her, he smiled.|When the bear saw her, he smiled.
+correcta_l2|Vamos al Himalaya.|Vamos al Himalaya.
+correcta_l2|Mi madre es una persona muy importante en mi vida.|Mi madre es una persona muy importante en mi vida.
+correcta_l2|Para sacar el máximo provecho de la universidad, es necesario unirse a grupos en el campus como clubes o deportes.|Para sacar el máximo provecho de la universidad, es necesario unirse a grupos en el campus como clubes o deportes.
+correcta_l2|Yo haría lo que fuera por ella.|Yo haría lo que fuera por ella.
+correcta_l2|Me gusta la comida en general.|Me gusta la comida en general.
+correcta_l2|Por la noche fuimos a muchos bares y clubs.|Por la noche fuimos a muchos bares y clubs.
+correcta_l2|Mi mamá es mi mejor y primera amiga.|Mi mamá es mi mejor y primera amiga.
+correcta_l2|Nunca he estado en Hawái pero me encanta la playa.|Nunca he estado en Hawái pero me encanta la playa.
+correcta_l2|Quiero aprender sobre una cultura nueva y sus costumbres.|Quiero aprender sobre una cultura nueva y sus costumbres.
+correcta_l2|La futura casa de la humanidad.|La futura casa de la humanidad.
+correcta_l2|Me dolía la cabeza y me sentía mareado.|Me dolía la cabeza y me sentía mareado.
+correcta_l2|Fuimos a muchos museos de arte.|Fuimos a muchos museos de arte.
+correcta_l2|Quizás una estrella de béisbol como Babe Ruth o una persona con fama perdurable como el escritor William Shakespeare.|Quizás una estrella de béisbol como Babe Ruth o una persona con fama perdurable como el escritor William Shakespeare.
+correcta_l2|Algo sobre mí es que soy una persona muy sensible.|Algo sobre mí es que soy una persona muy sensible.
+correcta_l2|Espero poder ir algún día.|Espero poder ir algún día.
+correcta_l2|Los pocos días en la ciudad nos prepararían para la vida urbana que vivimos en casa.|Los pocos días en la ciudad nos prepararían para la vida urbana que vivimos en casa.
+correcta_l2|En algún momento, si encuentro una pasión, me gustaría comenzar un negocio en torno a eso.|En algún momento, si encuentro una pasión, me gustaría comenzar un negocio en torno a eso.
+correcta_l2|Es muy fácil perderse en tiempos como ahora.|Es muy fácil perderse en tiempos como ahora.
+correcta_l2|Más importante, mis abuelos están China.|Más importante, mis abuelos están China.
+correcta_l2|¡Es muy divertida!|¡Es muy divertida!
+correcta_l2|Se supone que debemos orar por ellos y esperamos que se recuperen pronto.|Se supone que debemos orar por ellos y esperamos que se recuperen pronto.
+correcta_l2|Él tiene tres hijos India Rose, Tristan y Sasha y dos hermanos.|Él tiene tres hijos India Rose, Tristan y Sasha y dos hermanos.
+correcta_l2|Brad Pitt es padre.|Brad Pitt es padre.
+correcta_l2|Quiero tomar más clases de arte el próximo año.|Quiero tomar más clases de arte el próximo año.
+correcta_l2|Soy aventurera y me encanta la naturaleza.|Soy aventurera y me encanta la naturaleza.
+correcta_l2|Me encantaría pasar tiempo y cocinar con una de las tías de mi mamá.|Me encantaría pasar tiempo y cocinar con una de las tías de mi mamá.
+correcta_l2|Los dos pasan dos años juntos aprendiendo cómo sobrevivir en el bosque y de Chiron.|Los dos pasan dos años juntos aprendiendo cómo sobrevivir en el bosque y de Chiron.
+correcta_l2|Ella ha estado conmigo a través de todo y no sé dónde estaría sin ella.|Ella ha estado conmigo a través de todo y no sé dónde estaría sin ella.
+correcta_l2|Estoy triste cada vez que lo pienso ahora.|Estoy triste cada vez que lo pienso ahora.
+correcta_l2|Estoy muy agradecida por todos sus sacrificios y por el amor que me ha dado.|Estoy muy agradecida por todos sus sacrificios y por el amor que me ha dado.
+correcta_l2|Sus ojos son azules.|Sus ojos son azules.
+correcta_l2|Sin embargo, cuando llegué a esta escuela tuve un gran choque cultural.|Sin embargo, cuando llegué a esta escuela tuve un gran choque cultural.
+correcta_l2|Miró viajaba frecuentemente.|Miró viajaba frecuentemente.
+correcta_l2|Lo amo mucho.|Lo amo mucho.

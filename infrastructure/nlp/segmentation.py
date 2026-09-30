@@ -82,7 +82,7 @@ _NEVER_JOIN = {"sino", "porque", "porqué", "conque", "haber", "aver", "asimismo
                *_AMALGAMS}                       # porfavor, enserio, talvez...
 # Tampoco uniendo dos palabras reales: "lo hizo tan bien" es legítimo y BETO
 # prefiere "también" por frecuencia (`tam bien` sí se une: `tam` no es palabra).
-_NEVER_JOIN_REAL = {"también"}
+_NEVER_JOIN_REAL = {"también", "sobretodo"}   # "sobre todo me gusta dibujar"
 # Márgenes en suma de log-prob media del contexto (calibrados el 2026-09-30:
 # abajo +1,0, afuera +1,2, adentro +2,7, aunque +3,0 frente a `de bajo
 # calidad` -1,8 y `a bajo precio` -13,9).

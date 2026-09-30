@@ -247,11 +247,20 @@ _IRREGULAR_FAMILIES = [
 # sanguche→viaje 0,31 no).
 SAME_WORD_MIN_SIMILARITY = 0.5
 SAME_WORD_PREFIX = 2
+MAX_INFLECTION_TAIL = 4
+# Pronombres enclíticos (y sus combinaciones): quitarlos cambia lo que el niño dijo.
+_ENCLITICS = {c + d for c in ("", "me", "te", "se", "nos") for d in
+              ("", "lo", "la", "los", "las", "le", "les")} - {""} | {"me", "te", "se", "nos", "os"}
 NEAR_IDENTICAL_SIMILARITY = 0.85     # special→especial 0,93; madre→padre 0,80 no
 UNKNOWN_WORD_MIN_SIMILARITY = 0.6
 # tele→televisión: misma raíz + >= 4 letras nuevas es otra palabra, no una
 # flexión (fue→fueron +3, llegó→llegaron +3).
 MAX_INFLECTION_GROWTH = 3
+
+
+def drops_enclitic(word_a: str, word_b: str) -> bool:
+    """True si `word_b` es `word_a` sin su pronombre enclítico (leyendolo -> leyendo)."""
+    return word_a.startswith(word_b) and word_a[len(word_b):] in _ENCLITICS
 
 
 def is_same_word_variant(word_a: str, word_b: str, sound=None) -> bool:
@@ -261,6 +270,8 @@ def is_same_word_variant(word_a: str, word_b: str, sound=None) -> bool:
         return True
     if word_b.startswith(word_a) and len(word_b) - len(word_a) > MAX_INFLECTION_GROWTH:
         return False
+    if drops_enclitic(word_a, word_b):
+        return False                                     # leyendolo -> leyendo: pierde "lo"
     if sound is not None and sound(word_a) == sound(word_b):
         return True
     if any(word_a in fam and word_b in fam for fam in _IRREGULAR_FAMILIES):
@@ -272,7 +283,11 @@ def is_same_word_variant(word_a: str, word_b: str, sound=None) -> bool:
     # de <= 3 letras basta la inicial (das/des, mi/mis).
     stem_a = word_a.replace("ie", "e").replace("ue", "o")
     stem_b = word_b.replace("ie", "e").replace("ue", "o")
-    prefix = 1 if min(len(word_a), len(word_b)) <= 3 else SAME_WORD_PREFIX
+    # La flexión cambia el final: el prefijo común cubre todo salvo, como mucho,
+    # MAX_INFLECTION_TAIL letras de la más corta (haces/hagas, llegamos/lleguemos sí;
+    # sanguche/sandwich, "san" de 8, no).
+    shortest = min(len(stem_a), len(stem_b))
+    prefix = 1 if min(len(word_a), len(word_b)) <= 3 else max(SAME_WORD_PREFIX, shortest - MAX_INFLECTION_TAIL)
     return stem_a[:prefix] == stem_b[:prefix] and ratio >= SAME_WORD_MIN_SIMILARITY
 
 
@@ -297,7 +312,7 @@ def revert_lexical_substitutions(base_text: str, candidate: str, is_known_word, 
             if not word_a or not word_b:
                 continue
             keep = is_same_word_variant(word_a, word_b, sound)
-            if not keep and not is_known_word(word_a):
+            if not keep and not is_known_word(word_a) and not drops_enclitic(word_a, word_b):
                 keep = difflib.SequenceMatcher(None, word_a, word_b, autojunk=False).ratio() \
                     >= UNKNOWN_WORD_MIN_SIMILARITY
             if not keep:

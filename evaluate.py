@@ -229,6 +229,67 @@ def extract_edits(source: str, target: str) -> set:
     return edits
 
 
+# ───────────────────────────── daño sobre texto correcto ─────────────────────────────
+# Auditoría A (2026-09-30): F0.5 penaliza los FP pero su denominador son las
+# correcciones propuestas, no las oportunidades de estropear texto correcto. Esta
+# métrica diagnóstica (no cambia las claves del contrato) cuenta las ediciones de
+# la predicción que tocan tokens que la referencia deja intactos, por cada 100
+# palabras correctas de la entrada. "Léxica" = cambia la palabra; "leve" = solo
+# tilde o mayúscula. Una edición sobre un token que la referencia sí corrige (aunque
+# la corrija distinto) no es daño a texto correcto: ya cuenta como FP + FN.
+
+def _gold_coverage(gold_edits) -> tuple:
+    """(índices de tokens de la entrada que la referencia edita, posiciones de sus inserciones)."""
+    covered, insertions = set(), set()
+    for i1, i2, _ in gold_edits:
+        covered.update(range(i1, i2))
+        if i1 == i2:
+            insertions.add(i1)
+    return covered, insertions
+
+
+def harm_counts(source: str, gold: str, prediction: str) -> dict:
+    """Daño de `prediction` sobre las palabras de `source` que `gold` deja intactas:
+    {"damaging", "damaging_lexical", "correct_words"} (ver comentario de sección)."""
+    src = tokenize(source)
+    gold_edits = extract_edits(source, gold)
+    covered, insertions = _gold_coverage(gold_edits)
+    damaging = lexical = 0
+    for i1, i2, replacement in extract_edits(source, prediction) - gold_edits:
+        if i1 == i2:                                    # inserción
+            touches_gold = i1 in insertions or i1 in covered or (i1 - 1) in covered
+        else:
+            touches_gold = any(k in covered for k in range(i1, i2)) or any(
+                i1 <= k <= i2 for k in insertions)
+        if touches_gold:
+            continue
+        damaging += 1
+        touched = list(src[i1:i2]) + list(replacement)
+        if (any(t[0].isalnum() for t in touched)
+                and _strip_form("".join(src[i1:i2])) != _strip_form("".join(replacement))):
+            lexical += 1                                # no solo tilde, mayúscula o puntuación
+    correct_words = sum(1 for k, tok in enumerate(src) if k not in covered and tok[0].isalnum())
+    return {"damaging": damaging, "damaging_lexical": lexical, "correct_words": correct_words}
+
+
+def harm_summary(rows: list) -> dict:
+    """Agregado de `harm_counts` sobre casos puntuados (`harm`, `input`, `gold`, `pred`):
+    ediciones dañinas por 100 palabras correctas y frases correctas que quedan intactas."""
+    damaging = sum(r["harm"]["damaging"] for r in rows)
+    lexical = sum(r["harm"]["damaging_lexical"] for r in rows)
+    words = sum(r["harm"]["correct_words"] for r in rows)
+    correct_rows = [r for r in rows if r["input"].strip() == r["gold"].strip()]
+    return {
+        "damaging_edits": damaging,
+        "damaging_lexical": lexical,
+        "correct_words": words,
+        "per100": 100 * damaging / words if words else 0.0,
+        "lexical_per100": 100 * lexical / words if words else 0.0,
+        "correct_sentences": len(correct_rows),
+        "correct_sentences_intact": sum(1 for r in correct_rows if r["pred"].strip() == r["input"].strip()),
+    }
+
+
 def prf(tp: int, fp: int, fn: int) -> tuple:
     """(precisión, recall, F0.5) con la convención del backend: 0.0 si el denominador es 0."""
     precision = tp / (tp + fp) if tp + fp else 0.0
@@ -575,6 +636,7 @@ def summarize(subset: list) -> dict:
         "cer": _corpus_rate(golds, preds, "char"),
         "improvement_ratio": improvement,
         "exact": sum(r["exact"] for r in subset) / len(subset) if subset else 0.0,
+        "harm": harm_summary(subset) if subset and "harm" in subset[0] else None,
     }
 
 
@@ -588,7 +650,8 @@ def _score_cases(cases: list) -> list:
         exact = bool(matching)
         gold = matching[0] if exact else s["gold"]
         row = OrderedDict(case)
-        row.update({"gold": gold, "exact": exact, "tp": s["tp"], "fp": s["fp"], "fn": s["fn"]})
+        row.update({"gold": gold, "exact": exact, "tp": s["tp"], "fp": s["fp"], "fn": s["fn"],
+                    "harm": harm_counts(case["input"], gold, case["pred"])})
         scored.append(row)
     return scored
 
@@ -686,6 +749,11 @@ def _print_table(report: dict):
               f"{m['precision']:>6.3f} {m['recall']:>6.3f} {m['f0_5']:>6.3f}  "
               f"{m['wer']:>6.3f} {m['cer']:>6.3f} {m['improvement_ratio']:>6.0%} "
               f"{int(round(m['exact']*m['n'])):>4}/{m['n']:<4}")
+    harm = report["global"].get("harm")
+    if harm:
+        print(f"DAÑO        {harm['per100']:.2f} ediciones sobre palabras correctas por 100 "
+              f"({harm['lexical_per100']:.2f} léxicas; {harm['damaging_edits']}/{harm['correct_words']}); "
+              f"frases correctas intactas {harm['correct_sentences_intact']}/{harm['correct_sentences']}")
 
 
 def main():

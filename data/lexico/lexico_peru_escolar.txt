@@ -1,0 +1,139 @@
+# Léxico complementario: vocabulario escolar e infantil del Perú y Latinoamérica que falta en
+# es_50k (subtítulos) o aparece con frecuencia < 1 000. Creado el 2026-09-30 tras medir el daño
+# sobre texto correcto (chompa -> compa, choclo -> chocho, combi -> zombi, palta -> paleta...),
+# recopilado por categorías (comidas, útiles, escuela, transporte, fauna, música, clima, trato
+# familiar), no solo con las palabras que fallaron. Se carga con frecuencia 5 000 junto a
+# es_50k (phonetic_engine.load_supplement) y se añade el plural de cada sustantivo simple.
+# Una palabra por línea; las líneas con '#' se ignoran.
+# comidas y bebidas
+choclo
+choclito
+palta
+camote
+yuca
+olluco
+ají
+rocoto
+cebiche
+ceviche
+anticucho
+picarones
+chifa
+chaufa
+lúcuma
+maracuyá
+granadilla
+chirimoya
+carapulcra
+mazamorra
+quinua
+kiwicha
+mote
+humita
+tamal
+chicharrón
+huancaína
+ocopa
+pachamanca
+chicha
+emoliente
+queque
+keke
+sánguche
+butifarra
+tallarín
+frejol
+menestra
+canchita
+cachito
+tequeño
+alfajor
+turrón
+champús
+pollada
+parrillada
+salchipapa
+gaseosa
+lentejas
+mazorca
+lonchera
+# ropa
+chompa
+chalina
+chullo
+poncho
+ojotas
+buzo
+# útiles y escuela
+cartuchera
+tajador
+plumón
+lapicero
+crayolas
+témperas
+cartulina
+papelógrafo
+limpiatipo
+tijera
+escuadra
+compás
+tutora
+losa
+profe
+# transporte y ciudad
+combi
+mototaxi
+micrero
+cobrador
+jirón
+bodeguero
+# campo, geografía y clima
+chacra
+chacarero
+comunero
+cocha
+andenes
+puna
+jalca
+quebrada
+huerta
+huaico
+garúa
+friaje
+neblina
+costeño
+serrano
+selvático
+# fauna
+cuy
+chancho
+alpaca
+vicuña
+vizcacha
+otorongo
+taricaya
+paiche
+gamitana
+cóndor
+puma
+# música y fiestas
+huayno
+marinera
+festejo
+zampoña
+quena
+charango
+# pueblos y lenguas
+quechua
+aimara
+asháninka
+# trato familiar e infantil
+chibolo
+chiquillo
+guagua
+taita
+cholito
+chinita
+chévere
+bacán
+chamba
