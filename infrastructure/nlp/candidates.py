@@ -30,6 +30,7 @@ _COST_H = 0.3               # ombre -> hombre
 _COST_INDEL = 1.0
 _COST_TRANSPOSE = 0.5       # gaot -> gato
 _COST_DIPHTHONG = 0.5       # poden -> pueden, pensan -> piensan, juegar -> jugar (o/u<->ue, e<->ie)
+_COST_YEISMO = 0.5          # rodia -> rodilla, tiyo -> tío: "ll"/"y" junto a vocal se omite o se añade
 _DIPHTHONGS = {"ue": {"o", "u"}, "ie": {"e"}}
 _PENALTY_FIRST_LETTER = 0.5 # aruz -> cruz (no si la 1.ª letra es confundible: kasa -> casa)
 _PENALTY_SHORT = 0.25       # candidatos de <= 3 letras MÁS CORTOS que la palabra (got, ava): ruido del corpus
@@ -60,6 +61,8 @@ def _indel_cost(ch: str, neighbor: str) -> float:
     s = _strip(ch)
     if s == "h":
         return _COST_H
+    if s == "y":
+        return _COST_YEISMO
     if neighbor and _strip(neighbor) == s:
         return _COST_DOUBLE
     if s in _VOWELS:
@@ -91,28 +94,41 @@ def dyslexic_cost(word: str, candidate: str) -> float:
                 best = min(best, d[i - 1][j - 2] + _COST_DIPHTHONG)
             if i > 1 and a[i - 2:i] in _DIPHTHONGS and b[j - 1] in _DIPHTHONGS[a[i - 2:i]]:
                 best = min(best, d[i - 2][j - 1] + _COST_DIPHTHONG)
+            # Yeísmo: "ll" entera omitida o añadida (rodia -> rodilla).
+            if j > 1 and b[j - 2:j] == "ll":
+                best = min(best, d[i][j - 2] + _COST_YEISMO)
+            if i > 1 and a[i - 2:i] == "ll":
+                best = min(best, d[i - 2][j] + _COST_YEISMO)
+            if j > 1 and a[i - 1] == "y" and b[j - 2:j] == "ll":      # cabayo -> caballo
+                best = min(best, d[i - 1][j - 2] + _COST_YEISMO)
+            if i > 1 and b[j - 1] == "y" and a[i - 2:i] == "ll":      # llo -> yo
+                best = min(best, d[i - 2][j - 1] + _COST_YEISMO)
             d[i][j] = best
     cost = d[n][m]
-    if a and b and _strip(a[0]) != _strip(b[0]) and _sub_cost(a[0], b[0]) >= _COST_SUB:
+    yeismo_start = {a[:1], b[:1]} == {"y", "l"} and (a.startswith("ll") or b.startswith("ll"))
+    if a and b and _strip(a[0]) != _strip(b[0]) and _sub_cost(a[0], b[0]) >= _COST_SUB and not yeismo_start:
         cost += _PENALTY_FIRST_LETTER
     if len(b) <= 3 and len(b) < len(a):
         cost += _PENALTY_SHORT
     return cost
 
 
-def pick_candidate(word: str, candidates, min_count: int = MIN_CANDIDATE_COUNT) -> str | None:
-    """Elige entre `candidates` = [(término, frecuencia)] (los de SymSpell a
-    distancia <= 2) el de menor coste disléxico; empate -> más frecuente.
-    None si no hay candidato aceptable."""
+def rank_candidates(word: str, candidates, min_count: int = MIN_CANDIDATE_COUNT) -> list:
+    """`candidates` = [(término, frecuencia)] (los de SymSpell a distancia <= 2)
+    ordenados por coste disléxico y, a igual coste, por frecuencia:
+    [(coste, término)]."""
     word = word.lower()
-    best, best_key = None, None
-    for term, count in candidates:
-        if term == word or count < min_count:
-            continue
-        key = (round(dyslexic_cost(word, term), 3), -count)
-        if best_key is None or key < best_key:
-            best, best_key = term, key
-    return best
+    ranked = [(round(dyslexic_cost(word, term), 3), -count, term)
+              for term, count in candidates if term != word and count >= min_count]
+    ranked.sort()
+    return [(cost, term) for cost, _, term in ranked]
+
+
+def pick_candidate(word: str, candidates, min_count: int = MIN_CANDIDATE_COUNT) -> str | None:
+    """El de menor coste disléxico de `rank_candidates`; empate -> más
+    frecuente. None si no hay candidato aceptable."""
+    ranked = rank_candidates(word, candidates, min_count)
+    return ranked[0][1] if ranked else None
 
 
 # ── Formas verbales regulares fuera del léxico ───────────────────────────────
@@ -147,4 +163,5 @@ def is_regular_verb_form(word: str, word_freqs: dict) -> bool:
     return False
 
 
-__all__ = ["dyslexic_cost", "pick_candidate", "is_regular_verb_form", "MIN_CANDIDATE_COUNT"]
+__all__ = ["dyslexic_cost", "pick_candidate", "rank_candidates", "is_regular_verb_form",
+           "MIN_CANDIDATE_COUNT"]

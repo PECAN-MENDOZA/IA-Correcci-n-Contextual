@@ -16,6 +16,9 @@ reentrena). Cubre errores frecuentes del español expresables sin parsing:
  12. Artículo femenino:   "el canción"             -> "la canción"
                           (solo sufijos siempre femeninos: -ción, -dad...)
  13. Posesivo plural:     "mi amigos"              -> "mis amigos"
+ 14. Auxiliar haber:      "a habido muchos asaltos" -> "ha habido" ("a" +
+                          participio masculino, salvo sustantivos en -ado/-ido
+                          y tras verbo de movimiento); "le aya pasado" -> "haya"
 
 Cada regla es conservadora: solo dispara cuando el patrón es inequívoco, para
 no introducir regresiones (verificado con evaluate.py sobre el set gold).
@@ -258,6 +261,37 @@ _AHI_VERBS = {
     "dejaste", "puse", "puso", "pusiste", "pon", "ponlo", "ponla", "dejalo", "dejala",
 }
 _AHI_PREPS = {"por", "de", "hasta", "desde"}
+# "por hay" + verbo u otra cosa es "por ahí" ("por hay voy a entrar"); ante
+# determinante o cuantificador puede ser el existencial ("por hay muchos
+# perros" = "por ahí hay..."): se deja. "hasta hay gente que..." es
+# gramatical, por eso las demás preposiciones siguen pidiendo final de frase.
+_AHI_ALWAYS_PREPS = {"por"}
+_EXISTENTIAL_NEXT = {
+    "un", "una", "unos", "unas", "mucho", "mucha", "muchos", "muchas", "poco", "poca",
+    "pocos", "pocas", "varios", "varias", "algunos", "algunas", "algo", "alguien", "nada",
+    "nadie", "mas", "tanto", "tanta", "tantos", "tantas", "dos", "tres", "cuatro", "cinco",
+    "que", "de",
+}
+
+# 14. "a" + participio masculino singular -> "ha". Sustantivos en -ado/-ido
+#     que sí van tras la preposición "a" ("a pedido de", "a lado", "a cuidado").
+_A_PARTICIPLE_NOUNS = {
+    "lado", "pedido", "partido", "mercado", "sentido", "cuidado", "helado", "pescado",
+    "soldado", "abogado", "ruido", "vestido", "marido", "apellido", "sonido", "contenido",
+    "significado", "resultado", "grado", "cunado", "prado", "punado", "tejado", "bocado",
+    "teclado", "nido", "olvido", "oido", "latido", "gemido", "silbido", "ladrido",
+    "chillido", "menudo", "medio", "estadio", "senado", "juzgado", "arado", "venado",
+    "ganado", "pasado", "futuro", "cercado", "comunicado", "tratado", "mandado", "recado",
+    "nado",
+}
+_A_PARTICIPLE_MASC = re.compile(r"(ado|ido)$", re.IGNORECASE)
+# Tras un verbo de movimiento "a" es preposición ("fue a cuidado de...").
+_MOTION_PREV = {
+    "voy", "vas", "va", "vamos", "van", "fui", "fue", "fuimos", "fueron", "iba", "iban",
+    "ir", "llego", "llegue", "llegamos", "llegaron", "vino", "vine", "volvio", "volvi",
+    "sali", "salio", "entro", "entre", "paso", "subio", "bajo",
+}
+_HAYA_MISSPELLINGS = {"aya"}
 _AHI_PREP_NEXT = {"que", "mismo", "nomas", "no"}
 
 # 12. Sufijos siempre femeninos (-ción, -sión, -dad, -tad, -tud, -umbre) y la
@@ -379,6 +413,18 @@ def correct_grammar(text: str) -> str:
             tokens[i] = _reword(tok, "he")
             continue
 
+        # 14. ha / haya (auxiliar): "a habido" -> "ha habido", "le aya pasado"
+        #     -> "le haya pasado". Solo participio masculino singular (el de
+        #     los tiempos compuestos) y nunca tras puntuación en "a".
+        if (low == "a" and tok == tok.rstrip(".,;:!?") and prev not in _MOTION_PREV
+                and next_content(i)[:1].islower() and nxt not in _A_PARTICIPLE_NOUNS
+                and (_A_PARTICIPLE_MASC.search(nxt) or nxt in _IRREGULAR_PARTICIPLES)):
+            tokens[i] = _reword(tok, "ha")
+            continue
+        if low in _HAYA_MISSPELLINGS and (_PARTICIPLE_RE.search(nxt) or nxt in _IRREGULAR_PARTICIPLES):
+            tokens[i] = _reword(tok, "haya")
+            continue
+
         # 7. él (pronombre) vs el (artículo): "el" + verbo -> "él"
         if low == "el" and nxt in _EL_VERBS:
             tokens[i] = _reword(tok, "él")
@@ -398,7 +444,8 @@ def correct_grammar(text: str) -> str:
         #     marco ("está, hay ...").
         if low == "hay" and i > 0 and _clean(tokens[i - 1]) == tokens[i - 1].lower():
             ends = nxt == "" or tok != tok.rstrip(".,;:!?")
-            if prev in _AHI_VERBS or (prev in _AHI_PREPS and (ends or nxt in _AHI_PREP_NEXT)):
+            if (prev in _AHI_VERBS or (prev in _AHI_ALWAYS_PREPS and nxt not in _EXISTENTIAL_NEXT)
+                    or (prev in _AHI_PREPS and (ends or nxt in _AHI_PREP_NEXT))):
                 tokens[i] = _reword(tok, "ahí")
                 continue
 
@@ -424,15 +471,23 @@ _MODERN_SPELLING = {
 }
 
 
+# Monosílabos que nunca llevan tilde (ni antes de 2010 en la norma): "se fué"
+# -> "se fue". Se quitan aunque las haya escrito el alumno.
+_MONOSYLLABLE_ACCENT = {"fué": "fue", "fuí": "fui", "dió": "dio", "vió": "vio", "ví": "vi",
+                        "tí": "ti", "dí": "di"}
+
+
 def normalize_modern_spelling(text: str, written: set | None = None) -> str:
     """Quita las tildes abolidas en 2010 (ver _MODERN_SPELLING). `written` son
     las palabras (en minúsculas) que el alumno escribió ya con tilde: esas se
-    respetan, igual que en la capa 1."""
+    respetan, igual que en la capa 1, salvo las de _MONOSYLLABLE_ACCENT."""
     written = written or set()
     out = []
     for tok in text.split():
         core = _clean(tok)
-        if core in _MODERN_SPELLING and core not in written:
+        if core in _MONOSYLLABLE_ACCENT:
+            out.append(_reword(tok, _MONOSYLLABLE_ACCENT[core]))
+        elif core in _MODERN_SPELLING and core not in written:
             out.append(_reword(tok, _MODERN_SPELLING[core]))
         else:
             out.append(tok)

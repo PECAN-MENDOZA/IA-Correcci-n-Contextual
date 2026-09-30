@@ -12,8 +12,10 @@ from infrastructure.nlp.context_judge import ContextJudge
 from infrastructure.nlp.amalgams import expand_amalgams
 from infrastructure.nlp.confusions import fix_lexical_confusions, resolve_final_confusions
 from infrastructure.nlp.grammar_rules import correct_grammar, normalize_modern_spelling
-from infrastructure.nlp.candidates import dyslexic_cost, is_regular_verb_form, pick_candidate
-from infrastructure.nlp.segmentation import choose_split, join_split_words, split_candidates
+from infrastructure.nlp.candidates import dyslexic_cost, is_regular_verb_form, rank_candidates
+from infrastructure.nlp.segmentation import (
+    choose_split, is_spanish_word, join_split_words, split_candidates,
+)
 from infrastructure.nlp.alternatives import THRESHOLDS, select_alternatives
 from infrastructure.ml.t5_model import T5CorrectionModel, T5SpanishTokenizer
 from infrastructure.ml.guards import (
@@ -80,6 +82,25 @@ _SCORE_MARGIN = THRESHOLDS["scoreMargin"]
 # alternatives.THRESHOLDS["recommendedMinSimilarity"] y
 # guards.is_lexically_plausible_refinement). Bloquea pasto→maíz, no es→son.
 _RECOMMENDED_MIN_SIMILARITY = THRESHOLDS["recommendedMinSimilarity"]
+
+# Capa 2 con contexto (2026-09-30): entre los candidatos de SymSpell a menos
+# de _CANDIDATE_TIE_WINDOW del mejor coste disléxico (entrege -> entrega /
+# entregué / entregó, utimos -> átomos / últimos) BETO elige, si supera al de
+# menor coste por _CANDIDATE_BETO_MARGIN (log-prob media de la ranura); si
+# no, gana el de menor coste (a igual coste, el más frecuente).
+_CANDIDATE_TIE_WINDOW = 0.4        # tío (0,85) frente a tuyo (0,5) sí; cubra (1,0) frente a quiebra (0,5) no
+_CANDIDATE_BETO_MARGIN = 1.0
+_CANDIDATE_MAX = 4
+# Palabra de es_50k demasiado rara para fiarse (ruido de subtítulos: quero
+# 228, com 1 210; ver segmentation.is_spanish_word) con una rival a coste
+# <= _RIVAL_MAX_COST y _RIVAL_MIN_RATIO veces más frecuente: BETO decide.
+_RIVAL_MAX_COST = 0.5
+_RIVAL_MIN_RATIO = 100
+_RIVAL_MAX_LEN = 5            # quero, com; no "defino" ni "covers" (formas raras pero válidas)
+_RIVAL_BETO_MARGIN = 3.0      # com -> con gana por 7,4; azur -> azar, covers -> cobres no
+# Enclítico con "c" por "s": tragárcelo -> tragárselo, diciéndocelo -> diciéndoselo.
+_ENCLITIC_CE_RE = re.compile(r"^(.{2,}(?:[aáeéií]r|ndo))ce(l[oa]s?)$")
+_ACCENT_VOWELS = str.maketrans("áéíóúü", "aeiouu")
 
 
 def _has_accent(word: str) -> bool:
@@ -217,6 +238,72 @@ class CorrectionPipeline:
 
         return text, variants
 
+    def _contextual_pick(self, words: list, i: int, pref: str, suff: str, core: str,
+                         ranked: list) -> str | None:
+        """Capa 2: el candidato de `ranked` ([(coste, término)], de menor a
+        mayor coste) que sustituye a words[i]. Sin BETO, o si BETO no supera
+        al de menor coste por _CANDIDATE_BETO_MARGIN, el de menor coste."""
+        if not ranked:
+            return None
+        default = self._phonetic.restore_accent(ranked[0][1])
+        if self._judge is None:
+            return default
+        forms = []
+        for cost, term in ranked:
+            form = self._phonetic.restore_accent(term)
+            if cost <= ranked[0][0] + _CANDIDATE_TIE_WINDOW and form not in forms:
+                forms.append(form)
+        # Si alguno conserva la última letra escrita (quebra -> quiebra, no
+        # quebró; entrege -> entregué, no entrega), solo compiten esos: el niño
+        # rara vez yerra la desinencia, y BETO cambiaría el tiempo verbal.
+        last = core[-1:].lower().translate(_ACCENT_VOWELS)
+        same_end = [f for f in forms if f[-1:].translate(_ACCENT_VOWELS) == last]
+        if same_end:
+            forms = same_end
+            if default not in forms:
+                default = forms[0]
+        forms = forms[:_CANDIDATE_MAX]
+        if len(forms) < 2:
+            return default
+        return self._beto_choice(words, i, pref, suff, core, forms, default)
+
+    def _rescue_rare_word(self, words: list, i: int, pref: str, suff: str, core: str,
+                          lower: str, current: str) -> str:
+        """Palabra rara de es_50k (quero, com): si hay una rival cercana
+        (coste <= _RIVAL_MAX_COST) y _RIVAL_MIN_RATIO veces más frecuente,
+        BETO decide entre las dos; si no, se deja `current`."""
+        if self._judge is None:
+            return current
+        freqs = getattr(self._phonetic, "word_freqs", None) or {}
+        floor = max(freqs.get(lower, 0), 1) * _RIVAL_MIN_RATIO
+        suggestions = self._symspell.lookup(lower, Verbosity.ALL, max_edit_distance=1)
+        rivals = [self._phonetic.restore_accent(t)
+                  for c, t in rank_candidates(lower, [(s.term, s.count) for s in suggestions])
+                  if c <= _RIVAL_MAX_COST and freqs.get(t, 0) >= floor]
+        rivals = list(dict.fromkeys(r for r in rivals if r != current.lower()))[:_CANDIDATE_MAX - 1]
+        if not rivals:
+            return current
+        return match_case(core, self._beto_choice(words, i, pref, suff, core,
+                                                  [current.lower()] + rivals, current.lower(),
+                                                  margin=_RIVAL_BETO_MARGIN))
+
+    def _beto_choice(self, words: list, i: int, pref: str, suff: str, core: str,
+                     forms: list, default: str, margin: float = _CANDIDATE_BETO_MARGIN) -> str:
+        """La forma de `forms` que BETO prefiere en la ranura i, si supera a
+        `default` por `margin`; si no, `default`."""
+        tokens = [pref + match_case(core, f) + suff for f in forms]
+        try:
+            scores = dict(self._judge.score_candidates(words, i, tokens))
+        except Exception as e:
+            print(f"[WARN] Desempate de candidatos (BETO) falló: {e}")
+            return default
+        best = max(forms, key=lambda f: scores[tokens[forms.index(f)]])
+        if best != default and default in forms:
+            gain = scores[tokens[forms.index(best)]] - scores[tokens[forms.index(default)]]
+            if gain < margin:
+                return default
+        return best
+
     def _is_plausible_reading(self, current: str, alternative: str) -> bool:
         """
         La segunda lectura solo cuenta como ambigüedad si no es mucho más rara
@@ -289,9 +376,28 @@ class CorrectionPipeline:
             lower    = core.lower()
             best     = core
             resolved = False
+            opens_sentence = i == 0 or words[i - 1].endswith((".", "!", "?", ":", ";"))
+            proper_noun = core[:1].isupper() and not opens_sentence
+
+            # Enclítico escrito con "c": "tragárcelo" -> "tragárselo" (no
+            # "Marcelo": delante debe quedar un infinitivo de 4+ letras o un gerundio).
+            m = _ENCLITIC_CE_RE.match(lower)
+            if m and (m.group(1).endswith("ndo") or len(m.group(1)) >= 5):
+                best     = match_case(core, m.group(1) + "se" + m.group(2))
+                resolved = True
+
+            # Tilde mal puesta que deja la palabra fuera del diccionario
+            # ("vínieron"): si sin tildes es una palabra, se corrige como las demás.
+            # Una tilde final ("encanté", "comerán") es una forma verbal válida
+            # aunque falte en es_50k: se respeta.
+            if (not resolved and _has_accent(lower) and not _has_accent(lower[-2:])
+                    and not self._symspell.lookup(lower, Verbosity.TOP, max_edit_distance=0)):
+                plain = lower.translate(_ACCENT_VOWELS)
+                if self._symspell.lookup(plain, Verbosity.TOP, max_edit_distance=0):
+                    lower, core = plain, match_case(core, plain)
 
             # Proteger palabras que ya tienen acento — no tocar
-            if _has_accent(lower):
+            if not resolved and _has_accent(lower):
                 best     = self._phonetic.restore_accent(core)
                 resolved = True
 
@@ -308,8 +414,7 @@ class CorrectionPipeline:
             # Nombre propio: mayúscula en mitad de la oración y fuera del
             # diccionario ("Vamos a Cusco"): no se corrige (SymSpell lo
             # convertía en "Casco"). Abriendo oración la mayúscula no dice nada.
-            opens_sentence = i == 0 or words[i - 1].endswith((".", "!", "?", ":", ";"))
-            if (not resolved and core[:1].isupper() and not opens_sentence
+            if (not resolved and proper_noun
                     and not self._symspell.lookup(lower, Verbosity.TOP, max_edit_distance=0)):
                 best     = core
                 resolved = True
@@ -319,10 +424,14 @@ class CorrectionPipeline:
                 best     = core
                 resolved = True
 
-            # Ya está bien escrita
+            # Ya está bien escrita. Si es una palabra rara de es_50k (quero, com)
+            # con una rival mucho más frecuente y cercana, decide BETO.
             if not resolved and self._symspell.lookup(lower, Verbosity.TOP, max_edit_distance=0):
                 best     = self._phonetic.restore_accent(core)
                 resolved = True
+                if (not proper_noun and len(lower) <= _RIVAL_MAX_LEN
+                        and not is_spanish_word(best.lower(), freqs, accents)):
+                    best = self._rescue_rare_word(words, i, pref, suff, core, lower, best)
 
             # Forma verbal regular fuera de las 50k palabras (nadaremos,
             # dibujaremos): se respeta; SymSpell la destrozaría (daremos).
@@ -347,7 +456,8 @@ class CorrectionPipeline:
             # partición y la corrección de SymSpell ("quemo"). Ver segmentation.py.
             if not resolved:
                 suggestions = self._symspell.lookup(lower, Verbosity.ALL, max_edit_distance=2)
-                pick = pick_candidate(lower, [(s.term, s.count) for s in suggestions]) if suggestions else None
+                ranked = rank_candidates(lower, [(s.term, s.count) for s in suggestions]) if suggestions else []
+                pick = self._contextual_pick(words, i, pref, suff, core, ranked)
                 split = choose_split(
                     words, i, split_candidates(lower, freqs, accents), pick, judge=self._judge,
                     pick_cost=dyslexic_cost(lower, pick) if pick else None,
@@ -360,8 +470,11 @@ class CorrectionPipeline:
 
             # Restauración de ñ (nino->niño, manana->mañana) y luego del acento
             # (compañia->compañía): ambas son seguras (solo actúan sobre entradas
-            # de enye_dict/accent_dict, con guarda 5x).
-            best = self._phonetic.restore_accent(self._phonetic.restore_enye(best))
+            # de enye_dict/accent_dict, con guarda 5x). La ñ no en un nombre
+            # propio ("soy Nino" no es "soy Niño").
+            if not proper_noun:
+                best = self._phonetic.restore_enye(best)
+            best = self._phonetic.restore_accent(best)
             result.append(pref + best + suff)
 
         base_corrected = " ".join(result)

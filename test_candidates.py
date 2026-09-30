@@ -67,5 +67,13 @@ class TestFormaVerbalRegular(unittest.TestCase):
             self.assertFalse(is_regular_verb_form(w, LEXICON), w)
 
 
+class TestYeismo(unittest.TestCase):
+    def test_ll_y_omitida_o_cambiada_cuesta_como_confusion(self):
+        self.assertEqual(dyslexic_cost("rodia", "rodilla"), 0.5)
+        self.assertEqual(dyslexic_cost("cabayo", "caballo"), 0.5)
+        self.assertEqual(dyslexic_cost("yuvia", "lluvia"), 0.5)
+        self.assertLess(dyslexic_cost("tiyo", "tío"), 1.0)
+
+
 if __name__ == "__main__":
     unittest.main()
