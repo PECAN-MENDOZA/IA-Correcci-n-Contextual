@@ -1,0 +1,85 @@
+# Partición de test_ninos_reales.csv (scripts/split_ninos_reales.py, semilla 2026, 40 % reserva estratificada por categoría).
+# DESARROLLO: se mira para diseñar reglas y datos.
+# Sonda de ESCRITURA INFANTIL REAL (categoria|entrada|esperado). Escrita el 2026-09-29.
+# Entradas copiadas textualmente de transcripciones publicadas de niños de primaria (Argentina,
+# Uruguay, Perú); solo se quitaron marcas de cambio de renglón y se partieron textos largos.
+# El esperado corrige ortografía, tildes, segmentación y gramática con intervención mínima:
+# conserva repeticiones y regionalismos del niño y no añade puntuación (evaluar sin puntuación).
+# Las 10 filas 'control' son oraciones correctas escritas por niños: no deben cambiar.
+# Complementa a test_ninos.csv (casos escritos por nosotros). Fuentes por bloque abajo.
+categoria|entrada|esperado
+
+# F1: Peláez, M. A. (2016). Tesis de maestría, UNLP (Argentina). Renarraciones de Caperucita, 1.er grado; transcripción y normalización de la autora. Pasadas a minúsculas. https://www.memoria.fahce.unlp.edu.ar/tesis/te.1288/te.1288.pdf
+segmentacion|la mama de caperucita roja le iso un favor a caperucitaroja|la mamá de caperucita roja le hizo un favor a caperucita roja
+ortografia|abia una ves una ninia ninia llamada caperusita roja|había una vez una niña niña llamada caperucita roja
+segmentacion|y el lovo lo metio a bajo de la cama|y el lobo lo metió abajo de la cama
+c/s|y entonses toco la puerta|y entonces tocó la puerta
+b/v|y el lobo con la bos de la aboelita le dijo|y el lobo con la voz de la abuelita le dijo
+porque|y por que tienes la naris tan grande|y por qué tienes la nariz tan grande
+ll/y|y yego el lobo yego piero a la casa y iso la bos de capelusita|y llegó el lobo llegó primero a la casa y hizo la voz de caperucita
+ahi/hay|caranva dijo cazador que paseava por hay boy a entrar no sea que le aya pasado algo|caramba dijo cazador que paseaba por ahí voy a entrar no sea que le haya pasado algo
+h|y entro a la avitasion de la abuelita|y entró a la habitación de la abuelita
+
+# F2: Noya, F. (2021). Trabajo final de especialización, UNLP; 2.º grado, Montevideo (Uruguay). Transcripción textual y normalizada. https://www.memoria.fahce.unlp.edu.ar/tesis/te.2239/te.2239.pdf
+h|y el lobo iso aparecer a la abuelita.|y el lobo hizo aparecer a la abuelita.
+g/j|Es para protejerme del sol.|Es para protegerme del sol.
+b/v|Y vio que llegaban nabes y coetes|Y vio que llegaban naves y cohetes
+segmentacion|no les tengo miedo aun que lo tubiera! Entonses los cerditos les dijieron - no te dejaremos.|no les tengo miedo aunque lo tuviera! Entonces los cerditos les dijeron - no te dejaremos.
+segmentacion|y le pidio piza, ver la teley leer un libro|y le pidió pizza, ver la tele y leer un libro
+b/v|no vamos a volber asta que dejes nuestra casa en paz.|no vamos a volver hasta que dejes nuestra casa en paz.
+
+# F3: Querejeta, M. (2007). Hipo e hipersegmentación lexical en la escritura de niños (UBA). Escritura espontánea, 8-11 años con dificultades de aprendizaje; corrección nuestra con intervención mínima. https://www.aacademica.org/000-073/331.pdf
+segmentacion|Después de al morzar fuimos a jugar a la pelota con mis hermanos y mis amigos.|Después de almorzar fuimos a jugar a la pelota con mis hermanos y mis amigos.
+segmentacion|Tienen que luchar contra el frio si no les pueden en fermar y modirse.|Tienen que luchar contra el frío si no se pueden enfermar y morirse.
+segmentacion|Entonces agarro la al cancía que estaba arriba de la comoda, garró las monedas, selas puso en el bolcillo y fue a comprar el helado que quería.|Entonces agarró la alcancía que estaba arriba de la cómoda, agarró las monedas, se las puso en el bolsillo y fue a comprar el helado que quería.
+segmentacion|Dijo que cuando salga iva a matar a to do el mundo|Dijo que cuando salga iba a matar a todo el mundo
+r/rr|Un chico esta desatado un bote y la coriente del rio se lo lleva al bote y los tres peros, el gato y el chico setiraron para subirse al bote.|Un chico está desatando un bote y la corriente del río se lo lleva al bote y los tres perros, el gato y el chico se tiraron para subirse al bote.
+segmentacion|El heladero le dijo queno importaba y que se lo pagara otro día|El heladero le dijo que no importaba y que se lo pagara otro día
+segmentacion|Una chica estabapreparando un sanguche|Una chica estaba preparando un sánguche
+segmentacion|Le preguntó el nombre de lasirena.|Le preguntó el nombre de la sirena.
+segmentacion|Que apartir de leer lo que esta escrito traten de evitar contaminar el ambiente.|Que a partir de leer lo que está escrito traten de evitar contaminar el ambiente.
+segmentacion|Al día siguiente mataron asufamilia.|Al día siguiente mataron a su familia.
+
+# F4: Querejeta, M. (2009). La hipo e hipersegmentación lexical en la oralidad y la escritura (UNLP). Dictado, 1.º-4.º; corrección de la autora. https://www.memoria.fahce.unlp.edu.ar/trab_eventos/ev.12071/ev.12071.pdf
+segmentacion|Porquecumiomuchocolate|Porque comió mucho chocolate
+segmentacion|Martin serfemó|Martín se enfermó
+segmentacion|Susana estaba con tenta|Susana estaba contenta
+segmentacion|Los nenes en con tron la pelota|Los nenes encontraron la pelota
+
+# F5: Minedu Perú (2005). Evaluación Nacional 2004, informe pedagógico de producción de textos, 2.º y 6.º de primaria; corrección nuestra salvo las palabras que corrige el informe. https://repositorio.minedu.gob.pe/handle/20.500.12799/9119
+h|Ola soy Nino un dia boy a ir asuisa talbes te puedo bisitar buno tecuento quella bamos a acabar el colegio porque no nos bisitas|Hola soy Nino un día voy a ir a Suiza tal vez te puedo visitar bueno te cuento que ya vamos a acabar el colegio por qué no nos visitas
+b/v|cuando bienes al colegio todos te estrañamos mucho|cuándo vienes al colegio todos te extrañamos mucho
+segmentacion|yo te quiero mucho y testrayo mucho poreso te mando un saludo|yo te quiero mucho y te extraño mucho por eso te mando un saludo
+haber|Karol a ido abagua grande de paseo a cuncursar com los ninos de bagua grande|Karol ha ido a Bagua Grande de paseo a concursar con los niños de Bagua Grande
+b/v|te cuento que boy a rezar por ti y quero que buelvas a toquepala recuperate siempre amigo|te cuento que voy a rezar por ti y quiero que vuelvas a Toquepala recupérate siempre amigo
+h|y emos echo poesias de la patria.|y hemos hecho poesías de la patria.
+haber|Querida amiga te quiero contar que en estos utimos días yo e estado muy bien pero por aqui estan pasando muchas cosas raras a avido muchos asaltos por aqui|Querida amiga te quiero contar que en estos últimos días yo he estado muy bien pero por aquí están pasando muchas cosas raras ha habido muchos asaltos por aquí
+h|Cuando vas a venir porfavor como es halla y yo te contare lo que pasa aca.|Cuándo vas a venir por favor cómo es allá y yo te contaré lo que pasa acá.
+h|No importa que me lo mandes habajito de la carta|No importa que me lo mandes abajito de la carta
+concordancia|despues vínieron bien cansado y mi amigo bino al colegio|después vinieron bien cansados y mi amigo vino al colegio
+g/j|yo le Respondi yo profesora me iva a Lima y yo le entrege una piña|yo le respondí yo profesora me iba a Lima y yo le entregué una piña
+e/ie|te amamos y te quiremos ver pronto espero que estes víen adios|te amamos y te queremos ver pronto espero que estés bien adiós
+haber|A mi amigo le paso algo interesante de aver pasado a otro grado|A mi amigo le pasó algo interesante de haber pasado a otro grado
+ll/y|un compañero de otra aula me empujo y me lastime la rodia y despues me pare de inmediatamente|un compañero de otra aula me empujó y me lastimé la rodilla y después me paré de inmediato
+c/s|una vez fuimos de paceo con mis compañeros al rio cacachi|una vez fuimos de paseo con mis compañeros al río Cacachi
+h|y nos caimos y nos isimos doler el pie|y nos caímos y nos hicimos doler el pie
+verbos|pero mis tios me dicierón que no me pongue triste|pero mis tíos me dijeron que no me ponga triste
+porque|Pero yo no entendia nada por que yo no queria, que se moria.|Pero yo no entendía nada porque yo no quería, que se muriera.
+z/s|Una ves mi tiyo salio ala calle una Tarde a pacear un rato i se encontro con un amigo|Una vez mi tío salió a la calle una tarde a pasear un rato y se encontró con un amigo
+b/v|y despues le susedio que estava jugando y se cae y se quebra el braso|y después le sucedió que estaba jugando y se cae y se quiebra el brazo
+z/s|y la profesora comenso a llamar por lista y cada uno se iva acercando|y la profesora comenzó a llamar por lista y cada uno se iba acercando
+n/r|y les puso 15 por inresponsables|y les puso 15 por irresponsables
+
+# F6: Minedu Perú (2013). Informe de evaluación de Escritura en sexto grado; correcciones entre corchetes del informe. https://repositorio.minedu.gob.pe/handle/20.500.12799/4638
+ser/estar|el agua era contaminada|el agua estaba contaminada
+tildes|Un día su papá le dijo que era prohibido ir a la selva, pero Mateo sin obedecer se fué.|Un día su papá le dijo que estaba prohibido ir a la selva, pero Mateo sin obedecer se fue.
+b/v|aunque no bolvió a salir|aunque no volvió a salir
+c/s|es un fantasma que espera a otro niño para tragárcelo o comércelo.|es un fantasma que espera a otro niño para tragárselo o comérselo.
+
+# Controles (oraciones correctas de F2, F5 y F6)
+control|Mi perro ladra|Mi perro ladra
+control|Mi pollo es amarillo|Mi pollo es amarillo
+control|Los cerditos ya habían explorado todos los planetas|Los cerditos ya habían explorado todos los planetas
+control|Se asustaron y se fueron corriendo porque el lobo los iba a comer|Se asustaron y se fueron corriendo porque el lobo los iba a comer
+control|Había una vez un colegio que estaba de aniversario que se llamaba el colegio 11001.|Había una vez un colegio que estaba de aniversario que se llamaba el colegio 11001.
+control|Sus padres lo buscaron, pero no lo encontraron.|Sus padres lo buscaron, pero no lo encontraron.

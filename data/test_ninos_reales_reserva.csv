@@ -1,0 +1,62 @@
+# Partición de test_ninos_reales.csv (scripts/split_ninos_reales.py, semilla 2026, 40 % reserva estratificada por categoría).
+# RESERVA: evaluar una vez por ciclo, sin mirar los fallos.
+# Sonda de ESCRITURA INFANTIL REAL (categoria|entrada|esperado). Escrita el 2026-09-29.
+# Entradas copiadas textualmente de transcripciones publicadas de niños de primaria (Argentina,
+# Uruguay, Perú); solo se quitaron marcas de cambio de renglón y se partieron textos largos.
+# El esperado corrige ortografía, tildes, segmentación y gramática con intervención mínima:
+# conserva repeticiones y regionalismos del niño y no añade puntuación (evaluar sin puntuación).
+# Las 10 filas 'control' son oraciones correctas escritas por niños: no deben cambiar.
+# Complementa a test_ninos.csv (casos escritos por nosotros). Fuentes por bloque abajo.
+categoria|entrada|esperado
+
+# F1: Peláez, M. A. (2016). Tesis de maestría, UNLP (Argentina). Renarraciones de Caperucita, 1.er grado; transcripción y normalización de la autora. Pasadas a minúsculas. https://www.memoria.fahce.unlp.edu.ar/tesis/te.1288/te.1288.pdf
+segmentacion|y es con dío ala abuela adentro del ropero|y escondió a la abuela adentro del ropero
+ortografia|y el lobo se difraso de la abuela|y el lobo se disfrazó de la abuela
+segmentacion|sefue de su casa y se en contro con el lovo|se fue de su casa y se encontró con el lobo
+b/v|despues bino un casador y lo mato|después vino un cazador y lo mató
+segmentacion|y en el camino sencontro con el lobo.|y en el camino se encontró con el lobo.
+ll/y|que balla por el camino mas corto|que vaya por el camino más corto
+g/j|por que tenes los ogos muijarndes para bertemejor|por qué tenés los ojos muy grandes para verte mejor
+segmentacion|caperusita fueporel camino|caperucita fue por el camino
+segmentacion|cidado ija que tebas aencontrar conuni es conocido|cuidado hija que te vas a encontrar con un desconocido
+segmentacion|y caperusita fue adarle a suaguela remedios|y caperucita fue a darle a su abuela remedios
+
+# F2: Noya, F. (2021). Trabajo final de especialización, UNLP; 2.º grado, Montevideo (Uruguay). Transcripción textual y normalizada. https://www.memoria.fahce.unlp.edu.ar/tesis/te.2239/te.2239.pdf
+c/s|Abuelita, abuelita no te pareses a mi abuelita.|Abuelita, abuelita no te pareces a mi abuelita.
+h|Caperucita había llegado a la casa de su abuelita y el lobo se abia disfraso de la abuelita, el lobo nececitaba ir al baño porque el dizfras le estava molestando.|Caperucita había llegado a la casa de su abuelita y el lobo se había disfrazado de la abuelita, el lobo necesitaba ir al baño porque el disfraz le estaba molestando.
+h|El lobo con un echiso logro llegar primero a la casa de la abuelita.|El lobo con un hechizo logró llegar primero a la casa de la abuelita.
+tildes|Unos minutos despues, Caperucita estava llegando a la casa, el lobo escucho sus pasos y rapidamente se disfraso de la abuela.|Unos minutos después, Caperucita estaba llegando a la casa, el lobo escuchó sus pasos y rápidamente se disfrazó de la abuela.
+b/v|¿Donde lo compraste, nunca te bi ese gorro.?|¿Dónde lo compraste, nunca te vi ese gorro.?
+ahi/hay|Abuelita abuelita ¿que es ese palo que tienes haí?|Abuelita abuelita ¿qué es ese palo que tienes ahí?
+b/v|Los cerditos pudieron escapar y el lobo saio gritando - !Bengan bengan serditos no les are nada¡ mintio el lobo.|Los cerditos pudieron escapar y el lobo salió gritando - ¡Vengan vengan cerditos no les haré nada! mintió el lobo.
+c/s|Entonces dijo: nececito ir al baño estoy medio mariado.|Entonces dijo: necesito ir al baño estoy medio mareado.
+z/s|Entonces Caperucita empeso a sospechar.|Entonces Caperucita empezó a sospechar.
+
+# F3: Querejeta, M. (2007). Hipo e hipersegmentación lexical en la escritura de niños (UBA). Escritura espontánea, 8-11 años con dificultades de aprendizaje; corrección nuestra con intervención mínima. https://www.aacademica.org/000-073/331.pdf
+segmentacion|En contró a Ignacio llorando y el papá le preguntó|Encontró a Ignacio llorando y el papá le preguntó
+segmentacion|En tonces el niño y su perro lo fueron a fuscarlo|Entonces el niño y su perro lo fueron a buscarlo
+segmentacion|Los papás estaban mirando la televisión y es cuharon ruidos muy fuertes.|Los papás estaban mirando la televisión y escucharon ruidos muy fuertes.
+
+# F4: Querejeta, M. (2009). La hipo e hipersegmentación lexical en la oralidad y la escritura (UNLP). Dictado, 1.º-4.º; corrección de la autora. https://www.memoria.fahce.unlp.edu.ar/trab_eventos/ev.12071/ev.12071.pdf
+segmentacion|Es tabamirando como sensendia lacasa|Estaba mirando cómo se encendía la casa
+segmentacion|Binieron en sechida|Vinieron enseguida
+
+# F5: Minedu Perú (2005). Evaluación Nacional 2004, informe pedagógico de producción de textos, 2.º y 6.º de primaria; corrección nuestra salvo las palabras que corrige el informe. https://repositorio.minedu.gob.pe/handle/20.500.12799/9119
+b/v|puedes benir por un tiempo o pue des selebrar tu cumple allos aqui o aser una fiesta de bienbenida|puedes venir por un tiempo o puedes celebrar tu cumpleaños aquí o hacer una fiesta de bienvenida
+g/j|desidio que cuando acabe la secundaria se iria a estudiar al extrangero|decidió que cuando acabe la secundaria se iría a estudiar al extranjero
+z/s|y nos mojamos nuestro buso|y nos mojamos nuestro buzo
+porque|mi tiya estaba preocupada por que su esposo nose beniya|mi tía estaba preocupada porque su esposo no se venía
+haber|a mi compañero del colegio le apasado que le pico una culebra|a mi compañero del colegio le ha pasado que le picó una culebra
+haber|y a mi me apasado que estaba escribiendo y medolia la cabeza muy fuerte.|y a mí me ha pasado que estaba escribiendo y me dolía la cabeza muy fuerte.
+h|Havia una ves una tortuga|Había una vez una tortuga
+h|un dia se hemfermo de grabedad|un día se enfermó de gravedad
+segmentacion|Amigo mio bete a vivir muy lejos deaca yote dare denero adelantado para que tu hermanitos puedan comer bien|Amigo mío vete a vivir muy lejos de acá yo te daré dinero adelantado para que tus hermanitos puedan comer bien
+
+# F6: Minedu Perú (2013). Informe de evaluación de Escritura en sexto grado; correcciones entre corchetes del informe. https://repositorio.minedu.gob.pe/handle/20.500.12799/4638
+concordancia|Había una vez una ciudad llamado Cataspaño|Había una vez una ciudad llamada Cataspaño
+
+# Controles (oraciones correctas de F2, F5 y F6)
+control|Caperucita había llegado a la casa de su abuelita|Caperucita había llegado a la casa de su abuelita
+control|Es para rascarme, que no llego.|Es para rascarme, que no llego.
+control|Regresamos al colegio entre aplausos y gritos|Regresamos al colegio entre aplausos y gritos
+control|Tenía basura en todas partes y muy pocos árboles.|Tenía basura en todas partes y muy pocos árboles.
