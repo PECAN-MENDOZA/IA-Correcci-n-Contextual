@@ -16,7 +16,15 @@ evaluate.py.
 """
 import sys
 
-from infrastructure.ml.guards import is_lexically_plausible_refinement, is_safe_refinement
+from infrastructure.ml.guards import (
+    is_lexically_plausible_refinement, is_safe_refinement, is_same_word_variant,
+    revert_lexical_substitutions,
+)
+
+# Clave fonética mínima para los tests (la real es phonetic_engine.to_phonetic).
+_SOUND = lambda w: w.replace("h", "").replace("v", "b").replace("z", "s")
+_KNOWN = set("la vaca comio pasto verde agarro alcancia que estaba arriba ver tele y leer un "
+             "libro otra aula me empujo tiene madre ellos fue es muy grande vino ayer".split()).__contains__
 
 
 def check(label: str, condition: bool) -> bool:
@@ -212,6 +220,43 @@ def main() -> int:
         "léxica: las palabras en -ste que no son pretérito de 2.ª persona no se bloquean",
         is_lexically_plausible_refinement("los niños estan triste", "los niños están tristes")
         and is_lexically_plausible_refinement("los problemas existe", "los problemas existen"),
+    ))
+
+    # ── Reversión de sustituciones léxicas (2026-09-30) ─────────────────
+    results.append(check(
+        "variante: flexiones, homófonos e irregulares de ser/ir/haber son la misma palabra",
+        all(is_same_word_variant(a, b, _SOUND) for a, b in [
+            ("fue", "fueron"), ("vino", "vinieron"), ("sabe", "sepa"), ("feliz", "felices"),
+            ("ves", "vez"), ("a", "ha"), ("tubo", "tuvo"), ("es", "son"), ("eres", "seas"),
+            ("va", "vaya"), ("special", "especial"), ("los", "las"), ("confidencia", "confianza")]),
+    ))
+    results.append(check(
+        "variante: sinónimos, paráfrasis y expansiones NO son la misma palabra",
+        not any(is_same_word_variant(a, b, _SOUND) for a, b in [
+            ("alcancia", "caja"), ("aula", "clase"), ("madre", "padre"), ("ropero", "armario"),
+            ("tele", "television"), ("verdaderamente", "realmente"), ("se", "le")]),
+    ))
+    results.append(check(
+        "reversión: devuelve solo la palabra mal cambiada y conserva el resto del beam",
+        revert_lexical_substitutions("agarro la alcancia que estaba arriba",
+                                     "agarró la caja que estaba arriba", _KNOWN, _SOUND)
+        == "agarró la alcancia que estaba arriba"
+        and revert_lexical_substitutions("ver la tele y leer un libro",
+                                         "ver la televisión y leer un libro", _KNOWN, _SOUND)
+        == "ver la tele y leer un libro",
+    ))
+    results.append(check(
+        "reversión: conserva concordancia y la puntuación/mayúsculas de la palabra devuelta",
+        revert_lexical_substitutions("ellos fue muy grande", "ellos fueron muy grandes", _KNOWN, _SOUND)
+        == "ellos fueron muy grandes"
+        and revert_lexical_substitutions("Tiene madre, y vino ayer.", "Tiene padre, y vinieron ayer.",
+                                         _KNOWN, _SOUND)
+        == "Tiene madre, y vinieron ayer.",
+    ))
+    results.append(check(
+        "reversión: palabra fuera del diccionario (falta) acepta un arreglo parecido y no uno lejano",
+        revert_lexical_substitutions("me dicieron que", "me dijeron que", _KNOWN, _SOUND) == "me dijeron que"
+        and revert_lexical_substitutions("un sanguche", "un viaje", _KNOWN, _SOUND) == "un sanguche",
     ))
 
     total, passed = len(results), sum(results)

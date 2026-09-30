@@ -204,3 +204,80 @@ def is_lexically_plausible_refinement(base_text: str, candidate: str, min_simila
         if not _is_allowed_block(base_words, i1, i2, cand_words, j1, j2):
             return False
     return True
+
+
+# ───────────── reversión de sustituciones léxicas (2026-09-30) ─────────────
+# `is_lexically_plausible_refinement` acepta un reemplazo con similitud ≥ 0,3,
+# y el T5 cambia así palabras CORRECTAS por otras (sinónimos, paráfrasis):
+# alcancía→caja, aula→clase, madre→padre, tele→televisión, sanguche→viaje.
+# En vez de descartar el beam entero (y perder sus correcciones buenas de la
+# misma frase), se revierte solo la palabra mal cambiada. Criterio medido sobre
+# los 183 reemplazos del beam 1 en los sets de desarrollo (.local/t5_pairs.py):
+# los buenos son flexiones de la misma palabra (fue→fueron, viene→venga,
+# feliz→felices), homófonos (ves→vez, a→ha) o irregulares de ser/ir/haber.
+
+# Formas irregulares que el T5 intercambia legítimamente (claves léxicas).
+_IRREGULAR_FAMILIES = [
+    set("ser es son soy eres somos sea seas sean seamos era eras eran eramos fue fueron fui "
+        "fuiste fuimos fuera fueras fueran sido siendo".split()),
+    set("ir va van vas voy vamos vaya vayas vayan vayamos iba ibas iban ibamos fue fueron fui "
+        "fuiste fuimos fuera fueran yendo".split()),
+    set("haber ha han has he hay hemos haya hayas hayan habia habian hubo hubiera hubieran".split()),
+]
+# Los pronombres átonos (se->le) NO van como familia: medido el 2026-09-30, no
+# ganan ningún acierto y añaden un falso positivo en COWS-L2H.
+# Parecido mínimo (SequenceMatcher) de un reemplazo de palabra válida con la
+# misma inicial, y de uno de palabra fuera del diccionario (una falta que el T5
+# arregla: dicieron→dijeron 0,80; sanguche→viaje 0,31 no).
+SAME_WORD_MIN_SIMILARITY = 0.5
+NEAR_IDENTICAL_SIMILARITY = 0.85     # special→especial 0,93; madre→padre 0,80 no
+UNKNOWN_WORD_MIN_SIMILARITY = 0.6
+# tele→televisión: misma raíz + >= 4 letras nuevas es otra palabra, no una
+# flexión (fue→fueron +3, llegó→llegaron +3).
+MAX_INFLECTION_GROWTH = 3
+
+
+def is_same_word_variant(word_a: str, word_b: str, sound=None) -> bool:
+    """True si `word_b` (claves léxicas) es una variante de la MISMA palabra
+    `word_a`: flexión, homófono o irregular de ser/ir/haber."""
+    if word_a == word_b:
+        return True
+    if word_b.startswith(word_a) and len(word_b) - len(word_a) > MAX_INFLECTION_GROWTH:
+        return False
+    if sound is not None and sound(word_a) == sound(word_b):
+        return True
+    if any(word_a in fam and word_b in fam for fam in _IRREGULAR_FAMILIES):
+        return True
+    ratio = difflib.SequenceMatcher(None, word_a, word_b, autojunk=False).ratio()
+    if ratio >= NEAR_IDENTICAL_SIMILARITY:
+        return True
+    return word_a[:1] == word_b[:1] and ratio >= SAME_WORD_MIN_SIMILARITY
+
+
+def revert_lexical_substitutions(base_text: str, candidate: str, is_known_word, sound=None) -> str:
+    """Devuelve `candidate` con cada reemplazo 1:1 de palabra que NO es una
+    variante de la misma palabra devuelto a la palabra de `base_text` (con su
+    puntuación y mayúsculas). `is_known_word(clave)` dice si la palabra base
+    está en el diccionario: si lo está, se exige `is_same_word_variant`; si no
+    (falta de ortografía), basta eso o un parecido ≥ UNKNOWN_WORD_MIN_SIMILARITY.
+    Los demás bloques (inserciones, 1:n) no se tocan: los juzga
+    `is_lexically_plausible_refinement`."""
+    base_tokens, cand_tokens = base_text.split(), candidate.split()
+    base_words = [_lexical_key(w) for w in base_tokens]
+    cand_words = [_lexical_key(w) for w in cand_tokens]
+    out = list(cand_tokens)
+    matcher = difflib.SequenceMatcher(a=base_words, b=cand_words, autojunk=False)
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag != "replace" or i2 - i1 != j2 - j1:
+            continue
+        for k in range(i2 - i1):
+            word_a, word_b = base_words[i1 + k], cand_words[j1 + k]
+            if not word_a or not word_b:
+                continue
+            keep = is_same_word_variant(word_a, word_b, sound)
+            if not keep and not is_known_word(word_a):
+                keep = difflib.SequenceMatcher(None, word_a, word_b, autojunk=False).ratio() \
+                    >= UNKNOWN_WORD_MIN_SIMILARITY
+            if not keep:
+                out[j1 + k] = base_tokens[i1 + k]
+    return " ".join(out)

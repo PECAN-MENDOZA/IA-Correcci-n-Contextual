@@ -16,7 +16,9 @@ from infrastructure.nlp.candidates import dyslexic_cost, is_regular_verb_form, p
 from infrastructure.nlp.segmentation import choose_split, join_split_words, split_candidates
 from infrastructure.nlp.alternatives import THRESHOLDS, select_alternatives
 from infrastructure.ml.t5_model import T5CorrectionModel, T5SpanishTokenizer
-from infrastructure.ml.guards import is_lexically_plausible_refinement, is_safe_refinement
+from infrastructure.ml.guards import (
+    is_lexically_plausible_refinement, is_safe_refinement, revert_lexical_substitutions,
+)
 
 MANUAL_CORRECTIONS = {
     "uillos": "niños",  "ciubab": "ciudad",  "caíbas": "caídas",
@@ -457,12 +459,21 @@ class CorrectionPipeline:
             como pasto→maíz, conserva flexiones como es→son.
         Los beams 2/3 solo pasan por `is_safe_refinement`. Se preserva la
         capitalización inicial del texto base.
+        Antes de las guardas, en cada beam se revierten las palabras que T5
+        cambió por OTRA palabra (alcancía→caja, aula→clase, tele→televisión):
+        solo se conservan flexiones, homófonos e irregulares de la misma
+        palabra (guards.revert_lexical_substitutions).
         """
         generated = self._seq2seq.generate_corrections(
             text, self._tokenizer, num_returns=_T5_NUM_RETURNS
         )
         if not generated:
             return []
+        freqs   = getattr(self._phonetic, "word_freqs", None) or {}
+        accents = getattr(self._phonetic, "accent_dict", None) or {}
+        known   = lambda key: key in freqs or key in accents
+        generated = [(revert_lexical_substitutions(text, str(g).strip(), known, to_phonetic), score)
+                     for g, score in generated]
         first = str(generated[0][0]).strip()
         if not is_safe_refinement(text, first) or not is_lexically_plausible_refinement(
             text, first, min_similarity=_RECOMMENDED_MIN_SIMILARITY

@@ -210,15 +210,19 @@ python evaluate.py --dataset data/test_ninos_reales.csv   --t5-dir models/t5_cor
 # semilla 2026, 61 filas; la RESERVA de 38 se evalúa una vez por ciclo y sin --show-fails).
 # Con la capa de segmentación (infrastructure/nlp/segmentation.py): 23/61 -> 29/61, P 0,740 -> 0,792,
 # F0.5 0,706 -> 0,765, segmentación 2/18 -> 8/18; el resto de sets sin cambios.
-python evaluate.py --dataset data/test_ninos_reales_dev.csv --t5-dir models/t5_correction --development --out reports/ninos_reales_dev.json  # 29/61, P 0,792 R 0,674 F0.5 0,765
+# Guarda de reescrituras del T5 (guards.revert_lexical_substitutions, 30-sep): revierte las palabras
+# que T5 cambia por OTRA (alcancía->caja, aula->clase, tele->televisión, madre->padre): 29 -> 30/61,
+# P 0,792 -> 0,827; COWS-L2H spelling200 76 -> 78/200 (P 0,783, F0.5 0,689); random200 P 0,600
+# (pierde el léxico facto->hecho); los seis sets internos sin cambios.
+python evaluate.py --dataset data/test_ninos_reales_dev.csv --t5-dir models/t5_correction --development --out reports/ninos_reales_dev.json  # 30/61, P 0,827 R 0,685 F0.5 0,794
 # Dos sets EXTERNOS con oraciones reales (COWS-L2H dev, universitarios de español L2, corrección de
 # un profesor; scripts/sample_cowsl2h.py, semilla 2026). No son la población objetivo: miden daño
 # (precisión) y sirven para comparar versiones. Placeholders *FIRST_NAME* -> *FIRSTNAME* cuentan
 # como FP y son artefacto del corpus (4-8 por muestra). Valores v4 + reglas del 2026-09-29 (entre
 # paréntesis, los del 19-sep): el recall cae 1-2 aciertos porque los nombres propios en mitad de
 # frase ya no se corrigen (Pizzaro, Ireland), a cambio de no estropear Stefani, Amtrak, Uber...
-python evaluate.py --dataset data/test_cowsl2h_spelling200.csv --t5-dir models/t5_correction --development --out reports/cowsl2h_spelling200.json  # P 0,762 R 0,460 F0.5 0,674 (76/200; 19-sep: 0,738/0,461/0,659)
-python evaluate.py --dataset data/test_cowsl2h_random200.csv   --t5-dir models/t5_correction --development --out reports/cowsl2h_random200.json    # P 0,604 R 0,150 F0.5 0,376 (27/200; 19-sep: 0,580/0,152/0,371)
+python evaluate.py --dataset data/test_cowsl2h_spelling200.csv --t5-dir models/t5_correction --development --out reports/cowsl2h_spelling200.json  # P 0,783 R 0,464 F0.5 0,689 (78/200, 30-sep; 29-sep: 0,762/0,460/0,674)
+python evaluate.py --dataset data/test_cowsl2h_random200.csv   --t5-dir models/t5_correction --development --out reports/cowsl2h_random200.json    # P 0,600 R 0,148 F0.5 0,372 (27/200, 30-sep; 29-sep: 0,604/0,150/0,376)
 # Una corrida con la misma semilla NO es determinista en GPU: v4c (mismos datos que v4b salvo
 # 3 pares) perdió `mis amigos no vino` en test_agreement. Guardar el adaptador de cada intento
 # (models/grammar_lora_v4a..c) y elegir por las regresiones, no por val_loss.
