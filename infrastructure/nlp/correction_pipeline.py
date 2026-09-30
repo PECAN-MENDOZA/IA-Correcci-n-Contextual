@@ -12,7 +12,8 @@ from infrastructure.nlp.context_judge import ContextJudge
 from infrastructure.nlp.amalgams import expand_amalgams
 from infrastructure.nlp.confusions import fix_lexical_confusions, resolve_final_confusions
 from infrastructure.nlp.grammar_rules import correct_grammar, normalize_modern_spelling
-from infrastructure.nlp.candidates import is_regular_verb_form, pick_candidate
+from infrastructure.nlp.candidates import dyslexic_cost, is_regular_verb_form, pick_candidate
+from infrastructure.nlp.segmentation import choose_split, join_split_words, split_candidates
 from infrastructure.nlp.alternatives import THRESHOLDS, select_alternatives
 from infrastructure.ml.t5_model import T5CorrectionModel, T5SpanishTokenizer
 from infrastructure.ml.guards import is_lexically_plausible_refinement, is_safe_refinement
@@ -249,6 +250,14 @@ class CorrectionPipeline:
         # porque la corrección son dos palabras (elegiría "ver").
         text_expanded = expand_amalgams(text)
 
+        # --- CAPA 0.1: palabras partidas ("en contró" -> "encontró", "a bajo de
+        # la cama" -> "abajo"); antes de las capas léxicas, que corregirían cada
+        # trozo por separado (contró -> contra). Ver segmentation.py.
+        freqs   = getattr(self._phonetic, "word_freqs", None) or {}
+        accents = getattr(self._phonetic, "accent_dict", None) or {}
+        text_expanded = join_split_words(text_expanded, freqs, accents, judge=self._judge,
+                                         phonetic_dict=getattr(self._phonetic, "phonetic_dict", None))
+
         # --- CAPA 0.2: r/rr entre palabras reales ("el pero ladra" -> "el
         # perro ladra"); antes de BETO, que con "el pero" haría "él pero".
         text_expanded = fix_lexical_confusions(text_expanded)
@@ -331,9 +340,19 @@ class CorrectionPipeline:
             # SymSpell: todos los candidatos a distancia <= 2, elegidos por coste
             # disléxico (candidates.pick_candidate) y no por distancia entera +
             # frecuencia: jugan -> juegan (no jugar), aruz -> arroz (no cruz).
+            # Palabras pegadas ("queno" -> "que no", "estabapreparando"): si la
+            # palabra se parte en palabras españolas, BETO decide entre la
+            # partición y la corrección de SymSpell ("quemo"). Ver segmentation.py.
             if not resolved:
                 suggestions = self._symspell.lookup(lower, Verbosity.ALL, max_edit_distance=2)
                 pick = pick_candidate(lower, [(s.term, s.count) for s in suggestions]) if suggestions else None
+                split = choose_split(
+                    words, i, split_candidates(lower, freqs, accents), pick, judge=self._judge,
+                    pick_cost=dyslexic_cost(lower, pick) if pick else None,
+                )
+                if split:
+                    result.append(pref + match_case(core, split) + suff)
+                    continue
                 if pick:
                     best = match_case(core, self._phonetic.restore_accent(pick))
 

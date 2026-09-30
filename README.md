@@ -205,7 +205,12 @@ python evaluate.py --dataset data/test_ninos.csv          --t5-dir models/t5_cor
 # Escritura infantil REAL (transcripciones publicadas de 1.º-6.º de primaria de Argentina, Uruguay y
 # Perú/Minedu; fuentes en el archivo). Línea base, no umbral: la segmentación (en contró, con tenta,
 # estabapreparando) queda en 2/30 y hay sustituciones por palabras reales (difraso->diera, mariado->marido).
-python evaluate.py --dataset data/test_ninos_reales.csv   --t5-dir models/t5_correction --development --out reports/ninos_reales.json     # 39/99, P 0,708 R 0,561 F0.5 0,673; controles 10/10
+python evaluate.py --dataset data/test_ninos_reales.csv   --t5-dir models/t5_correction --development --out reports/ninos_reales.json     # 39/99, P 0,708 R 0,561 F0.5 0,673; controles 10/10 (29-sep, antes de la segmentación)
+# Desde el 2026-09-30 se trabaja solo sobre la partición de DESARROLLO (scripts/split_ninos_reales.py,
+# semilla 2026, 61 filas; la RESERVA de 38 se evalúa una vez por ciclo y sin --show-fails).
+# Con la capa de segmentación (infrastructure/nlp/segmentation.py): 23/61 -> 29/61, P 0,740 -> 0,792,
+# F0.5 0,706 -> 0,765, segmentación 2/18 -> 8/18; el resto de sets sin cambios.
+python evaluate.py --dataset data/test_ninos_reales_dev.csv --t5-dir models/t5_correction --development --out reports/ninos_reales_dev.json  # 29/61, P 0,792 R 0,674 F0.5 0,765
 # Dos sets EXTERNOS con oraciones reales (COWS-L2H dev, universitarios de español L2, corrección de
 # un profesor; scripts/sample_cowsl2h.py, semilla 2026). No son la población objetivo: miden daño
 # (precisión) y sirven para comparar versiones. Placeholders *FIRST_NAME* -> *FIRSTNAME* cuentan
