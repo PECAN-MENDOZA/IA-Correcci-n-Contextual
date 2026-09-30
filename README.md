@@ -186,6 +186,12 @@ python train.py --epochs 3 --batch_size 2
 # 2026-09-19 (v4: sobrecorrección al subjuntivo tras "aunque", predicado plural, té/él).
 # Para regenerar los pares dirigidos: scripts/generate_agreement_data.py,
 # scripts/generate_subjunctive_data.py y scripts/generate_v4_data.py (semillas fijas).
+# OJO (2026-09-30): el training_pairs_agreement.csv de julio (dentro de v2-v4) tiene 873 pares
+# cuya frase CORRECTA lleva el género mal ("varias casas que encontramos eran buenos") o no
+# tiene sentido ("tres camisas tienen hambre"), minados con sujeto omitido (el singular también
+# era correcto) y un había->habían. El generador corregido escribe
+# data/training_pairs_agreement_v5.csv (0 pares con género mal); usarlo para v5. El de julio
+# se conserva solo para reproducir v2-v4.
 $env:CSV_PATH = 'data/training_pairs_v4.csv'
 python train_grammar_lora.py           # después, poner "lora_tag": "global-lora-v4" en models/grammar_lora/training-manifest.json
 python scripts/merge_grammar_lora.py
