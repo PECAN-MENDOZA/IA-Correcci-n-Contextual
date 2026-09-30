@@ -195,5 +195,27 @@ class TestGramaticaNueva(unittest.TestCase):
         self.assertEqual(correct_grammar("el equipo estan contentos"), "el equipo está contento")
 
 
+class TestAuxiliarHaber(unittest.TestCase):
+    """Reglas del 2026-09-30 (test_ninos_reales_dev)."""
+
+    def test_a_mas_participio_es_ha(self):
+        self.assertEqual(correct_grammar("muchas cosas raras a habido muchos asaltos"),
+                         "muchas cosas raras ha habido muchos asaltos")
+        self.assertEqual(correct_grammar("Karol a ido de paseo"), "Karol ha ido de paseo")
+
+    def test_a_preposicion_se_conserva(self):
+        for frase in ["fue a cuidado de su tía", "a pedido de su madre", "voy a nado",
+                      "le dio el libro a Conrado", "se fue a dormido"]:
+            self.assertEqual(correct_grammar(frase), frase)
+
+    def test_aya_mas_participio_es_haya(self):
+        self.assertEqual(correct_grammar("no sea que le aya pasado algo"),
+                         "no sea que le haya pasado algo")
+        self.assertEqual(correct_grammar("la aya cuidaba al niño"), "la aya cuidaba al niño")
+
+    def test_por_hay_ante_verbo_es_por_ahi(self):
+        self.assertEqual(correct_grammar("paseaba por hay voy a entrar"), "paseaba por ahí voy a entrar")
+
+
 if __name__ == "__main__":
     unittest.main()

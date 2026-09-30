@@ -202,5 +202,33 @@ class TestOrtografiaVigente(unittest.TestCase):
                          "él está solo en la habitación")
 
 
+class TestEscrituraInfantilReal(unittest.TestCase):
+    """Reglas del 2026-09-30 (test_ninos_reales_dev)."""
+
+    def test_aver_ante_participio_es_haber(self):
+        self.assertEqual(expand_amalgams("algo interesante de aver pasado a otro grado"),
+                         "algo interesante de haber pasado a otro grado")
+        self.assertEqual(expand_amalgams("aver si vienes"), "a ver si vienes")
+
+    def test_por_que_abriendo_oracion_es_interrogativo(self):
+        self.assertEqual(expand_amalgams("y por que tienes la nariz tan grande"),
+                         "y por qué tienes la nariz tan grande")
+        self.assertEqual(expand_amalgams("Por que no vienes"), "Por qué no vienes")
+
+    def test_por_que_en_mitad_de_frase_es_causal(self):
+        self.assertEqual(expand_amalgams("no entendía nada por que yo no quería"),
+                         "no entendía nada porque yo no quería")
+        self.assertEqual(expand_amalgams("¿Por qué lloras? Por que me caí."),
+                         "¿Por qué lloras? Porque me caí.")
+
+    def test_por_que_interrogativo_indirecto_o_sustantivo_se_conserva(self):
+        for frase in ["no sé por que lloras", "el por que de las cosas"]:
+            self.assertEqual(expand_amalgams(frase), frase)
+
+    def test_monosilabos_pierden_la_tilde_aunque_la_escriba_el_alumno(self):
+        self.assertEqual(normalize_modern_spelling("se fué y me dió", {"fué", "dió"}), "se fue y me dio")
+        self.assertEqual(normalize_modern_spelling("sólo quiero", {"sólo"}), "sólo quiero")
+
+
 if __name__ == "__main__":
     unittest.main()

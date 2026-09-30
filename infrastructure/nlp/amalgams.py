@@ -10,7 +10,9 @@ Se ejecuta antes que todo lo demás (capa 0) porque cambia la tokenización.
 Reglas (cada una con la condición mínima de contexto que la hace segura y el
 ejemplo de alumno que la motiva):
 
-  1. `aver`   -> `a ver`     — "aver" no existe en español: incondicional.
+  1. `aver`   -> `a ver`     — "aver" no existe en español: incondicional,
+                                salvo ante participio: `aver pasado` ->
+                                `haber pasado` (el infinitivo de haber).
   2. `haber si` -> `a ver si` — "haber" + "si" solo es legítimo tras un modal
                                 ("puede haber si quieres"); si no, es la
                                 amalgama de "a ver".
@@ -21,6 +23,12 @@ ejemplo de alumno que la motiva):
                                 sino aquello", "sino que") se conserva.
   5. `porque` -> `por qué`   — solo cuando abre una interrogativa
                                 ("porque no vienes?"); el causal se conserva.
+     `por que` -> `por qué`   — abriendo la oración (tras `y`/`pero` como mucho):
+                                "y por que tienes la nariz tan grande".
+     `por que` -> `porque`    — en mitad de la frase ante sujeto, negación,
+                                clítico o determinante, salvo tras un verbo
+                                de pregunta o saber ("no sé por qué"):
+                                "no entendía nada por que yo no quería".
   6. Locuciones pegadas que no existen como palabra (`porfavor`, `enserio`,
      `aveces`, `derrepente`, `talvez`, `osea`, `nose`...): incondicional.
   7. `con migo/tigo/sigo` -> `conmigo/contigo/consigo`: incondicional.
@@ -99,6 +107,20 @@ _HABER_EXIST_NEXT = {
     "clases", "clase", "examen", "fiesta", "lluvia", "tiempo", "problemas",
 }
 _PARTICIPLE_RE = re.compile(r"(ado|ados|ada|adas|ido|idos|ida|idas)$", re.IGNORECASE)
+# 5b. "por que" causal: lo que sigue abre una oración (sujeto, negación,
+#     clítico, determinante); lo que precede no pide interrogativa indirecta.
+_CAUSAL_NEXT = {
+    "yo", "tu", "el", "ella", "nosotros", "nosotras", "ellos", "ellas", "usted",
+    "ustedes", "no", "me", "te", "se", "le", "les", "lo", "la", "los", "las", "nos",
+    "mi", "mis", "su", "sus", "un", "una", "ya", "estaba", "era", "tenia", "habia", "hay",
+}
+_ASK_PREV = {
+    "pregunto", "pregunta", "pregunte", "pregunto", "preguntaba", "preguntar", "preguntan",
+    "se", "sabe", "sabes", "saber", "sabia", "sabemos", "saben", "entiendo", "entiende",
+    "entender", "entendia", "explica", "explico", "explicar", "dime", "digas", "averiguar",
+    "el", "un", "su", "del", "al",           # "el por qué" (sustantivo)
+}
+_CLAUSE_OPENERS = {"y", "e", "pero", "entonces"}
 _IRREGULAR_PARTICIPLES = {
     "hecho", "dicho", "visto", "puesto", "vuelto", "escrito", "roto", "abierto",
     "muerto", "cubierto", "descubierto", "resuelto", "impreso", "frito", "habido",
@@ -168,8 +190,10 @@ def expand_amalgams(text: str) -> str:
         nxt = _norm(tokens[i + 1]) if i + 1 < len(tokens) else ""
         replacement = None
 
-        # 1. "aver si vienes" -> "a ver si vienes"
-        if low == "aver":
+        # 1. "aver pasado" -> "haber pasado"; "aver si vienes" -> "a ver si vienes"
+        if low == "aver" and _is_participle(nxt):
+            replacement = "haber"
+        elif low == "aver":
             replacement = "a ver"
 
         # 2. "haber si vienes" -> "a ver si vienes" (no tras modal, no + participio)
@@ -205,9 +229,26 @@ def expand_amalgams(text: str) -> str:
         elif low == "porque" and opens_sentence and ("?" in text or "¿" in text):
             replacement = "por qué"
 
+        # 5b. "por que": interrogativo abriendo la oración, causal en mitad.
+        elif low == "por" and nxt == "que" and not suff and i + 1 < len(tokens):
+            answers_question = i > 0 and tokens[i - 1].endswith("?")   # "¿Por qué...? Por que me caí"
+            opens_clause = not answers_question and (opens_sentence or (
+                i == 1 and prev in _CLAUSE_OPENERS) or (
+                i >= 1 and prev in _CLAUSE_OPENERS and (i == 1 or tokens[i - 2].endswith(_SENTENCE_END))))
+            after = _norm(tokens[i + 2]) if i + 2 < len(tokens) else ""
+            que_pref, que_core, que_suff = _split(tokens[i + 1])
+            if opens_clause:
+                out.append(pref + core + suff)
+                tokens[i + 1] = que_pref + "qué" + que_suff
+                continue
+            if after in _CAUSAL_NEXT and prev not in _ASK_PREV and not que_suff:
+                out.append(pref + _match_case(core, "porque") + suff)
+                tokens[i + 1] = ""
+                continue
+
         if replacement is not None:
             out.append(pref + _match_case(core, replacement) + suff)
-        else:
+        elif token:
             out.append(token)
 
     return " ".join(out)

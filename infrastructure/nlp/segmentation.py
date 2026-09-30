@@ -274,6 +274,11 @@ def choose_split(tokens: list, i: int, splits: list, pick: str | None, judge=Non
         return None
     pref, core, suff = _split_punct(tokens[i])
     options = [" ".join(s) for s in splits]
+    # La corrección de una palabra es uno de los trozos (`tecuento` -> `cuento`
+    # frente a `te cuento`): borra letras que forman palabra; gana la partición.
+    for s, o in zip(splits, options):
+        if pick is not None and pick.lower() in s:
+            return o
     if judge is None:
         if pick is None or (pick_cost is not None and pick_cost > SPLIT_MARGIN):
             return options[0]
