@@ -61,7 +61,7 @@ def _indel_cost(ch: str, neighbor: str) -> float:
     s = _strip(ch)
     if s == "h":
         return _COST_H
-    if s == "y":
+    if s == "y" and _strip(neighbor) in _VOWELS:
         return _COST_YEISMO
     if neighbor and _strip(neighbor) == s:
         return _COST_DOUBLE

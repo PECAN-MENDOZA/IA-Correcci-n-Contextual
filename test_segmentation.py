@@ -129,5 +129,27 @@ class TestSplit(unittest.TestCase):
         self.assertIsNone(seg.choose_split(tokens, 2, [["que", "no"]], "quemo", FakeJudge("quemo,")))
 
 
+class TestAuditoriaSegmentacion(unittest.TestCase):
+    """Contraejemplos de la auditoría B (2026-09-30)."""
+
+    def test_nombres_siglas_y_as_no_se_unen(self):
+        freqs = dict(FREQS, unas=100_000, ara=5_000, mari=2_000, depto=500, as_=0)
+        for text in ["Tengo un as de corazones", "Visité a Ra ayer", "Hablé con Ma Ri ayer",
+                     "Revisé el sitio de PTO"]:
+            self.assertEqual(seg.join_split_words(text, freqs, ACCENTS), text)
+
+    def test_prefijo_con_palabra_funcional_si_se_parte(self):
+        freqs = dict(FREQS, sobre=300_000, mesa=60_000, entrenamiento=5_000)
+        self.assertEqual(seg.split_candidates("sobrelamesa", freqs, {}), [["sobre", "la", "mesa"]])
+        self.assertEqual(seg.split_candidates("sobreentrenamiento", freqs, {}), [])
+
+    def test_fallo_de_beto_no_tumba_la_peticion(self):
+        class Boom:
+            def score_candidates(self, *a, **k):
+                raise RuntimeError("fallo BETO")
+        self.assertEqual(join("lo metió a bajo de la cama", Boom()), "lo metió a bajo de la cama")
+        self.assertIsNone(seg.choose_split(["dijo", "queno"], 1, [["que", "no"]], "quemo", judge=Boom()))
+
+
 if __name__ == "__main__":
     unittest.main()

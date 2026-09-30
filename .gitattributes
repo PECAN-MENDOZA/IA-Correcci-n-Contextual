@@ -5,3 +5,5 @@
 test_fixtures/sentence_tests/*.csv -text
 data/eval_gold.csv -text
 data/ambiguity_calibration.csv -text
+# Sets de evaluación (datasetSha256 de evaluate.py): igual, byte a byte (auditoría A, 30-sep).
+data/test_*.csv -text

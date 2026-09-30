@@ -285,13 +285,23 @@ _A_PARTICIPLE_NOUNS = {
     "nado",
 }
 _A_PARTICIPLE_MASC = re.compile(r"(ado|ido)$", re.IGNORECASE)
-# Tras un verbo de movimiento "a" es preposición ("fue a cuidado de...").
-_MOTION_PREV = {
-    "voy", "vas", "va", "vamos", "van", "fui", "fue", "fuimos", "fueron", "iba", "iban",
-    "ir", "llego", "llegue", "llegamos", "llegaron", "vino", "vine", "volvio", "volvi",
-    "sali", "salio", "entro", "entre", "paso", "subio", "bajo",
+# Participios que nunca siguen a la preposición "a": "a" delante siempre es "ha".
+_A_ALWAYS_AUX = {"habido", "sido", "ido"}
+# Con cualquier otro participio, "a" solo es "ha" en un contexto positivo de
+# auxiliar: tras pronombre átono, negación/adverbio, relativo o sujeto
+# pronominal ("me a dicho", "no a venido", "lo que a pasado", "ella a
+# llegado"), al abrir la frase o tras un nombre propio. Tras un verbo o
+# sustantivo que rige "a" ("huele a quemado", "sabe a quemado") es
+# preposición (auditoría B, 30-sep).
+_HA_PREV = {
+    "me", "te", "se", "le", "les", "lo", "la", "los", "las", "nos", "no", "ya", "nunca",
+    "siempre", "tambien", "tampoco", "todavia", "aun", "que", "quien", "el", "ella",
+    "usted", "eso", "esto", "nadie", "alguien", "todo", "nada",
 }
+# "aya" (sustantivo válido: "el aya") solo es "haya" tras átono, "que" o "no"
+# y ante participio masculino: "le aya pasado", "que aya llegado".
 _HAYA_MISSPELLINGS = {"aya"}
+_HAYA_PREV = {"me", "te", "se", "le", "les", "lo", "la", "los", "las", "nos", "que", "no", "ya"}
 _AHI_PREP_NEXT = {"que", "mismo", "nomas", "no"}
 
 # 12. Sufijos siempre femeninos (-ción, -sión, -dad, -tad, -tud, -umbre) y la
@@ -336,6 +346,46 @@ def _singularize(word: str) -> str:
     if re.search(r"es$", w, re.IGNORECASE):
         return w[:-2]                             # papeles -> papel
     return w
+
+
+def _auxiliary(tokens: list, i: int) -> str | None:
+    """Reglas 6 y 14 sobre tokens[i]; devuelve el token corregido o None.
+      6. "e" + participio -> "he" ("e comido" -> "he comido").
+     14. "a" + participio -> "ha" ("a habido", "me a dicho", "Karol a ido") y
+         "aya" + participio -> "haya" ("le aya pasado"). Solo participio
+         masculino singular (el de los tiempos compuestos), en contexto de
+         auxiliar (ver _HA_PREV) y nunca tras puntuación en "a"."""
+    tok = tokens[i]
+    low = _norm(tok)
+    nxt_tok = tokens[i + 1] if i + 1 < len(tokens) else ""
+    nxt = _norm(nxt_tok)
+    prev = _norm(tokens[i - 1]) if i > 0 else ""
+    if low == "e" and _is_verb_chain(nxt_tok):
+        return _reword(tok, "he")
+    prev_is_name = i > 0 and tokens[i - 1][:1].isupper() and _clean(tokens[i - 1]) == prev
+    if (low == "a" and tok == tok.rstrip(".,;:!?") and nxt_tok[:1].islower()
+            and (nxt in _A_ALWAYS_AUX
+                 or ((prev in _HA_PREV
+                      or ((i == 0 or prev_is_name) and nxt not in _A_PARTICIPLE_NOUNS))
+                     and (_A_PARTICIPLE_MASC.search(nxt) or nxt in _IRREGULAR_PARTICIPLES)))):
+        return _reword(tok, "ha")
+    if (low in _HAYA_MISSPELLINGS and prev in _HAYA_PREV
+            and (_A_PARTICIPLE_MASC.search(nxt) or nxt in _IRREGULAR_PARTICIPLES)):
+        return _reword(tok, "haya")
+    return None
+
+
+def correct_auxiliaries(text: str) -> str:
+    """Solo las reglas de auxiliares (6 y 14). El pipeline las reaplica a los
+    beams de T5, que a veces deshace "ha ido" -> "a ido" (auditoría B,
+    30-sep); el resto de reglas no, porque la de colectivos confunde "los
+    jugadores del equipo ganaron" con un colectivo y desharía la concordancia."""
+    tokens = text.split()
+    for i in range(len(tokens)):
+        auxiliary = _auxiliary(tokens, i)
+        if auxiliary is not None:
+            tokens[i] = auxiliary
+    return " ".join(tokens)
 
 
 def correct_grammar(text: str) -> str:
@@ -408,21 +458,10 @@ def correct_grammar(text: str) -> str:
             tokens[i] = _reword(tok, "sé")
             continue
 
-        # 6. he (auxiliar): "e" + participio -> "he" ("e comido" -> "he comido")
-        if low == "e" and _is_verb_chain(next_content(i)):
-            tokens[i] = _reword(tok, "he")
-            continue
-
-        # 14. ha / haya (auxiliar): "a habido" -> "ha habido", "le aya pasado"
-        #     -> "le haya pasado". Solo participio masculino singular (el de
-        #     los tiempos compuestos) y nunca tras puntuación en "a".
-        if (low == "a" and tok == tok.rstrip(".,;:!?") and prev not in _MOTION_PREV
-                and next_content(i)[:1].islower() and nxt not in _A_PARTICIPLE_NOUNS
-                and (_A_PARTICIPLE_MASC.search(nxt) or nxt in _IRREGULAR_PARTICIPLES)):
-            tokens[i] = _reword(tok, "ha")
-            continue
-        if low in _HAYA_MISSPELLINGS and (_PARTICIPLE_RE.search(nxt) or nxt in _IRREGULAR_PARTICIPLES):
-            tokens[i] = _reword(tok, "haya")
+        # 6 y 14. Auxiliares he / ha / haya (ver _auxiliary).
+        auxiliary = _auxiliary(tokens, i)
+        if auxiliary is not None:
+            tokens[i] = auxiliary
             continue
 
         # 7. él (pronombre) vs el (artículo): "el" + verbo -> "él"

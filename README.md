@@ -219,6 +219,14 @@ python evaluate.py --dataset data/test_ninos_reales.csv   --t5-dir models/t5_cor
 # tilde mal puesta (vínieron), enclíticos -rcelo, aver+participio, por que causal/interrogativo, por hay,
 # a/aya + participio, fué/dió: 30 -> 37/61, P 0,890, F0.5 0,861; internos sin cambios.
 python evaluate.py --dataset data/test_ninos_reales_dev.csv --t5-dir models/t5_correction --development --out reports/ninos_reales_dev.json  # 37/61, P 0,890 R 0,762 F0.5 0,861
+# Auditoría externa (30-sep, informes en .local/auditoria/, fuera de git): las cifras de ninos_reales_dev
+# son de DESARROLLO (se ajustó mirando esas 61 frases) y la reserva de 38 es post hoc (se vio antes de
+# partir): no son evidencia confirmatoria. Arreglos de código de la auditoría sin cambio de métricas:
+# T5 ya no deshace "ha ido" (se reaplican los auxiliares), "a"/"aya" + participio solo en contexto de
+# auxiliar ("huele a quemado", "el aya vestida" se conservan), "por que" final/interrogativa indirecta,
+# nombres propios al inicio (Cacachi, Toquepala), sin uniones con nombres/siglas/"as", guarda del T5
+# por raíz y tiempo verbal (casa->cosa, es->fue se revierten), "sobre la mesa", "vérselo", fallback si
+# BETO falla. data/test_*.csv van byte a byte (.gitattributes) para que datasetSha256 no dependa del checkout.
 # Dos sets EXTERNOS con oraciones reales (COWS-L2H dev, universitarios de español L2, corrección de
 # un profesor; scripts/sample_cowsl2h.py, semilla 2026). No son la población objetivo: miden daño
 # (precisión) y sirven para comparar versiones. Placeholders *FIRST_NAME* -> *FIRSTNAME* cuentan

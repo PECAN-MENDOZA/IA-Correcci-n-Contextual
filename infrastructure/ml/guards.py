@@ -216,20 +216,37 @@ def is_lexically_plausible_refinement(base_text: str, candidate: str, min_simila
 # los buenos son flexiones de la misma palabra (fue→fueron, viene→venga,
 # feliz→felices), homófonos (ves→vez, a→ha) o irregulares de ser/ir/haber.
 
-# Formas irregulares que el T5 intercambia legítimamente (claves léxicas).
+# Formas irregulares que el T5 intercambia legítimamente (claves léxicas),
+# agrupadas por lema Y TIEMPO: cambiar persona, número o modo dentro del mismo
+# tiempo es concordancia (es→son, eres→seas, tenía→tuviera); cambiar de tiempo
+# (es→fue) cambia lo que el niño dijo y se revierte (auditoría B, 30-sep).
 _IRREGULAR_FAMILIES = [
-    set("ser es son soy eres somos sea seas sean seamos era eras eran eramos fue fueron fui "
-        "fuiste fuimos fuera fueras fueran sido siendo".split()),
-    set("ir va van vas voy vamos vaya vayas vayan vayamos iba ibas iban ibamos fue fueron fui "
-        "fuiste fuimos fuera fueran yendo".split()),
-    set("haber ha han has he hay hemos haya hayas hayan habia habian hubo hubiera hubieran".split()),
+    set("es son soy eres somos sea seas sean seamos".split()),                       # ser presente
+    set("era eras eran eramos fuera fueras fueran".split()),                         # ser imperfecto
+    set("fue fueron fui fuiste fuimos".split()),                                     # ser/ir pretérito
+    set("ser sido siendo".split()),
+    set("va van vas voy vamos vaya vayas vayan vayamos".split()),                    # ir presente
+    set("iba ibas iban ibamos fuera fueras fueran".split()),                         # ir imperfecto
+    set("ha han has he hemos hay haya hayas hayan".split()),                         # haber presente
+    set("habia habian habias hubiera hubieran hubieras".split()),                    # haber imperfecto
+    set("sabe saben sabes se sepa sepas sepan".split()),                             # saber presente
+    set("sabia sabian supiera supieran".split()),                                    # saber imperfecto
+    set("tiene tienen tienes tengo tenga tengas tengan".split()),                    # tener presente
+    set("tenia tenian tenias tuviera tuvieran tuvieras".split()),                    # tener imperfecto
+    # Determinantes, posesivos y demostrativos: solo género y número.
+    set("el la los las lo".split()), set("un una unos unas".split()),
+    set("mi mis".split()), set("tu tus".split()), set("su sus".split()),
+    set("este esta estos estas".split()), set("ese esa esos esas".split()),
 ]
 # Los pronombres átonos (se->le) NO van como familia: medido el 2026-09-30, no
 # ganan ningún acierto y añaden un falso positivo en COWS-L2H.
-# Parecido mínimo (SequenceMatcher) de un reemplazo de palabra válida con la
-# misma inicial, y de uno de palabra fuera del diccionario (una falta que el T5
-# arregla: dicieron→dijeron 0,80; sanguche→viaje 0,31 no).
+# Parecido mínimo (SequenceMatcher) de un reemplazo de palabra válida con el
+# mismo comienzo (SAME_WORD_PREFIX letras: la flexión cambia el final, no el
+# principio; casa→cosa, caza→cosa no), y de uno de palabra fuera del
+# diccionario (una falta que el T5 arregla: dicieron→dijeron 0,80;
+# sanguche→viaje 0,31 no).
 SAME_WORD_MIN_SIMILARITY = 0.5
+SAME_WORD_PREFIX = 2
 NEAR_IDENTICAL_SIMILARITY = 0.85     # special→especial 0,93; madre→padre 0,80 no
 UNKNOWN_WORD_MIN_SIMILARITY = 0.6
 # tele→televisión: misma raíz + >= 4 letras nuevas es otra palabra, no una
@@ -251,7 +268,12 @@ def is_same_word_variant(word_a: str, word_b: str, sound=None) -> bool:
     ratio = difflib.SequenceMatcher(None, word_a, word_b, autojunk=False).ratio()
     if ratio >= NEAR_IDENTICAL_SIMILARITY:
         return True
-    return word_a[:1] == word_b[:1] and ratio >= SAME_WORD_MIN_SIMILARITY
+    # Raíz con diptongo reducido (vienes/vengas, puede/podamos); en palabras
+    # de <= 3 letras basta la inicial (das/des, mi/mis).
+    stem_a = word_a.replace("ie", "e").replace("ue", "o")
+    stem_b = word_b.replace("ie", "e").replace("ue", "o")
+    prefix = 1 if min(len(word_a), len(word_b)) <= 3 else SAME_WORD_PREFIX
+    return stem_a[:prefix] == stem_b[:prefix] and ratio >= SAME_WORD_MIN_SIMILARITY
 
 
 def revert_lexical_substitutions(base_text: str, candidate: str, is_known_word, sound=None) -> str:

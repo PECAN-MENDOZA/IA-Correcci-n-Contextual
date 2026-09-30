@@ -115,11 +115,23 @@ _CAUSAL_NEXT = {
     "mi", "mis", "su", "sus", "un", "una", "ya", "estaba", "era", "tenia", "habia", "hay",
 }
 _ASK_PREV = {
-    "pregunto", "pregunta", "pregunte", "pregunto", "preguntaba", "preguntar", "preguntan",
-    "se", "sabe", "sabes", "saber", "sabia", "sabemos", "saben", "entiendo", "entiende",
-    "entender", "entendia", "explica", "explico", "explicar", "dime", "digas", "averiguar",
-    "el", "un", "su", "del", "al",           # "el por qué" (sustantivo)
+    "se", "el", "un", "su", "del", "al",     # "no sé por qué"; "el por qué" (sustantivo)
 }
+# Raíces de verbos que introducen interrogativa indirecta ("no recuerdo por qué
+# lloraba", "averigua por qué"): tras ellos "por que" nunca es causal.
+_ASK_STEMS = (
+    "pregunt", "sab", "sup", "entend", "entiend", "explic", "averigu", "recuerd", "record",
+    "olvid", "descubr", "desconoc", "imagin", "adivin", "comprend", "ignor", "dime", "dij",
+    "decir", "digas", "pens", "pienso", "piens", "entiendo",
+)
+# "por que" + subjuntivo imperfecto es finalidad ("luchó por que sus hijos
+# pudieran estudiar" = para que): se conserva.
+_SUBJ_IMPERFECT_RE = re.compile(r"(ara|aras|aran|aramos|iera|ieras|ieran|ieramos|ase|asen|iese|iesen)$")
+# Tras "por que" al abrir la frase, una forma en -s que no es determinante ni
+# pronombre suele ser el verbo en 2.ª persona de una pregunta ("por que tienes
+# la nariz tan grande").
+_NOT_SECOND_PERSON = {"los", "las", "sus", "mis", "tus", "unos", "unas", "nos", "les",
+                      "ellos", "ellas", "nosotros", "ustedes", "mas", "pues", "tres", "dos"}
 _CLAUSE_OPENERS = {"y", "e", "pero", "entonces"}
 _IRREGULAR_PARTICIPLES = {
     "hecho", "dicho", "visto", "puesto", "vuelto", "escrito", "roto", "abierto",
@@ -151,6 +163,22 @@ def _match_case(original: str, replacement: str) -> str:
 def _is_participle(word: str) -> bool:
     w = _norm(word)
     return bool(w in _IRREGULAR_PARTICIPLES or _PARTICIPLE_RE.search(w))
+
+
+def _question_clause(tokens: list, i: int) -> bool:
+    """True si la cláusula que abre tokens[i] es una pregunta: empieza por "¿" o
+    termina en "?" sin que antes se abra otra ("Porque llueve me mojo,
+    ¿verdad?" no: el "?" es de la coletilla)."""
+    if tokens[i].startswith("¿"):
+        return True
+    for tok in tokens[i + 1:]:
+        if "¿" in tok:
+            return False
+        if tok.endswith("?"):
+            return True
+        if tok.endswith((".", "!", ";")):
+            return False
+    return False
 
 
 def expand_amalgams(text: str) -> str:
@@ -226,7 +254,7 @@ def expand_amalgams(text: str) -> str:
 
         # 5. "porque no vienes?" -> "por qué no vienes?" (solo si abre la
         #    interrogativa; el causal "no vine porque estaba enfermo" se conserva)
-        elif low == "porque" and opens_sentence and ("?" in text or "¿" in text):
+        elif low == "porque" and opens_sentence and _question_clause(tokens, i):
             replacement = "por qué"
 
         # 5b. "por que": interrogativo abriendo la oración, causal en mitad.
@@ -237,11 +265,15 @@ def expand_amalgams(text: str) -> str:
                 i >= 1 and prev in _CLAUSE_OPENERS and (i == 1 or tokens[i - 2].endswith(_SENTENCE_END))))
             after = _norm(tokens[i + 2]) if i + 2 < len(tokens) else ""
             que_pref, que_core, que_suff = _split(tokens[i + 1])
-            if opens_clause:
+            second_person = (len(after) > 3 and after.endswith("s") and after not in _NOT_SECOND_PERSON
+                             and after not in _CAUSAL_NEXT)
+            if opens_clause and (_question_clause(tokens, i) or second_person):
                 out.append(pref + core + suff)
                 tokens[i + 1] = que_pref + "qué" + que_suff
                 continue
-            if after in _CAUSAL_NEXT and prev not in _ASK_PREV and not que_suff:
+            final_clause = any(_SUBJ_IMPERFECT_RE.search(_norm(t)) for t in tokens[i + 2:i + 6])
+            if (not opens_clause and after in _CAUSAL_NEXT and prev not in _ASK_PREV
+                    and not prev.startswith(_ASK_STEMS) and not final_clause and not que_suff):
                 out.append(pref + _match_case(core, "porque") + suff)
                 tokens[i + 1] = ""
                 continue
