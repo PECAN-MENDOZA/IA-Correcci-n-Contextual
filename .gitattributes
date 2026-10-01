@@ -7,3 +7,6 @@ data/eval_gold.csv -text
 data/ambiguity_calibration.csv -text
 # Sets de evaluación (datasetSha256 de evaluate.py): igual, byte a byte (auditoría A, 30-sep).
 data/test_*.csv -text
+
+# Scripts y unidades de systemd que se instalan en la VM: siempre LF.
+deploy/* text eol=lf

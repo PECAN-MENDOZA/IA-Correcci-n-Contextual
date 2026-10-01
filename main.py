@@ -27,7 +27,9 @@ Variables de entorno:
 Variables heredadas del lanzador (ROLE, ENABLE_USER_LORA, REDIS_URL) se
 ignoran: ya no existen roles, colas ni adaptadores por alumno.
 """
+import faulthandler
 import os
+import signal
 import sys
 from pathlib import Path
 
@@ -53,6 +55,14 @@ if sys.platform.startswith("win"):
     os.environ["WORLD_SIZE"] = "1"
     os.environ["RANK"] = "0"
     os.environ["LOCAL_RANK"] = "0"
+
+# Diagnóstico de cuelgues: `kill -USR2 <pid del worker>` escribe en stderr
+# (docker logs) la pila de TODOS los hilos. El vigilante de la VM
+# (deploy/ia-watchdog.sh) lo hace antes de reiniciar el contenedor. El 1-oct
+# la IA quedó colgada sin ningún rastro (gunicorn gthread no mata hilos
+# trabados). USR2 lo usa solo el maestro de gunicorn, no el worker.
+if hasattr(signal, "SIGUSR2"):
+    faulthandler.register(signal.SIGUSR2, all_threads=True)
 
 T5_MODEL_DIR = "./models/t5_correction"
 

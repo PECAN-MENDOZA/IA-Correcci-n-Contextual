@@ -40,4 +40,6 @@ ENV PYTHONUNBUFFERED=1
 # es lo que necesita la desambiguación con BETO. Con --workers 1 no hay coste
 # de memoria extra. Se usa main:app (la app a nivel de módulo) para cargar el
 # modelo una sola vez y no dos.
-CMD exec gunicorn --bind :$PORT --workers 1 --threads 4 --timeout 120 "main:app"
+# Registro de cada petición con su duración en ms (%(M)s): el 1-oct la IA se
+# colgó y sin él no había forma de saber qué petición fue la última.
+CMD exec gunicorn --bind :$PORT --workers 1 --threads 4 --timeout 120 --access-logfile - --access-logformat '%(t)s "%(r)s" %(s)s %(M)sms' "main:app"

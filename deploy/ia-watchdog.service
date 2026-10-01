@@ -1,0 +1,7 @@
+[Unit]
+Description=Vigilante de la IA: sonda de corrección y reinicio si está colgada
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/ia-watchdog.sh

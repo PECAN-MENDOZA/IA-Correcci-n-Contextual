@@ -1,0 +1,10 @@
+[Unit]
+Description=Lanza el vigilante de la IA cada minuto
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=1min
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

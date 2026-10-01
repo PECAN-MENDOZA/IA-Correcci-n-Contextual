@@ -24,6 +24,12 @@ services:
   api:
     build: .
     restart: unless-stopped
+    # Con el registro de peticiones (Dockerfile) los logs crecen: se rotan.
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
     environment:
       PORT: "8080"
       # MODEL_VERSION: "beto-t5-base@04c598db+global-lora-v1@19ec2e4c"  # opcional; obligatoria si ENABLE_T5=false
