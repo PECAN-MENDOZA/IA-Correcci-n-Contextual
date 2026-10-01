@@ -8,5 +8,8 @@ data/ambiguity_calibration.csv -text
 # Sets de evaluación (datasetSha256 de evaluate.py): igual, byte a byte (auditoría A, 30-sep).
 data/test_*.csv -text
 
-# Scripts y unidades de systemd que se instalan en la VM: siempre LF.
+# Lo que se instala o ejecuta en la VM (scripts, systemd, nginx, compose): siempre LF.
 deploy/* text eol=lf
+nginx.conf text eol=lf
+docker-compose*.yml text eol=lf
+Dockerfile text eol=lf
