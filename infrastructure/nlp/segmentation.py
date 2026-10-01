@@ -162,8 +162,14 @@ def _joined_form(a: str, b: str, freqs: dict, accent_dict: dict) -> str | None:
 
 def _is_misspelled_word(piece: str, phonetic_dict: dict) -> bool:
     """`boy` (voy), `ise` (hice): suena como una palabra real de 3+ letras, así que
-    es una falta de ortografía y no el trozo de una palabra partida."""
-    return len(piece) >= 3 and to_phonetic(piece.lower()) in phonetic_dict
+    es una falta de ortografía y no el trozo de una palabra partida. De dos
+    letras, solo si es la palabra sin la h muda: `oy e echo` es `hoy he hecho`,
+    no `oye echo`."""
+    key = to_phonetic(piece.lower())
+    if len(piece) >= 3:
+        return key in phonetic_dict
+    word = strip_accents(phonetic_dict.get(key, ""))
+    return len(piece) == 2 and word == "h" + strip_accents(piece.lower())
 
 
 def join_split_words(text: str, freqs: dict, accent_dict: dict, judge=None,
@@ -217,21 +223,41 @@ def join_split_words(text: str, freqs: dict, accent_dict: dict, judge=None,
 
 
 def split_candidates(word: str, freqs: dict, accent_dict: dict,
-                     k: int = SPLIT_CANDIDATES) -> list[list[str]]:
+                     k: int = SPLIT_CANDIDATES, phonetic_dict: dict | None = None) -> list[list[str]]:
     """Hasta `k` particiones de `word` en 2..MAX_SPLIT_PIECES palabras españolas,
-    de mayor a menor probabilidad unigrama (Norvig)."""
+    de mayor a menor probabilidad unigrama (Norvig). Si no hay ninguna y se da
+    `phonetic_dict`, un trozo de 3+ letras puede ser una palabra funcional
+    escrita como suena (`porezo` -> `por eso`; SymSpell daba `porrazo`)."""
     w = word.lower()
     if len(w) < 4:
         return []
+    found = _walk_splits(w, freqs, accent_dict, None)
+    if not found and phonetic_dict:
+        found = _walk_splits(w, freqs, accent_dict, phonetic_dict)
+    if not found:
+        return []
+    # Solo las particiones con menos trozos (`poreso` -> `por eso`, no `por es o`).
+    fewest = min(len(p) for _, p in found)
+    found = [(lp, p) for lp, p in found if len(p) == fewest]
+    found.sort(key=lambda lp: -lp[0])
+    return [p for _, p in found[:k]]
+
+
+def _walk_splits(w: str, freqs: dict, accent_dict: dict, phonetic_dict: dict | None) -> list:
+    """[(log-prob, trozos)] de las particiones plausibles de `w`."""
     compound = _looks_compound(w)
     total = sum(freqs.values()) or 1
 
     def piece(p: str) -> str | None:
         if len(p) == 1:
             return p if p in _SPLIT_SINGLE else None
-        if not is_spanish_word(p, freqs, accent_dict):
-            return None
-        return lookup(p, freqs, accent_dict) or p
+        if is_spanish_word(p, freqs, accent_dict):
+            return lookup(p, freqs, accent_dict) or p
+        if phonetic_dict and len(p) >= 3:
+            sound = phonetic_dict.get(to_phonetic(p))
+            if sound in _SPLIT_SHORT_TAIL:
+                return sound
+        return None
 
     found = []
 
@@ -254,13 +280,7 @@ def split_candidates(word: str, freqs: dict, accent_dict: dict,
         # viene una palabra funcional (sobre la mesa, contra la pared).
         found = [(lp, p) for lp, p in found
                  if len(p) >= 3 and p[0] in _COMPOUND_PREFIXES and p[1] in _FUNCTION]
-    if not found:
-        return []
-    # Solo las particiones con menos trozos (`poreso` -> `por eso`, no `por es o`).
-    fewest = min(len(p) for _, p in found)
-    found = [(lp, p) for lp, p in found if len(p) == fewest]
-    found.sort(key=lambda lp: -lp[0])
-    return [p for _, p in found[:k]]
+    return found
 
 
 def _plausible_split(pieces: list) -> bool:

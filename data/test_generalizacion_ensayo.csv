@@ -1,0 +1,47 @@
+# Sonda de GENERALIZACIÓN de los arreglos del 2026-10-01 (categoria|entrada|esperado), tras el ensayo
+# del piloto 5.º B. ESCRITA POR EL DESARROLLADOR conociendo las reglas (sesgo declarado): sirve para
+# comprobar que cada arreglo funciona en oraciones DISTINTAS a las 8 del piloto (otros nombres,
+# lugares, verbos y amalgamas) y que no daña los casos parecidos que deben quedar igual (controles).
+# Clases: pret3 (sujeto de 3.ª persona + verbo en -o), nombre (léxico de nombres propios), h2
+# (trozo de dos letras sin h), echo (echo -> hecho), amalgama (por sonido y sobretodo), split
+# (partición con palabra funcional escrita como suena), fonetica (tilde fuera del tope fonético).
+categoria|entrada|esperado
+pret3|mi tio trabajo todo el dia en la chacra|mi tío trabajó todo el día en la chacra
+pret3|la profesora nos ayudo con la tarea|la profesora nos ayudó con la tarea
+pret3|el perro salto la reja y se escapo|el perro saltó la reja y se escapó
+pret3|mi papa compro pan en la panaderia|mi papá compró pan en la panadería
+pret3|la niña dibujo una casa con su hermano|la niña dibujó una casa con su hermano
+pret3|derepente mi gato salto de la mesa|de repente mi gato saltó de la mesa
+pret3|la niña limpio su cuarto|la niña limpió su cuarto
+nombre|mi prima se mudo a uaraz el año pasado|mi prima se mudó a Huaraz el año pasado
+nombre|mi abuelo nacio en uanuco|mi abuelo nació en Huánuco
+nombre|diego llego tarde al colegio|Diego llegó tarde al colegio
+nombre|ximena canto en la actuacion|Ximena cantó en la actuación
+nombre|fuimos de paseo a uancavelica|fuimos de paseo a Huancavelica
+nombre|mi amiga camila vive en chiclayo|mi amiga Camila vive en Chiclayo
+nombre|santiago y mateo juegan en el recreo|Santiago y Mateo juegan en el recreo
+nombre|luis encontro su pelota debajo del carro|Luis encontró su pelota debajo del carro
+h2|oy e comido arroz con pollo|hoy he comido arroz con pollo
+echo|todavia no e echo mi tarea|todavía no he hecho mi tarea
+echo|de echo no me gusta el ceviche|de hecho no me gusta el ceviche
+split|no fui al parque y porezo me aburri|no fui al parque y por eso me aburrí
+amalgama|aveses juego con mis primos|a veces juego con mis primos
+amalgama|me gustan los animales pero sobretodo los perros|me gustan los animales pero sobre todo los perros
+amalgama|porfabor cierra la puerta|por favor cierra la puerta
+fonetica|mi hermana bolbio de la tienda|mi hermana volvió de la tienda
+control|el camino largo nos cansó mucho|el camino largo nos cansó mucho
+control|el sábado viajo a Lima con mi familia|el sábado viajo a Lima con mi familia
+control|con mi hermano juego fútbol todos los días|con mi hermano juego fútbol todos los días
+control|mi papá me regaló un sobretodo negro|mi papá me regaló un sobretodo negro
+control|yo trabajo en mi cuaderno|yo trabajo en mi cuaderno
+control|Rosa y yo dibujamos flores|Rosa y yo dibujamos flores
+control|la luna lucía muy brillante|la luna lucía muy brillante
+control|hoy he hecho mi tarea|hoy he hecho mi tarea
+control|echo de menos a mi abuela|echo de menos a mi abuela
+control|el vaso lleno de agua se cayó|el vaso lleno de agua se cayó
+control|a veces pienso en mi perro|a veces pienso en mi perro
+control|mi mamá dice que mañana viajo a Cusco|mi mamá dice que mañana viajo a Cusco
+control|en mi casa cocino con mi abuela|en mi casa cocino con mi abuela
+control|el trabajo de mi papá es difícil|el trabajo de mi papá es difícil
+control|deberas estudiar más para el examen|deberás estudiar más para el examen
+control|mi papá y mi mamá trabajan en el mercado|mi papá y mi mamá trabajan en el mercado

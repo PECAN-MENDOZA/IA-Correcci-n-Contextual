@@ -250,5 +250,34 @@ class TestPorQueAuditoria(unittest.TestCase):
         self.assertEqual(expand_amalgams(frase), frase)
 
 
+
+class TestAmalgamasPorSonido(unittest.TestCase):
+    """Ensayo del piloto (2026-10-01): `aveses` acababa en `aveces`, `sobretodo` no se separaba."""
+
+    def test_locucion_escrita_como_suena(self):
+        no_word = lambda w: False
+        self.assertEqual(expand_amalgams("aveses juego con mis primos", is_word=no_word),
+                         "a veces juego con mis primos")
+        self.assertEqual(expand_amalgams("porfabor cierra la puerta", is_word=no_word),
+                         "por favor cierra la puerta")
+        self.assertEqual(expand_amalgams("derepente se fue", is_word=no_word), "de repente se fue")
+
+    def test_sin_lexico_o_si_es_palabra_no_se_toca(self):
+        self.assertEqual(expand_amalgams("aveses juego"), "aveses juego")
+        self.assertEqual(expand_amalgams("deberas estudiar", is_word=lambda w: w == "deberas"),
+                         "deberas estudiar")
+        self.assertEqual(expand_amalgams("deberas estudiar", is_word=lambda w: False,
+                                         phonetic_dict={"deberas": "deberás", "abeses": "aveces"}),
+                         "deberas estudiar")
+        self.assertEqual(expand_amalgams("aveses juego", is_word=lambda w: False,
+                                         phonetic_dict={"deberas": "deberás", "abeses": "aveces"}),
+                         "a veces juego")
+
+    def test_sobretodo_es_sobre_todo_salvo_la_prenda(self):
+        self.assertEqual(expand_amalgams("me gustan los animales pero sobretodo los perros"),
+                         "me gustan los animales pero sobre todo los perros")
+        self.assertEqual(expand_amalgams("mi tía sobretodo los domingos"), "mi tía sobre todo los domingos")
+        self.assertEqual(expand_amalgams("me regaló un sobretodo negro"), "me regaló un sobretodo negro")
+
 if __name__ == "__main__":
     unittest.main()

@@ -31,6 +31,12 @@ ejemplo de alumno que la motiva):
                                 "no entendía nada por que yo no quería".
   6. Locuciones pegadas que no existen como palabra (`porfavor`, `enserio`,
      `aveces`, `derrepente`, `talvez`, `osea`, `nose`...): incondicional.
+     También escritas como suenan (`aveses`, `porfabor`, `derepente`): la
+     misma clave fonética, si la palabra escrita no es española (`deberas`
+     es `deberás`, no `de veras`). Sin esta regla la capa 2 las llevaba a la
+     forma pegada (`aveses` -> `aveces`, que está en es_50k).
+     `sobretodo` -> `sobre todo` salvo tras determinante (`un sobretodo`,
+     la prenda).
   7. `con migo/tigo/sigo` -> `conmigo/contigo/consigo`: incondicional.
   8. `haber` tras verbo de movimiento: `ir haber a mi abuela` -> `ir a ver a
      mi abuela` (ante `a`, `si`, interrogativo o determinante definido);
@@ -42,6 +48,8 @@ grammar_rules.py, que es donde está el resto de la concordancia.
 """
 import re
 import unicodedata
+
+from infrastructure.nlp.phonetic_engine import to_phonetic
 
 # Formas verbales frecuentes tras "si no" (2.ª/3.ª persona de presente y
 # pretérito). Sin tildes: se comparan contra `_norm`.
@@ -87,6 +95,21 @@ _JOINED = {
     "nose": "no sé", "sinembargo": "sin embargo", "encambio": "en cambio",
     "almenos": "al menos", "porsupuesto": "por supuesto", "enfin": "en fin",
 }
+# 6b. Las mismas, por sonido ("aveses", "porfabor"); r/rr cuentan igual (derepente).
+def _sound(word: str) -> str:
+    return to_phonetic(word).replace("rr", "r")
+
+
+_JOINED_SOUNDS = {_sound(k): v for k, v in _JOINED.items()}
+
+
+def _sounds_like_other_word(word: str, phonetic_dict: dict | None) -> bool:
+    """`deberas` suena como `deberás`; `aveses` suena como `aveces`, que es la amalgama."""
+    target = (phonetic_dict or {}).get(to_phonetic(word))
+    return target is not None and _norm(target) not in _JOINED
+# 6c. "sobretodo" es la prenda solo tras determinante ("un sobretodo negro").
+_SOBRETODO_DET = {"un", "el", "mi", "tu", "su", "este", "ese", "aquel", "del", "al", "otro",
+                  "nuevo", "viejo", "gran", "buen", "nuestro", "cada"}
 # 7. Pronombres con "con" escritos separados.
 _CON_JOIN = {"migo": "conmigo", "tigo": "contigo", "sigo": "consigo"}
 # 8. Verbos de movimiento que rigen "a + infinitivo" ("voy a ver", "va a haber").
@@ -181,11 +204,14 @@ def _question_clause(tokens: list, i: int) -> bool:
     return False
 
 
-def expand_amalgams(text: str) -> str:
+def expand_amalgams(text: str, is_word=None, phonetic_dict: dict | None = None) -> str:
     """Separa (o une) las amalgamas de `text` y devuelve la frase resultante.
 
     Conserva la puntuación adyacente y la mayúscula inicial de cada token. Si
-    no hay ninguna amalgama, devuelve `text` tal cual.
+    no hay ninguna amalgama, devuelve `text` tal cual. `is_word(palabra)` dice
+    si una palabra es española; sin él no se usan las amalgamas por sonido (6b).
+    Con `phonetic_dict` (sonido -> palabra) tampoco se separa lo que suena como
+    otra palabra (`deberas` -> `deberás`, que no está sin tilde en es_50k).
     """
     tokens = text.split()
     if not tokens:
@@ -238,6 +264,13 @@ def expand_amalgams(text: str) -> str:
         # 6. "porfavor" -> "por favor", "enserio" -> "en serio"...
         elif low in _JOINED:
             replacement = _JOINED[low]
+        elif (is_word is not None and len(low) >= 4 and _sound(low) in _JOINED_SOUNDS
+              and not is_word(low) and not _sounds_like_other_word(low, phonetic_dict)):
+            replacement = _JOINED_SOUNDS[_sound(low)]
+
+        # 6c. "sobretodo los domingos" -> "sobre todo"; "un sobretodo" se conserva
+        elif low == "sobretodo" and prev not in _SOBRETODO_DET:
+            replacement = "sobre todo"
 
         # 3. "asique me fui" -> "así que me fui"
         elif low in ("asique", "asiq"):

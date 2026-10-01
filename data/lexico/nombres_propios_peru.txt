@@ -1,0 +1,176 @@
+# Nombres propios que un niño peruano escribe a menudo en minúscula o sin la "h" muda
+# ("uancayo", "valeria"). Creado el 2026-10-01 tras el ensayo del piloto (uancayo -> lacayo,
+# valeria -> valería), recopilado por categorías (departamentos y capitales, ciudades,
+# lugares conocidos, países vecinos, nombres de pila frecuentes en niños nacidos en el Perú
+# entre 2012 y 2018), no solo con los que fallaron. Se escriben con su grafía correcta.
+# La capa 2 (correction_pipeline._proper_name) pone esta grafía cuando la palabra escrita
+# coincide sin tildes, o suena igual (h muda, b/v, s/z/c, ll/y) y está fuera del diccionario.
+# EXCLUIDOS a propósito los que también son palabras comunes en minúscula (Rosa, Luz, Flor,
+# Sol, Paz, Pilar, Cruz, Ángel, Victoria, Esperanza, Gloria, Milagros, Mercedes, Dolores,
+# Rocío, Soledad, Celeste, Cielo, Abril, Alba, Blanca, Clara, Perla, Jazmín, Violeta,
+# Margarita, Lucía/lucía, Mía/mía, Franco, León, Leo, Lima, Pisco, Ica, Huaca, Barranca,
+# Barranco, Surco, Callejón, Chile, Ecuador): ahí la minúscula puede ser correcta.
+# Una entrada por línea; las líneas con '#' se ignoran.
+# departamentos y regiones
+Amazonas
+Áncash
+Apurímac
+Arequipa
+Ayacucho
+Cajamarca
+Callao
+Cusco
+Cuzco
+Huancavelica
+Huánuco
+Junín
+Lambayeque
+Loreto
+Moquegua
+Pasco
+Piura
+Puno
+Tacna
+Tumbes
+Ucayali
+# ciudades y provincias
+Abancay
+Andahuaylas
+Cañete
+Chachapoyas
+Chiclayo
+Chimbote
+Chincha
+Chosica
+Huacho
+Huamachuco
+Huamanga
+Huancabamba
+Huancané
+Huancayo
+Huanta
+Huaral
+Huaraz
+Huari
+Huarmey
+Huaura
+Huaycán
+Ilave
+Iquitos
+Jauja
+Juliaca
+Mollendo
+Moyobamba
+Nasca
+Nazca
+Oxapampa
+Paita
+Pucallpa
+Sullana
+Talara
+Tarapoto
+Tarma
+Trujillo
+Urubamba
+Yurimaguas
+# lugares conocidos
+Huascarán
+Huacachina
+Huallaga
+Huaytapallana
+Machupicchu
+Ollantaytambo
+Paracas
+Sacsayhuamán
+Titicaca
+Chavín
+Kuélap
+Caral
+Miraflores
+Chorrillos
+Rímac
+# países vecinos
+Perú
+Bolivia
+Brasil
+Colombia
+Argentina
+Venezuela
+# nombres de pila
+Abigail
+Adrián
+Alejandra
+Alejandro
+Alessandra
+Alexander
+Alonso
+Ana
+Andrea
+Andrés
+Antonella
+Ariana
+Benjamín
+Bruno
+Camila
+Carlos
+Carla
+Catalina
+Daniel
+Daniela
+Dayana
+Diego
+Emiliano
+Emily
+Fabiana
+Fabricio
+Fátima
+Fernanda
+Fernando
+Gabriel
+Gabriela
+Gael
+Isabella
+Jhon
+Jimena
+Joaquín
+Jorge
+José
+Juan
+Julián
+Kiara
+Leonardo
+Liam
+Luana
+Lucas
+Luciana
+Luis
+Marcelo
+María
+Mariana
+Martín
+Martina
+Mateo
+Matías
+Miguel
+Nayeli
+Nicolás
+Nicole
+Pablo
+Paola
+Patricia
+Pedro
+Rafael
+Renato
+Ricardo
+Rodrigo
+Samuel
+Santiago
+Santino
+Sebastián
+Sofía
+Thiago
+Valentina
+Valentino
+Valeria
+Ximena
+Yuliana

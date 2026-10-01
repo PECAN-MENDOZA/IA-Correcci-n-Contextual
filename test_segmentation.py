@@ -159,5 +159,24 @@ class TestSobreTodo(unittest.TestCase):
                          "Sobre todo me gusta dibujar")
 
 
+
+class TestEnsayoPiloto(unittest.TestCase):
+    """Fallos del ensayo del piloto (2026-10-01)."""
+
+    def test_trozo_de_dos_letras_sin_h_no_se_une(self):
+        freqs = dict(FREQS, oye=50_000, hoy=600_000)
+        phonetic = {to_phonetic("hoy"): "hoy", to_phonetic("oye"): "oye"}
+        self.assertEqual(seg.join_split_words("oy e echo toda mi tarea", freqs, ACCENTS, phonetic_dict=phonetic),
+                         "oy e echo toda mi tarea")
+
+    def test_particion_con_palabra_funcional_escrita_como_suena(self):
+        phonetic = {to_phonetic("eso"): "eso"}
+        self.assertEqual(seg.split_candidates("porezo", FREQS, ACCENTS, phonetic_dict=phonetic), [["por", "eso"]])
+        self.assertEqual(seg.split_candidates("porezo", FREQS, ACCENTS), [])
+
+    def test_la_particion_exacta_tiene_prioridad(self):
+        phonetic = {to_phonetic("eso"): "eso"}
+        self.assertEqual(seg.split_candidates("poreso", FREQS, ACCENTS, phonetic_dict=phonetic), [["por", "eso"]])
+
 if __name__ == "__main__":
     unittest.main()

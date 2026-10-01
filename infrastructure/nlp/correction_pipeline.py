@@ -9,10 +9,14 @@ import re
 import unicodedata
 from symspellpy import SymSpell, Verbosity
 
-from infrastructure.nlp.phonetic_engine import PhoneticEngine, match_case, to_phonetic, DICT_PATH, load_supplement
+from infrastructure.nlp.phonetic_engine import (
+    PhoneticEngine, match_case, to_phonetic, DICT_PATH, load_proper_names, load_supplement,
+)
 from infrastructure.nlp.context_judge import ContextJudge
 from infrastructure.nlp.amalgams import expand_amalgams
-from infrastructure.nlp.confusions import fix_lexical_confusions, resolve_final_confusions
+from infrastructure.nlp.confusions import (
+    fix_lexical_confusions, fix_third_person_preterite, resolve_final_confusions,
+)
 from infrastructure.nlp.grammar_rules import correct_auxiliaries, correct_grammar, normalize_modern_spelling
 from infrastructure.nlp.candidates import dyslexic_cost, is_derived_form, is_regular_verb_form, rank_candidates
 from infrastructure.nlp.segmentation import (
@@ -149,6 +153,10 @@ def _strip_accents(s: str) -> str:
 
 
 class CorrectionPipeline:
+    # Sin léxico de nombres propios por defecto (las pruebas crean el pipeline con __new__).
+    _names: dict = {}
+    _name_sounds: dict = {}
+
     def __init__(
         self,
         phonetic: PhoneticEngine,
@@ -166,6 +174,14 @@ class CorrectionPipeline:
             self._symspell.create_dictionary_entry(word, count)
         self._seq2seq   = seq2seq
         self._tokenizer = tokenizer
+        # Nombres propios del léxico peruano (ver _proper_name): por grafía sin
+        # tildes y por sonido (el primero gana: Cusco antes que Cuzco).
+        self._names: dict = {}
+        self._name_sounds: dict = {}
+        for name in load_proper_names():
+            plain = name.lower().translate(_ACCENT_VOWELS)
+            self._names.setdefault(plain, name)
+            self._name_sounds.setdefault(to_phonetic(plain), name)
 
     # ------------------------------------------------------------------
     # Desambiguación contextual (BETO)
@@ -383,6 +399,22 @@ class CorrectionPipeline:
                 return default
         return best
 
+    def _proper_name(self, lower: str) -> str | None:
+        """Grafía del léxico de nombres propios para `lower` (minúsculas), o None:
+        "valeria" -> "Valeria" (coincide sin tildes) y, si la palabra no está en
+        el diccionario, "uancayo" -> "Huancayo" (suena igual y es un error
+        barato, como en la búsqueda fonética; SymSpell daba "lacayo")."""
+        plain = lower.translate(_ACCENT_VOWELS)
+        if plain in self._names:
+            return self._names[plain]
+        name = self._name_sounds.get(to_phonetic(plain))
+        if name is None or self._symspell.lookup(lower, Verbosity.TOP, max_edit_distance=0):
+            return None
+        target = name.lower().translate(_ACCENT_VOWELS)
+        h_diff = plain.startswith("h") != target.startswith("h")
+        cost = dyslexic_cost(plain.removeprefix("h"), target.removeprefix("h")) + (0.3 if h_diff else 0)
+        return name if cost <= _PHONETIC_MAX_COST else None
+
     def _is_plausible_reading(self, current: str, alternative: str) -> bool:
         """
         La segunda lectura solo cuenta como ambigüedad si no es mucho más rara
@@ -429,13 +461,14 @@ class CorrectionPipeline:
         # --- CAPA 0: Amalgamas (cambian la tokenización, van antes de todo) ---
         # "aver si vienes" -> "a ver si vienes": SymSpell no puede arreglarlo
         # porque la corrección son dos palabras (elegiría "ver").
-        text_expanded = expand_amalgams(text)
+        freqs   = getattr(self._phonetic, "word_freqs", None) or {}
+        accents = getattr(self._phonetic, "accent_dict", None) or {}
+        text_expanded = expand_amalgams(text, is_word=lambda w: is_spanish_word(w, freqs, accents),
+                                        phonetic_dict=getattr(self._phonetic, "phonetic_dict", None))
 
         # --- CAPA 0.1: palabras partidas ("en contró" -> "encontró", "a bajo de
         # la cama" -> "abajo"); antes de las capas léxicas, que corregirían cada
         # trozo por separado (contró -> contra). Ver segmentation.py.
-        freqs   = getattr(self._phonetic, "word_freqs", None) or {}
-        accents = getattr(self._phonetic, "accent_dict", None) or {}
         text_expanded = join_split_words(text_expanded, freqs, accents, judge=self._judge,
                                          phonetic_dict=getattr(self._phonetic, "phonetic_dict", None))
 
@@ -509,6 +542,21 @@ class CorrectionPipeline:
                 best     = match_case(core, user_vocab[lower])
                 resolved = True
 
+            # Nombre propio del léxico peruano, con su grafía ("valeria" ->
+            # "Valeria", "uancayo" -> "Huancayo"). Sin restore_accent ni ñ
+            # después: "Valeria" no es "valería". Si el alumno ya lo escribió
+            # con mayúscula, su grafía se respeta ("Benjamin Millepied" no es
+            # "Benjamín").
+            if not resolved and len(lower) >= 4:
+                name = self._proper_name(lower)
+                if name is not None and core[:1].isupper() and lower.translate(_ACCENT_VOWELS) in self._names:
+                    name = core
+                if name is not None:
+                    best        = name
+                    resolved    = True
+                    proper_noun = True
+                    keep_plain  = True
+
             # Nombre propio: mayúscula en mitad de la oración y fuera del
             # diccionario ("Vamos a Cusco"): no se corrige (SymSpell lo
             # convertía en "Casco"). Abriendo oración la mayúscula no dice nada.
@@ -554,8 +602,11 @@ class CorrectionPipeline:
                     phonetic_best = self._phonetic.phonetic_dict[word_sound]
                     max_cost = _INITIAL_MAX_COST if (opens_sentence and core[:1].isupper()) else _PHONETIC_MAX_COST
                     # La "h" es muda: sin la penalización de primera letra (aser -> hacer, avia -> había).
+                    # La tilde tampoco cuenta: la pone restore_accent igualmente
+                    # (bolbio -> volvió son dos b/v, 1,0; con la tilde pasaba de 1,0).
                     h_diff = lower.startswith("h") != phonetic_best.startswith("h")
-                    cost = dyslexic_cost(lower.removeprefix("h"), phonetic_best.removeprefix("h")) + (0.3 if h_diff else 0)
+                    cost = dyslexic_cost(lower.translate(_ACCENT_VOWELS).removeprefix("h"),
+                                         phonetic_best.translate(_ACCENT_VOWELS).removeprefix("h")) + (0.3 if h_diff else 0)
                     if phonetic_best != lower and cost <= max_cost:
                         best     = self._phonetic.restore_accent(match_case(core, phonetic_best))
                         resolved = True
@@ -569,7 +620,8 @@ class CorrectionPipeline:
             if not resolved:
                 suggestions = self._symspell.lookup(lower, Verbosity.ALL, max_edit_distance=2)
                 ranked = rank_candidates(lower, [(s.term, s.count) for s in suggestions]) if suggestions else []
-                splits = split_candidates(lower, freqs, accents)
+                splits = split_candidates(lower, freqs, accents,
+                                          phonetic_dict=getattr(self._phonetic, "phonetic_dict", None))
                 if opens_sentence and core[:1].isupper() and not core.isupper():
                     if ranked and ranked[0][0] > _INITIAL_MAX_COST:
                         ranked = []
@@ -615,6 +667,9 @@ class CorrectionPipeline:
                 print(f"[WARN] Desambiguación contextual (BETO) falló: {e}")
 
         # --- CAPA 3: Corrección gramatical por reglas (haber impersonal, gustar, número) ---
+        # Antes, sujeto de 3.ª persona + verbo en -o: "mi vecino viajo" -> "viajó".
+        base_corrected = fix_third_person_preterite(base_corrected, written_accents,
+                                                    names=frozenset(self._names))
         base_corrected = correct_grammar(base_corrected)
         ambiguous_variants = [(correct_grammar(v), s) for v, s in ambiguous_variants]
 

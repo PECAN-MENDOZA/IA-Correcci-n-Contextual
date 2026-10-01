@@ -258,6 +258,19 @@ python evaluate.py --dataset data/test_correcto_cowsl2h200.csv --t5-dir models/t
 #   reescribir solo las palabras que produjeron las capas, no las que escribió el niño) los resultados
 #   cambian en +-1 frase: la guarda no era el límite. PRODUCCIÓN SIGUE CON v4: la población objetivo son
 #   niños y v5 no mejora ahí; v5b queda como resultado de la ablación de datos (models/*_v5a|b, sin versionar).
+# ENSAYO DEL PILOTO (2026-10-01, dos celulares en producción): las sugerencias fallaron en 5 de las 8
+# oraciones (uancayo -> lacayo, bolbio -> bilbo, valeria busco -> valería buscar, oy e echo -> oye echo,
+# porezo -> porrazo, aveses/sobretodo sin separar). Arreglos por CLASE de error, no por oración:
+# léxico de nombres propios (data/lexico/nombres_propios_peru.txt; _proper_name en la capa 2), tope
+# fonético sin contar la tilde, trozos de 2 letras sin h no se unen, echo -> hecho tras haber/«de»,
+# amalgamas por sonido (con guarda: «deberas» es «deberás») y «sobretodo» salvo tras determinante,
+# particiones con palabra funcional escrita como suena, y sujeto de 3.ª persona + verbo en -o ->
+# pretérito (confusions.fix_third_person_preterite). Validación con data/test_generalizacion_ensayo.csv
+# (39 frases DISTINTAS a las del piloto, 15 controles; escrita por el desarrollador, sesgo declarado):
+# 25 -> 38/39 sin daño; los otros 11 sets sin cambios en frases exactas (dev 38/61, F0.5 0,863 -> 0,865;
+# correcto_ninos 149/150; correcto_cowsl2h200 188/200). Límite conocido: «la niña limpio» (limpio se
+# excluye por ser adjetivo en «el cuarto limpio»).
+python evaluate.py --dataset data/test_generalizacion_ensayo.csv --t5-dir models/t5_correction --development  # 38/39
 # Auditoría externa (30-sep, informes en .local/auditoria/, fuera de git): las cifras de ninos_reales_dev
 # son de DESARROLLO (se ajustó mirando esas 61 frases) y la reserva de 38 es post hoc (se vio antes de
 # partir): no son evidencia confirmatoria. Arreglos de código de la auditoría sin cambio de métricas:

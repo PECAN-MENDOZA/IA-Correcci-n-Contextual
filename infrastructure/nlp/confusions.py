@@ -12,6 +12,12 @@ que solo el contexto decide. Dos puntos de entrada:
     Va antes de BETO porque BETO, con "el pero ...", convierte el artículo en
     pronombre ("él pero").
 
+  - `fix_third_person_preterite` (capa 3, antes de las reglas gramaticales y
+    de T5): sujeto de 3.ª persona + verbo en -o de la 1.ª conjugación ->
+    pretérito con tilde ("mi vecino viajo" -> "viajó", "Valeria busco" ->
+    "buscó"). "viajo"/"busco" existen (1.ª persona del presente), así que la
+    capa 2 no las toca, y T5 llegó a cambiar "busco" por "buscar".
+
   - `resolve_final_confusions` (capa 6, tras T5, sobre la recomendada y las
     alternativas): decisiones que T5 deshace si se toman antes.
         4. caer/callar (yeísmo): `se callo` -> `se cayó` / `se calló`.
@@ -68,6 +74,82 @@ def fix_lexical_confusions(text: str) -> str:
             tokens[i] = _reword(tokens[i], _RR_AFTER_SG[low])
         elif prev in _DET_PL and low in _RR_AFTER_PL:
             tokens[i] = _reword(tokens[i], _RR_AFTER_PL[low])
+    return " ".join(tokens)
+
+
+# ── Capa 3: sujeto de 3.ª persona + verbo en -o ──────────────────────────────
+
+_SUBJ_DET = {"el", "la", "un", "una", "mi", "tu", "su", "este", "esta", "ese", "esa",
+             "aquel", "aquella", "nuestro", "nuestra", "otro", "otra", "cada"}
+_SUBJ_PRONOUNS = {"él", "ella", "usted"}         # con tilde: "el" sin ella es artículo
+# Delante del sujeto: entonces no es sujeto ("con mi hermano juego", "en mi casa cocino")
+# o es un sujeto coordinado, plural ("mi papá y mi mamá").
+_NOT_SUBJECT_PREV = {"a", "al", "con", "de", "del", "en", "para", "por", "sin", "sobre", "hasta",
+                     "desde", "hacia", "entre", "segun", "tras", "contra", "ante", "y", "e", "ni", "o"}
+# Complementos de tiempo con determinante: el sujeto es "yo" ("el sábado viajo").
+_TIME_NOUNS = {"lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo", "dia",
+               "ano", "mes", "semana", "manana", "tarde", "noche", "verano", "invierno", "otono",
+               "primavera", "fin", "momento", "rato", "vez", "recreo", "feriado", "cumpleanos"}
+# Adjetivos que van delante del sustantivo: "mi primer libro" no es sujeto + "libró".
+_PRENOMINAL = {"primer", "primero", "primera", "segundo", "segunda", "tercer", "tercero", "ultimo",
+               "ultima", "gran", "buen", "mal", "mejor", "peor", "nuevo", "nueva", "viejo", "vieja",
+               "propio", "propia", "mismo", "misma", "otro", "otra", "unico", "unica", "pequeno",
+               "pequena", "querido", "querida", "pobre", "mucho", "mucha", "poco", "poca", "todo",
+               "toda", "cierto", "cierta", "proximo", "proxima", "solo", "sola", "lindo", "linda"}
+# Entre el sujeto y el verbo: "mi mamá me compro", "Valeria no lo busco".
+_SUBJ_GAP = {"no", "ya", "tambien", "siempre", "nunca", "me", "te", "se", "lo", "la", "le",
+             "nos", "les", "los", "las"}
+# Adjetivos en -o que también son 1.ª persona de un verbo en -ar ("el camino largo",
+# "el vaso lleno"): detrás de un sustantivo son adjetivos.
+_ADJECTIVES_AR = {"largo", "corto", "bajo", "alto", "lleno", "limpio", "listo", "junto", "seco",
+                  "sano", "enfermo", "contento", "medio", "solo", "malo", "raro", "claro", "lindo",
+                  "quieto", "cansado", "ancho", "estrecho", "fresco", "gordo",
+                  "flaco", "negro", "blanco", "rojo", "amarillo", "morado", "rosado", "dorado",
+                  "plateado", "tranquilo", "nervioso", "vacio", "sucio",
+                  "ultimo", "primero", "segundo", "tercero", "cuarto", "quinto", "proximo",
+                  "pasado", "entero", "abierto", "cerrado", "callado", "derecho", "izquierdo",
+                  "puro", "seguro", "suelto", "cercano", "lejano", "redondo", "templado", "tibio"}
+
+
+def _third_person_subject(tokens: list, i: int, names: frozenset) -> bool:
+    """True si delante de tokens[i] hay un sujeto de 3.ª persona del singular."""
+    j = i - 1
+    while j >= 0 and i - j <= 2 and _norm(tokens[j]) in _SUBJ_GAP and tokens[j] == _core(tokens[j]):
+        j -= 1
+    if j < 0 or tokens[j] != _core(tokens[j]):
+        return False                              # "Mi perro, ..." o nada delante
+    subj = tokens[j]
+    before = _norm(tokens[j - 1]) if j >= 1 else ""
+    if subj.lower() in _SUBJ_PRONOUNS:
+        return before not in _NOT_SUBJECT_PREV
+    if _norm(subj) in names:                      # "Valeria busco", "con Diego juego" no
+        return before not in _NOT_SUBJECT_PREV
+    low = _norm(subj)
+    if (not low.isalpha() or len(low) < 3 or low.endswith("s") or low in _TIME_NOUNS
+            or low in _PRENOMINAL or before not in _SUBJ_DET):
+        return False
+    before2 = _norm(tokens[j - 2]) if j >= 2 else ""
+    return before2 not in _NOT_SUBJECT_PREV
+
+
+def fix_third_person_preterite(text: str, written: set | None = None,
+                               names: frozenset = frozenset()) -> str:
+    """"mi vecino viajo" -> "viajó" (ver el docstring del módulo). `written`: palabras
+    con tilde del alumno; `names`: nombres propios en minúsculas y sin tildes."""
+    written = written or set()
+    lex = _lexicon()
+    tokens = text.split()
+    for i, tok in enumerate(tokens):
+        core = _core(tok)
+        low = core.lower()
+        if (len(low) < 4 or not low.endswith("o") or low != _norm(tok) or low in written
+                or low in _ADJECTIVES_AR):
+            continue
+        preterite = low[:-1] + "ó"
+        if (low[:-1] + "ar") not in lex or preterite not in lex:
+            continue
+        if _third_person_subject(tokens, i, names):
+            tokens[i] = _reword(tok, preterite)
     return " ".join(tokens)
 
 
@@ -183,4 +265,4 @@ def resolve_final_confusions(text: str, written: set | None = None, judge=None) 
     return " ".join(tokens)
 
 
-__all__ = ["fix_lexical_confusions", "resolve_final_confusions"]
+__all__ = ["fix_lexical_confusions", "fix_third_person_preterite", "resolve_final_confusions"]

@@ -298,6 +298,10 @@ _HA_PREV = {
     "siempre", "tambien", "tampoco", "todavia", "aun", "que", "quien", "el", "ella",
     "usted", "eso", "esto", "nadie", "alguien", "todo", "nada",
 }
+# 15. Delante de "echo" -> "hecho": formas de haber (sin tildes) y "de echo".
+_ECHO_PREV = {"he", "has", "ha", "hemos", "han", "habia", "habias", "habiamos", "habian",
+              "haya", "hayas", "hayamos", "hayan", "hubiera", "hubieras", "hubieran",
+              "habria", "habrias", "habrian", "haber", "habiendo", "de"}
 # "aya" (sustantivo válido: "el aya") solo es "haya" tras átono, "que" o "no"
 # y ante participio masculino: "le aya pasado", "que aya llegado".
 _HAYA_MISSPELLINGS = {"aya"}
@@ -354,20 +358,25 @@ def _auxiliary(tokens: list, i: int) -> str | None:
      14. "a" + participio -> "ha" ("a habido", "me a dicho", "Karol a ido") y
          "aya" + participio -> "haya" ("le aya pasado"). Solo participio
          masculino singular (el de los tiempos compuestos), en contexto de
-         auxiliar (ver _HA_PREV) y nunca tras puntuación en "a"."""
+         auxiliar (ver _HA_PREV) y nunca tras puntuación en "a".
+     15. "echo" tras haber o "de" -> "hecho" ("he echo", "de echo"): el
+         participio de hacer sin h; "echo" (de echar) nunca va ahí."""
     tok = tokens[i]
     low = _norm(tok)
     nxt_tok = tokens[i + 1] if i + 1 < len(tokens) else ""
     nxt = _norm(nxt_tok)
     prev = _norm(tokens[i - 1]) if i > 0 else ""
-    if low == "e" and _is_verb_chain(nxt_tok):
+    if low == "echo" and prev in _ECHO_PREV:
+        return _reword(tok, "hecho")
+    if low == "e" and (_is_verb_chain(nxt_tok) or nxt == "echo"):
         return _reword(tok, "he")
     prev_is_name = i > 0 and tokens[i - 1][:1].isupper() and _clean(tokens[i - 1]) == prev
     if (low == "a" and tok == tok.rstrip(".,;:!?") and nxt_tok[:1].islower()
             and (nxt in _A_ALWAYS_AUX
                  or ((prev in _HA_PREV
                       or ((i == 0 or prev_is_name) and nxt not in _A_PARTICIPLE_NOUNS))
-                     and (_A_PARTICIPLE_MASC.search(nxt) or nxt in _IRREGULAR_PARTICIPLES)))):
+                     and (_A_PARTICIPLE_MASC.search(nxt) or nxt in _IRREGULAR_PARTICIPLES
+                          or nxt == "echo")))):
         return _reword(tok, "ha")
     if (low in _HAYA_MISSPELLINGS and prev in _HAYA_PREV
             and (_A_PARTICIPLE_MASC.search(nxt) or nxt in _IRREGULAR_PARTICIPLES)):

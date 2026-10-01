@@ -20,7 +20,9 @@ Uso:
 import unittest
 
 from infrastructure.nlp.amalgams import expand_amalgams
-from infrastructure.nlp.confusions import fix_lexical_confusions, resolve_final_confusions
+from infrastructure.nlp.confusions import (
+    fix_lexical_confusions, fix_third_person_preterite, resolve_final_confusions,
+)
 from infrastructure.nlp.grammar_rules import correct_grammar
 
 
@@ -233,6 +235,41 @@ class TestAuxiliarHaberAuditoria(unittest.TestCase):
         self.assertEqual(correct_grammar("me a dicho que sí"), "me ha dicho que sí")
         self.assertEqual(correct_grammar("que aya llegado"), "que haya llegado")
 
+
+
+class TestEchoHecho(unittest.TestCase):
+    """Ensayo del piloto (2026-10-01): "oy e echo" -> "hoy he hecho"."""
+
+    def test_echo_tras_haber_o_de_es_hecho(self):
+        self.assertEqual(correct_grammar("todavia no e echo mi tarea"), "todavia no he hecho mi tarea")
+        self.assertEqual(correct_grammar("ya ha echo la cama"), "ya ha hecho la cama")
+        self.assertEqual(correct_grammar("de echo no me gusta"), "de hecho no me gusta")
+        self.assertEqual(correct_grammar("me a echo reír"), "me ha hecho reír")
+
+    def test_echo_de_echar_se_conserva(self):
+        for frase in ["echo de menos a mi abuela", "siempre echo sal a la sopa"]:
+            self.assertEqual(correct_grammar(frase), frase)
+
+
+class TestTerceraPersonaPreterito(unittest.TestCase):
+    """Ensayo del piloto (2026-10-01): "mi vecino viajo" -> "viajó", "Valeria busco" -> "buscó"."""
+
+    def test_sujeto_de_tercera_persona(self):
+        self.assertEqual(fix_third_person_preterite("mi vecino viajo a Huancayo"), "mi vecino viajó a Huancayo")
+        self.assertEqual(fix_third_person_preterite("la profesora nos ayudo"), "la profesora nos ayudó")
+        self.assertEqual(fix_third_person_preterite("Valeria busco su bicicleta", names=frozenset({"valeria"})),
+                         "Valeria buscó su bicicleta")
+        self.assertEqual(fix_third_person_preterite("ella llego tarde"), "ella llegó tarde")
+
+    def test_sin_sujeto_de_tercera_persona_se_conserva(self):
+        for frase in ["el sábado viajo a Lima", "con mi hermano juego", "yo trabajo mucho",
+                      "en mi casa cocino", "mi papá y mi mamá trabajo", "el camino largo",
+                      "mañana viajo a Cusco", "Valeria busco su bicicleta", "el trabajo es duro",
+                      "Cuando termine mi primer libro, quiero darle la copia."]:
+            self.assertEqual(fix_third_person_preterite(frase), frase)
+
+    def test_respeta_lo_escrito_con_tilde(self):
+        self.assertEqual(fix_third_person_preterite("mi tío viajó", {"viajó"}), "mi tío viajó")
 
 if __name__ == "__main__":
     unittest.main()

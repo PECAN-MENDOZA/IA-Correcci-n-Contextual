@@ -59,6 +59,17 @@ def load_supplement(paths=SUPPLEMENT_PATHS, freq: int = SUPPLEMENT_FREQ) -> dict
     return out
 
 
+PROPER_NAMES_PATH = "./data/lexico/nombres_propios_peru.txt"
+
+
+def load_proper_names(path: str = PROPER_NAMES_PATH) -> list:
+    """Nombres propios con su grafía (mayúscula, tildes); [] si no existe el archivo."""
+    if not os.path.exists(path):
+        return []
+    with open(path, encoding="utf-8") as fh:
+        return [line.strip() for line in fh if line.strip() and not line.startswith("#")]
+
+
 def _ensure_dict() -> None:
     if not os.path.exists(DICT_PATH):
         print("[INFO] Descargando diccionario de frecuencias...")
