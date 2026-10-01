@@ -244,6 +244,10 @@ python evaluate.py --dataset data/test_correcto_cowsl2h200.csv --t5-dir models/t
 #   de las frases (1-15 % en texto natural) y, cuando cambia, gana 97 frases exactas y pierde 10.
 #   El modo verificado baja el daño en COWS (adultos L2) pero rechaza correcciones de modo buenas
 #   (sobrecorreccion 17 -> 15, tiempos 60 -> 59): no compensa. Producción: T5 siempre.
+# MÁS CÓMPUTO (2026-09-30, .local/eval_variante.ps1): CORRECTION_PASSES=2 (corregir otra vez la
+# recomendada) da las mismas 712 frases exactas (+3 TP, +2 FP, +2 daño léxico, el doble de latencia);
+# T5_NUM_BEAMS=8 da 710. Ninguno mejora: la calidad no está limitada por el cómputo sino por los datos
+# del T5. Ambos quedan como interruptores (por defecto 1 pasada y 4 beams).
 # Auditoría externa (30-sep, informes en .local/auditoria/, fuera de git): las cifras de ninos_reales_dev
 # son de DESARROLLO (se ajustó mirando esas 61 frases) y la reserva de 38 es post hoc (se vio antes de
 # partir): no son evidencia confirmatoria. Arreglos de código de la auditoría sin cambio de métricas:

@@ -115,6 +115,9 @@ _STRESS = str.maketrans("aei", "áéí")
 # BETO la puntúa en la frase al menos como la original + _T5_VERIFY_MARGIN
 # (sin contar cambios solo de tilde/mayúscula, donde BETO tiene sesgo).
 _T5_MODE = os.environ.get("T5_MODE", "always")
+# Pasadas del pipeline completo (1 en producción): con 2, la recomendada se
+# corrige otra vez (frases con varios errores; experimento del 2026-09-30).
+_CORRECTION_PASSES = int(os.environ.get("CORRECTION_PASSES", "1"))
 _T5_VERIFY_MARGIN = float(os.environ.get("T5_VERIFY_MARGIN", "0.0"))
 
 _INITIAL_MAX_COST = 0.5
@@ -393,6 +396,17 @@ class CorrectionPipeline:
     # ------------------------------------------------------------------
 
     def correct(self, text: str, user_vocab: dict | None = None) -> list[str]:
+        """Corrige `text` (ver `_correct_once`) en _CORRECTION_PASSES pasadas:
+        cada una parte de la recomendada de la anterior y se para si no cambia."""
+        result = self._correct_once(text, user_vocab)
+        for _ in range(_CORRECTION_PASSES - 1):
+            again = self._correct_once(result[0], user_vocab)
+            if again[0] == result[0]:
+                break
+            result = again
+        return result
+
+    def _correct_once(self, text: str, user_vocab: dict | None = None) -> list[str]:
         """
         Corrige `text` con el pipeline global. `user_vocab` es un mapa opcional
         {palabra: reemplazo} de sobrescritura léxica; el runtime del servicio

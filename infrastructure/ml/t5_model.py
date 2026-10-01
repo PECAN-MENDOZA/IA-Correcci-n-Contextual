@@ -62,6 +62,8 @@ DEFAULT_SAVE_DIR = BASE_DIR / "models" / "t5_correction"
 MAX_INPUT_LEN  = 128
 MAX_TARGET_LEN = 128
 TASK_PREFIX    = "corrige: "
+# Beams de la búsqueda (4 en producción; T5_NUM_BEAMS para experimentar).
+NUM_BEAMS      = int(os.environ.get("T5_NUM_BEAMS", "4"))
 
 _SAFE_GENERATION_CONFIG = {
     "decoder_start_token_id": 0,
@@ -254,8 +256,8 @@ class T5CorrectionModel:
                     input_ids,
                     attention_mask=attention_mask,
                     max_new_tokens=MAX_TARGET_LEN,
-                    num_beams=4,
-                    num_return_sequences=min(num_returns, 4),
+                    num_beams=NUM_BEAMS,
+                    num_return_sequences=min(num_returns, NUM_BEAMS),
                     do_sample=False,
                     early_stopping=True,
                     output_scores=True,
