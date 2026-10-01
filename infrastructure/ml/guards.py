@@ -155,7 +155,8 @@ def _is_allowed_block(base_words: list, i1: int, i2: int, cand_words: list, j1: 
     return all(w in ALLOWED_FUNCTION_WORDS for w in removed + added)
 
 
-def is_lexically_plausible_refinement(base_text: str, candidate: str, min_similarity: float = 0.3) -> bool:
+def is_lexically_plausible_refinement(base_text: str, candidate: str, min_similarity: float = 0.3,
+                                      free_words=frozenset()) -> bool:
     """
     Guarda léxica del beam RECOMENDADO: `is_safe_refinement` mide cuánto
     cambia el candidato (cantidad), esta mide qué cambia (calidad). Se compara
@@ -185,6 +186,10 @@ def is_lexically_plausible_refinement(base_text: str, candidate: str, min_simila
       "quiero ir" → "no quiero ir") se bloquea siempre; insertar o borrar una
       palabra de contenido ("fui parque" → "fui al gran parque", "voy a ir"
       → "iré") también.
+    `free_words` (claves léxicas; modo T5_GUARD=child): palabras de la base que NO
+    escribió el niño sino las capas anteriores (sus conjeturas). Sobre ellas no se
+    exige parecido, y un bloque n:m que solo reescribe palabras libres se acepta
+    ("sefemó" -> "se enfermó"); negadores y cuantificadores siguen protegidos.
     """
     base_words = [_lexical_key(w) for w in base_text.split()]
     cand_words = [_lexical_key(w) for w in candidate.split()]
@@ -198,8 +203,14 @@ def is_lexically_plausible_refinement(base_text: str, candidate: str, min_simila
                     return False
                 if _drops_second_person(word_a, word_b):
                     return False
+                if word_a in free_words:
+                    continue
                 if difflib.SequenceMatcher(None, word_a, word_b, autojunk=False).ratio() < min_similarity:
                     return False
+            continue
+        removed = [w for w in base_words[i1:i2] if w]
+        if removed and all(w in free_words for w in removed) and j2 - j1 <= (i2 - i1) + 1 \
+                and not any(w in FORBIDDEN_INDEL_WORDS for w in cand_words[j1:j2] + removed):
             continue
         if not _is_allowed_block(base_words, i1, i2, cand_words, j1, j2):
             return False
@@ -291,7 +302,8 @@ def is_same_word_variant(word_a: str, word_b: str, sound=None) -> bool:
     return stem_a[:prefix] == stem_b[:prefix] and ratio >= SAME_WORD_MIN_SIMILARITY
 
 
-def revert_lexical_substitutions(base_text: str, candidate: str, is_known_word, sound=None) -> str:
+def revert_lexical_substitutions(base_text: str, candidate: str, is_known_word, sound=None,
+                                 free_words=frozenset()) -> str:
     """Devuelve `candidate` con cada reemplazo 1:1 de palabra que NO es una
     variante de la misma palabra devuelto a la palabra de `base_text` (con su
     puntuación y mayúsculas). `is_known_word(clave)` dice si la palabra base
@@ -312,6 +324,8 @@ def revert_lexical_substitutions(base_text: str, candidate: str, is_known_word, 
             if not word_a or not word_b:
                 continue
             keep = is_same_word_variant(word_a, word_b, sound)
+            if not keep and word_a in free_words and not drops_enclitic(word_a, word_b):
+                keep = _protected_swap_is_allowed(word_a, word_b)   # conjetura de las capas: libre
             if not keep and not is_known_word(word_a) and not drops_enclitic(word_a, word_b):
                 keep = difflib.SequenceMatcher(None, word_a, word_b, autojunk=False).ratio() \
                     >= UNKNOWN_WORD_MIN_SIMILARITY

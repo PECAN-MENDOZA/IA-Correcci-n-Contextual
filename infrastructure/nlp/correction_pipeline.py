@@ -21,7 +21,7 @@ from infrastructure.nlp.segmentation import (
 from infrastructure.nlp.alternatives import THRESHOLDS, select_alternatives
 from infrastructure.ml.t5_model import T5CorrectionModel, T5SpanishTokenizer
 from infrastructure.ml.guards import (
-    is_lexically_plausible_refinement, is_safe_refinement, revert_lexical_substitutions,
+    _lexical_key, is_lexically_plausible_refinement, is_safe_refinement, revert_lexical_substitutions,
 )
 
 MANUAL_CORRECTIONS = {
@@ -119,6 +119,11 @@ _T5_MODE = os.environ.get("T5_MODE", "always")
 # corrige otra vez (frases con varios errores; experimento del 2026-09-30).
 _CORRECTION_PASSES = int(os.environ.get("CORRECTION_PASSES", "1"))
 _T5_VERIFY_MARGIN = float(os.environ.get("T5_VERIFY_MARGIN", "0.0"))
+# Guarda del T5: "strict" (producción) protege todas las palabras de la base;
+# "child" protege solo las que escribió el niño y las capas dejaron igual, y deja
+# al T5 reescribir las conjeturas de las capas (podio -> pidió, sefemó -> se
+# enfermó). Experimento del 2026-09-30 para LoRA v5.
+_T5_GUARD = os.environ.get("T5_GUARD", "strict")
 
 _INITIAL_MAX_COST = 0.5
 # Determinantes: tras ellos no se pone la tilde de pretérito por frecuencia
@@ -418,6 +423,8 @@ class CorrectionPipeline:
         infrastructure/nlp/alternatives.py).
         """
         user_vocab = user_vocab or {}
+        # Palabras tal como las escribió el niño (modo T5_GUARD=child, ver _refine_with_model).
+        self._child_keys = frozenset(_lexical_key(w) for w in text.split())
 
         # --- CAPA 0: Amalgamas (cambian la tokenización, van antes de todo) ---
         # "aver si vienes" -> "a ver si vienes": SymSpell no puede arreglarlo
@@ -698,13 +705,16 @@ class CorrectionPipeline:
         freqs   = getattr(self._phonetic, "word_freqs", None) or {}
         accents = getattr(self._phonetic, "accent_dict", None) or {}
         known   = lambda key: key in freqs or key in accents
-        generated = [(revert_lexical_substitutions(text, str(g).strip(), known, to_phonetic), score)
+        free = frozenset()
+        if _T5_GUARD == "child":
+            free = frozenset(_lexical_key(w) for w in text.split()) - getattr(self, "_child_keys", frozenset())
+        generated = [(revert_lexical_substitutions(text, str(g).strip(), known, to_phonetic, free), score)
                      for g, score in generated]
         if _T5_MODE == "verified" and self._judge is not None:
             generated = [(self._beto_verify(text, g), score) for g, score in generated]
         first = str(generated[0][0]).strip()
         if not is_safe_refinement(text, first) or not is_lexically_plausible_refinement(
-            text, first, min_similarity=_RECOMMENDED_MIN_SIMILARITY
+            text, first, min_similarity=_RECOMMENDED_MIN_SIMILARITY, free_words=free
         ):
             return []
 
