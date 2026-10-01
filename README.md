@@ -234,6 +234,16 @@ python evaluate.py --dataset data/test_ninos_reales_dev.csv --t5-dir models/t5_c
 # "al cerro" (sin tilde de pretérito tras determinante). COWS correctas 13 -> 12/200 (T5).
 python evaluate.py --dataset data/test_correcto_ninos.csv      --t5-dir models/t5_correction --development --out reports/correcto_ninos.json      # 149/150; daño 0,12/100 (0 léxicas)
 python evaluate.py --dataset data/test_correcto_cowsl2h200.csv --t5-dir models/t5_correction --development --out reports/correcto_cowsl2h200.json # 188/200; daño 0,69/100 (0,59 léxicas)
+# ABLACIÓN DEL T5 (2026-09-30, .local/eval_t5_variantes.ps1; 11 sets, 1 045 frases): sin T5 (reglas+BETO,
+# sin --t5-dir), T5 siempre (producción) y T5 verificado por BETO (T5_MODE=verified: cada palabra que T5
+# cambia se acepta solo si BETO la puntúa al menos como la original; experimental, desactivado).
+#   frases exactas: sin T5 625 · siempre 712 · verificado 710; daño léxico: 27 · 45 · 38 por 8 155 palabras
+#   correctas; latencia media GPU ~40-100 ms sin T5 frente a ~200-400 ms con T5.
+#   Sin T5 se pierde casi toda la concordancia y el modo (agreement 15 -> 3, subjunctive 19 -> 4, tiempos
+#   60 -> 52, test_ninos 71 -> 59, COWS spelling 81 -> 59; dev infantil 38 -> 36). T5 cambia solo el 16 %
+#   de las frases (1-15 % en texto natural) y, cuando cambia, gana 97 frases exactas y pierde 10.
+#   El modo verificado baja el daño en COWS (adultos L2) pero rechaza correcciones de modo buenas
+#   (sobrecorreccion 17 -> 15, tiempos 60 -> 59): no compensa. Producción: T5 siempre.
 # Auditoría externa (30-sep, informes en .local/auditoria/, fuera de git): las cifras de ninos_reales_dev
 # son de DESARROLLO (se ajustó mirando esas 61 frases) y la reserva de 38 es post hoc (se vio antes de
 # partir): no son evidencia confirmatoria. Arreglos de código de la auditoría sin cambio de métricas:

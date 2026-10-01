@@ -3,6 +3,8 @@ infrastructure/nlp/correction_pipeline.py
 Pipeline neuro-simbólico-fonético de corrección.
 Orquesta las capas de ortografía y finaliza con Seq2Seq para gramática de forma limpia.
 """
+import difflib
+import os
 import re
 import unicodedata
 from symspellpy import SymSpell, Verbosity
@@ -108,6 +110,13 @@ _STRESS = str.maketrans("aei", "áéí")
 # nombre (Cacachi, Toquepala). Solo se corrige si el mejor candidato es un error
 # barato (Entonses, Binieron: 0,5) y solo se parte si empieza por una palabra
 # funcional (Sefue); Cacachi -> Kakashi (1,5) y Toquepala -> "toque pala" no.
+# Papel del T5 (experimento del 2026-09-30, ver README): "always" (por defecto,
+# el de producción) o "verified": cada palabra que T5 cambia se acepta solo si
+# BETO la puntúa en la frase al menos como la original + _T5_VERIFY_MARGIN
+# (sin contar cambios solo de tilde/mayúscula, donde BETO tiene sesgo).
+_T5_MODE = os.environ.get("T5_MODE", "always")
+_T5_VERIFY_MARGIN = float(os.environ.get("T5_VERIFY_MARGIN", "0.0"))
+
 _INITIAL_MAX_COST = 0.5
 # Determinantes: tras ellos no se pone la tilde de pretérito por frecuencia
 # ("al cerro" no es "al cerró").
@@ -258,6 +267,29 @@ class CorrectionPipeline:
             variants.append((" ".join(alt_tokens), -diff))
 
         return text, variants
+
+    def _beto_verify(self, base: str, beam: str) -> str:
+        """Modo T5_MODE=verified: revierte cada reemplazo 1:1 de T5 que BETO no
+        puntúa (en la frase base) al menos como la palabra original + margen.
+        Los cambios solo de tilde o mayúscula no se verifican."""
+        base_tokens, beam_tokens = base.split(), beam.split()
+        key = lambda w: _strip_accents(w.strip(".,;:!?¡¿\"'()")).lower()
+        out = list(beam_tokens)
+        matcher = difflib.SequenceMatcher(a=[key(w) for w in base_tokens],
+                                          b=[key(w) for w in beam_tokens], autojunk=False)
+        for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+            if tag != "replace" or i2 - i1 != j2 - j1:
+                continue
+            for k in range(i2 - i1):
+                old, new = base_tokens[i1 + k], beam_tokens[j1 + k]
+                try:
+                    scores = dict(self._judge.score_candidates(base_tokens, i1 + k, [old, new]))
+                except Exception as e:
+                    print(f"[WARN] Verificación de T5 (BETO) falló: {e}")
+                    continue
+                if scores.get(new, float("-inf")) < scores.get(old, float("-inf")) + _T5_VERIFY_MARGIN:
+                    out[j1 + k] = old
+        return " ".join(out)
 
     @staticmethod
     def _enclitic_host(base: str, freqs: dict) -> bool:
@@ -654,6 +686,8 @@ class CorrectionPipeline:
         known   = lambda key: key in freqs or key in accents
         generated = [(revert_lexical_substitutions(text, str(g).strip(), known, to_phonetic), score)
                      for g, score in generated]
+        if _T5_MODE == "verified" and self._judge is not None:
+            generated = [(self._beto_verify(text, g), score) for g, score in generated]
         first = str(generated[0][0]).strip()
         if not is_safe_refinement(text, first) or not is_lexically_plausible_refinement(
             text, first, min_similarity=_RECOMMENDED_MIN_SIMILARITY
