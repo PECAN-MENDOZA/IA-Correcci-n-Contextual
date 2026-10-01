@@ -248,6 +248,16 @@ python evaluate.py --dataset data/test_correcto_cowsl2h200.csv --t5-dir models/t
 # recomendada) da las mismas 712 frases exactas (+3 TP, +2 FP, +2 daño léxico, el doble de latencia);
 # T5_NUM_BEAMS=8 da 710. Ninguno mejora: la calidad no está limitada por el cómputo sino por los datos
 # del T5. Ambos quedan como interruptores (por defecto 1 pasada y 4 beams).
+# LoRA v5 (2026-09-30/10-01; datos en data/v5/README.md): corpus limpio de 4 fuentes (Claude 4 798, COWS-L2H
+# dev 21 744, subtítulos filtrados 11 249, Gutenberg 868), corruptor infantil (scripts/corrupt_child.py) y
+# entrada = salida de las capas 0-3 (scripts/generate_v5_data.py). Primer intento descartado: añadía
+# puntos, comas y mayúsculas (puntuación no neutra en los datos). Segundo intento, 11 sets / 1 045 frases:
+#   frases exactas v4 712 · v5a (15 % identidad) 709 · v5b (5 % identidad) 720; daño léxico 45 · 46 · 50.
+#   v5b gana en adultos L2 (COWS spelling 81 -> 89, sobrecorrección 17 -> 18) pero no en niños (dev 38 -> 37,
+#   test_ninos 71 -> 70, frases infantiles correctas intactas 149 -> 147). Con T5_GUARD=child (el T5 puede
+#   reescribir solo las palabras que produjeron las capas, no las que escribió el niño) los resultados
+#   cambian en +-1 frase: la guarda no era el límite. PRODUCCIÓN SIGUE CON v4: la población objetivo son
+#   niños y v5 no mejora ahí; v5b queda como resultado de la ablación de datos (models/*_v5a|b, sin versionar).
 # Auditoría externa (30-sep, informes en .local/auditoria/, fuera de git): las cifras de ninos_reales_dev
 # son de DESARROLLO (se ajustó mirando esas 61 frases) y la reserva de 38 es post hoc (se vio antes de
 # partir): no son evidencia confirmatoria. Arreglos de código de la auditoría sin cambio de métricas:
