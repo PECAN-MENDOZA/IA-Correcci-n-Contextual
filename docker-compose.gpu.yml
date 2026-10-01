@@ -1,7 +1,11 @@
-# Despliegue en la VM con GPU (servidor-tesis, T4):
-#   docker-compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
-# Construye torch con CUDA, publica la API en el puerto 80 (el firewall solo
-# abre 80/443) y usa la caché de Hugging Face que se sube con models/ (sin red).
+# Despliegue en la VM con GPU (ia-tesis, L4):
+#   docker compose -p ia-tesis -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+# Construye torch con CUDA y usa la caché de Hugging Face que se sube con
+# models/ (sin red). El puerto 80 (el único que abre el firewall) lo atiende
+# nginx (`proxy`, ver nginx.conf), no gunicorn: desde el 2026-10-01 gunicorn
+# no se expone a internet porque las conexiones a medias de los escáneres lo
+# dejaban sin hilos. El 8080 de docker-compose.yml sigue publicado en la VM
+# (cerrado por el firewall) y lo usa el vigilante (deploy/ia-watchdog.sh).
 services:
   api:
     build:
@@ -11,5 +15,18 @@ services:
     environment:
       HF_HOME: /app/models/hf-cache
       HF_HUB_OFFLINE: "1"
+
+  proxy:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      - api
     ports:
-      - "80:8080"
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"

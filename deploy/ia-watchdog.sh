@@ -1,26 +1,34 @@
 #!/bin/bash
 # Vigilante de la IA en la VM (systemd: ia-watchdog.timer lo lanza cada minuto).
-# El 2026-10-01 la IA quedó colgada sin responder ni por localhost y con el
-# contenedor «Up»: gunicorn (gthread) no mata hilos trabados, así que no se
-# recupera solo. Cada minuto se pide una corrección real; con dos fallos
+# El 2026-10-01 la IA quedó colgada dos veces sin responder ni por localhost y
+# con el contenedor «Up»: gunicorn (gthread) no mata hilos trabados, así que no
+# se recupera solo. Cada minuto se pide una corrección real; con dos fallos
 # seguidos se guarda un diagnóstico (GPU, procesos, pila de todos los hilos vía
 # SIGUSR2 -> faulthandler en main.py, últimos logs) en /var/log/ia-watchdog/ y
-# se reinicia el contenedor. No actúa en los 10 min tras un arranque (carga de
-# BETO y T5) ni si el contenedor no está corriendo (despliegue en curso).
+# se reinician los contenedores. No actúa en los 10 min tras un arranque (carga
+# de BETO y T5) ni si el contenedor no está corriendo (despliegue en curso).
+# La sonda pasa por nginx (puerto 80, el camino del backend); el diagnóstico
+# prueba además gunicorn directo (8080) para saber qué capa falló.
 set -u
 CONTAINER=ia-tesis-api-1
+PROXY=ia-tesis-proxy-1
 URL=http://127.0.0.1:80/interno/corregir
+DIRECT=http://127.0.0.1:8080/interno/corregir
+BODY='{"originalText":"el perro corre","studentId":"watchdog"}'
 STATE=/var/lib/ia-watchdog
 LOG=/var/log/ia-watchdog
 GRACE=600
 mkdir -p "$STATE" "$LOG"
 
+probe() {
+  curl -s -m 45 -X POST "$1" -H 'Content-Type: application/json' -d "$BODY" | grep -q correctedText
+}
+
 [ "$(docker inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null)" = "true" ] || exit 0
 started=$(date -d "$(docker inspect -f '{{.State.StartedAt}}' "$CONTAINER")" +%s)
 [ $(( $(date +%s) - started )) -lt "$GRACE" ] && exit 0
 
-if curl -s -m 45 -X POST "$URL" -H 'Content-Type: application/json' \
-     -d '{"originalText":"el perro corre","studentId":"watchdog"}' | grep -q correctedText; then
+if probe "$URL"; then
   rm -f "$STATE/fails"
   exit 0
 fi
@@ -34,14 +42,22 @@ ts=$(date -u +%Y%m%dT%H%M%SZ)
 f="$LOG/cuelgue-$ts.log"
 {
   echo "== $ts: la sonda falló $fails veces seguidas"
+  if probe "$DIRECT"; then
+    echo "gunicorn directo (8080) RESPONDE: falla nginx"
+  else
+    echo "gunicorn directo (8080) tampoco responde"
+  fi
   nvidia-smi
   docker top "$CONTAINER"
+  ss -tn state established '( sport = :80 or sport = :8080 )'
   echo "== pila de los hilos (SIGUSR2)"
   docker exec "$CONTAINER" sh -c 'kill -USR2 $(cat /proc/1/task/1/children)'
   sleep 3
   docker logs --since 20m "$CONTAINER" 2>&1 | tail -600
+  echo "== nginx"
+  docker logs --since 20m "$PROXY" 2>&1 | tail -100
   echo "== reinicio"
-  docker restart "$CONTAINER"
+  docker restart "$CONTAINER" "$PROXY"
 } > "$f" 2>&1
 rm -f "$STATE/fails"
 logger -t ia-watchdog "IA reiniciada; diagnóstico en $f"
