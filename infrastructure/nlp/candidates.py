@@ -106,7 +106,11 @@ def dyslexic_cost(word: str, candidate: str) -> float:
             d[i][j] = best
     cost = d[n][m]
     yeismo_start = {a[:1], b[:1]} == {"y", "l"} and (a.startswith("ll") or b.startswith("ll"))
-    if a and b and _strip(a[0]) != _strip(b[0]) and _sub_cost(a[0], b[0]) >= _COST_SUB and not yeismo_start:
+    # La h inicial es muda: "ora" -> "hora", "ombre" -> "hombre" empiezan igual
+    # (sin esto "hora" costaba 0,8 y "era" 0,5: "la ora del almuerzo" -> "era").
+    mute_h = _strip(a.removeprefix("h")[:1]) == _strip(b.removeprefix("h")[:1])
+    if (a and b and _strip(a[0]) != _strip(b[0]) and _sub_cost(a[0], b[0]) >= _COST_SUB
+            and not yeismo_start and not mute_h):
         cost += _PENALTY_FIRST_LETTER
     if len(b) <= 3 and len(b) < len(a):
         cost += _PENALTY_SHORT

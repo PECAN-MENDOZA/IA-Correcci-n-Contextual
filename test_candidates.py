@@ -110,5 +110,17 @@ class TestDerivadosYLexico(unittest.TestCase):
             self.assertIn(w, lex)
 
 
+
+class TestHMudaInicial(unittest.TestCase):
+    """Ensayo 2 del piloto (2026-10-01): "la ora del almuerzo" -> "era" porque "hora" pagaba
+    la penalización de primera letra."""
+
+    def test_h_inicial_no_cuenta_como_primera_letra_distinta(self):
+        self.assertLess(dyslexic_cost("ora", "hora"), dyslexic_cost("ora", "era"))
+        self.assertAlmostEqual(dyslexic_cost("ombre", "hombre"), 0.3)
+
+    def test_otra_primera_letra_sigue_penalizada(self):
+        self.assertGreater(dyslexic_cost("aruz", "cruz"), 1.0)
+
 if __name__ == "__main__":
     unittest.main()
